@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ConfigService } from '@nestjs/config';
 import { EfetivoService } from './efetivo.service';
+import { QdiService } from './qdi.service';
 
 const HEADER =
   'QTD,NF,ANT.,POS/GRAD,NOME COMPLETO,PRONTUÁRIO,TEL,RG,CPF,NASCIMENTO,EMAIL,VALIDADE CNH,HABILITAÇÃO,MÊS/ANO CCVE,Município,INCORP.,IDADE,SERVIÇO,ÚLTIMA CHAMADA,PARA FINS DE,SITUAÇÃO,PRÓXIMA,VENC.,FÉRIAS,Senso,,,,,,DATA ATUAL';
@@ -12,7 +13,7 @@ const SAMPLE_CSV = [
   '24,3037509,419,2ºSGT,HEITOR BARCELLOS COELHO,41735,(27) 999106697,1201907/ES,,23/02/1989,heitorhbc@gmail.com,22/03/2030,AE,2021,Vila Velha,16/03/2009,37,17,,CSASCT,,,,,,,,,,',
 ].join('\n');
 
-function makeService(): EfetivoService {
+function makeService(qdiByNf?: Map<string, ReturnType<typeof makeQdiEntry>>): EfetivoService {
   const config = {
     get: () => undefined,
     getOrThrow: (key: string) => {
@@ -20,7 +21,35 @@ function makeService(): EfetivoService {
       throw new Error(`Missing ${key}`);
     },
   } as unknown as ConfigService;
-  return new EfetivoService(config);
+
+  // QdiService mock — retorna dados controlados ou vazio
+  const qdi = {
+    getByNf: vi
+      .fn()
+      .mockResolvedValue({ byNf: qdiByNf ?? new Map(), syncedAt: Date.now(), stale: false }),
+  } as unknown as QdiService;
+
+  return new EfetivoService(config, qdi);
+}
+
+function makeQdiEntry(opts: {
+  nf: string;
+  ant: number;
+  postoAtual: string;
+  nomeGuerra: string;
+  funcao?: string;
+  subSecao: 'staff' | 'sos' | 'guarda' | 'aquaticas';
+}) {
+  return {
+    nf: opts.nf,
+    ant: opts.ant,
+    postoAtual: opts.postoAtual,
+    nomeGuerra: opts.nomeGuerra,
+    funcao: opts.funcao,
+    subSecao: opts.subSecao,
+    unidade: '1ª Cia / 1º BBM',
+    situacao: 'APTO',
+  };
 }
 
 function stubFetch(csv: string, ok = true) {
@@ -152,5 +181,120 @@ describe('EfetivoService.findByNf', () => {
   it('retorna null para NF inexistente', async () => {
     const service = makeService();
     expect(await service.findByNf('9999999')).toBeNull();
+  });
+});
+
+describe('EfetivoService consolidação com QDI', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    stubFetch(SAMPLE_CSV);
+  });
+
+  it('enriquece com QDI quando NF presente em ambas as fontes (QDI vence ANT/posto, mantém nome completo)', async () => {
+    const qdi = new Map([
+      [
+        '3037509',
+        makeQdiEntry({
+          nf: '3037509',
+          ant: 418, // diferente da EFETIVO (419) — QDI vence
+          postoAtual: '2ºSGT',
+          nomeGuerra: 'BARCELLOS',
+          subSecao: 'sos',
+        }),
+      ],
+    ]);
+    const service = makeService(qdi);
+    const r = await service.list({ page: 1, pageSize: 20 });
+
+    const heitor = r.items.find((m) => m.nf === '3037509');
+    expect(heitor).toBeDefined();
+    expect(heitor?.ant).toBe(418); // do QDI
+    expect(heitor?.posto).toBe('2ºSGT');
+    expect(heitor?.nome).toBe('HEITOR BARCELLOS COELHO'); // nome completo do EFETIVO
+    expect(heitor?.nomeGuerra).toBe('BARCELLOS');
+    expect(heitor?.subSecao).toBe('sos');
+    expect(heitor?.idade).toBe(37); // demográfico do EFETIVO mantido
+  });
+
+  it('inclui militares só presentes no QDI (com nome = nomeGuerra)', async () => {
+    const qdi = new Map([
+      [
+        '9999999',
+        makeQdiEntry({
+          nf: '9999999',
+          ant: 100,
+          postoAtual: 'CB',
+          nomeGuerra: 'NOVATO',
+          subSecao: 'guarda',
+        }),
+      ],
+    ]);
+    const service = makeService(qdi);
+    const r = await service.list({ page: 1, pageSize: 20 });
+
+    const novato = r.items.find((m) => m.nf === '9999999');
+    expect(novato).toBeDefined();
+    expect(novato?.nome).toBe('NOVATO'); // fallback para nomeGuerra
+    expect(novato?.idade).toBeUndefined(); // sem dados demográficos
+  });
+
+  it('filtro somente1aCia retorna apenas militares com subSecao definida', async () => {
+    const qdi = new Map([
+      [
+        '3037509',
+        makeQdiEntry({
+          nf: '3037509',
+          ant: 418,
+          postoAtual: '2ºSGT',
+          nomeGuerra: 'BARCELLOS',
+          subSecao: 'sos',
+        }),
+      ],
+    ]);
+    const service = makeService(qdi);
+
+    const semFiltro = await service.list({ page: 1, pageSize: 20 });
+    expect(semFiltro.total).toBe(3); // todos do EFETIVO
+
+    const apenasCia = await service.list({ somente1aCia: true, page: 1, pageSize: 20 });
+    expect(apenasCia.total).toBe(1);
+    expect(apenasCia.items[0]?.nf).toBe('3037509');
+  });
+
+  it('busca textual encontra por nomeGuerra além de NF/nome/posto', async () => {
+    const qdi = new Map([
+      [
+        '3037509',
+        makeQdiEntry({
+          nf: '3037509',
+          ant: 418,
+          postoAtual: '2ºSGT',
+          nomeGuerra: 'BARCELLOS',
+          subSecao: 'sos',
+        }),
+      ],
+    ]);
+    const service = makeService(qdi);
+
+    const r = await service.list({ q: 'barcellos', page: 1, pageSize: 20 });
+    expect(r.total).toBe(1);
+  });
+
+  it('quando QDI está indisponível, retorna apenas EFETIVO (sem subSecao)', async () => {
+    const config = {
+      get: () => undefined,
+      getOrThrow: (key: string) => {
+        if (key === 'GOOGLE_SHEET_ID_EFETIVO') return 'fake-sheet-id';
+        throw new Error(`Missing ${key}`);
+      },
+    } as unknown as ConfigService;
+    const qdi = {
+      getByNf: vi.fn().mockRejectedValue(new Error('qdi down')),
+    } as unknown as QdiService;
+
+    const service = new EfetivoService(config, qdi);
+    const r = await service.list({ page: 1, pageSize: 20 });
+    expect(r.total).toBe(3);
+    expect(r.items.every((m) => m.subSecao === undefined)).toBe(true);
   });
 });

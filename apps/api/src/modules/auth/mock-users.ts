@@ -47,10 +47,13 @@ export const MOCK_USERS: MockUser[] = [
     primeiroAcesso: true,
   },
   {
-    nf: '903581',
-    nome: 'ANDERSON MATTOS SIMOES',
-    posto: '1ºSGT',
-    ant: 242,
+    // Sargenteante real da 1ª Cia/1º BBM (corrigido em S2.5).
+    // S1 inicial usou NF 903581 (ANDERSON MATTOS SIMOES) que pertence à SAT, não à 1ª Cia.
+    // Fonte: QDI seção "1ªCIA/1ºBBM" → função "Sargenteante" → nome de guerra "D. MATTOS".
+    nf: '2982390',
+    nome: 'DANIEL DE AMORIM MATTOS',
+    posto: '2ºSGT',
+    ant: 366,
     cpfFake: FAKE_CPFS.MATTOS,
     senhaHash: bcrypt.hashSync(FAKE_CPFS.MATTOS, COST),
     papeis: ['sargenteante'],

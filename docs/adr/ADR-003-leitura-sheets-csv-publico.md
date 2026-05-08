@@ -46,9 +46,59 @@ Implementação concreta no módulo `EfetivoModule` (`apps/api/src/modules/efeti
 
 Endpoints expostos:
 
-- `GET /efetivo?q=&page=&pageSize=` — paginado, busca em NF/nome/posto, ordenado por ANT
-- `GET /efetivo/:nf` — lookup individual
+- `GET /efetivo?q=&page=&pageSize=&somente1aCia=` — paginado, busca em NF/nome/nomeGuerra/posto, ordenado por ANT
+- `GET /efetivo/:nf` — lookup individual (consolidado com QDI)
 - `POST /efetivo/sync` — `@Roles('admin')` — força resync ignorando cache (mantém snapshot anterior se falhar)
+
+## Consolidação QDI + EFETIVO (S2.5, 2026-05-08)
+
+A planilha de Efetivo do Sargenteante lista todo o CBMES (228 militares), sem identificação de
+unidade nem nome de guerra. Para uso operacional na 1ª Cia, S2.5 adiciona uma segunda fonte: a
+**Planilha QDI** (Quadro de Distribuição Interna do 1º BBM, ID `12-XCsNwr34d625Wkkuq-mr4bmv2Fcr2QQ1C7WfVjwB0`,
+gid `558859373`), também pública via export CSV.
+
+### Estrutura do QDI
+
+CSV "planilhão" com seções por unidade (sem coluna LOCAL — uso parsing por seção):
+
+| Seção do QDI                             | `subSecao`  | Unidade                                            |
+| ---------------------------------------- | ----------- | -------------------------------------------------- |
+| `1ªCIA/1ºBBM - VITÓRIA`                  | `staff`     | 1ª Cia / 1º BBM — Comando                          |
+| `SEÇÃO DE OPERAÇÕES DE SALVAMENTO (SOS)` | `sos`       | 1ª Cia / 1º BBM — Seção de Operações de Salvamento |
+| `GUARDA QCG`                             | `guarda`    | 1ª Cia / 1º BBM — Guarda QCG                       |
+| `PELOTÃO DE ATIVIDADES AQUÁTICAS`        | `aquaticas` | 1ª Cia / 1º BBM — Pelotão de Atividades Aquáticas  |
+
+Outras seções (1ºBBM staff, SAT, MILITARES EM EXCESSO, RESUMO) são ignoradas.
+
+Layout posicional (não confiar em headers — eles são parciais e desalinhados com data rows):
+col 1=ANT, col 2=NF, col 4=função, col 5=code (PRONT 11/ADM 11/GUARD 11/PRONT AA),
+col 6=posto previsto, **col 7=posto atual**, **col 8=nome de guerra**, col 13=situação.
+
+Reservistas (ANT="RR ###") e slots vagos (`--`) são descartados. Adidos (PRONT CERD, ADM DGP) são
+mantidos com `situacao='ADIDO'` para visibilidade institucional.
+
+### Estratégia de merge (decisão Tech Lead 2026-05-08)
+
+- **União de NFs** entre EFETIVO e QDI (left-join por NF)
+- **QDI vence em** ANT, posto atual, situação, função (operacional)
+- **EFETIVO mantém** nome completo, idade, tempo de serviço, município (demográfico)
+- **Militares só no QDI** entram com `nome = nomeGuerra` (fallback obrigatório do schema)
+- **Militares só no EFETIVO** entram sem `subSecao` — não aparecem no filtro `?somente1aCia=true`
+
+`mergeSources()` em `apps/api/src/modules/efetivo/efetivo.service.ts` implementa o merge.
+
+### Display name
+
+`formatDisplayName(m)` em `@argus/shared-types`:
+
+- Se `nomeGuerra` existe: `${posto} ${nomeGuerra}` (ex.: `2ºSGT BARCELLOS`)
+- Senão: `${posto} ${primeiroNome(nome)}` (fallback)
+
+### Bug fix do mock-users (S1)
+
+Identificado durante a investigação: S1 mapeou Sargenteante para NF 903581 (ANDERSON MATTOS SIMOES,
+SAT), mas o Sargenteante real da 1ª Cia é NF 2982390 (DANIEL DE AMORIM MATTOS, "D. MATTOS").
+Corrigido em S2.5.
 
 ## Consequências
 
