@@ -106,11 +106,20 @@ export function HomePage() {
                 IDEO
               </Link>
             </li>
+            <li className="col-span-2">
+              <Link
+                to="/cadastros/escalas"
+                className="block rounded border border-slate-200 bg-white p-4 text-center text-sm font-medium text-cbmes-blue shadow-sm transition hover:border-cbmes-blue hover:bg-cbmes-blue/5"
+              >
+                <span className="block text-2xl">📅</span>
+                Escala Mensal (XLSX)
+              </Link>
+            </li>
           </ul>
         </nav>
 
         <div className="mt-6 rounded border border-slate-200 bg-white p-4 text-xs text-slate-500">
-          <p className="font-medium text-slate-700">Sprint atual: S2 — Cadastros Mestre</p>
+          <p className="font-medium text-slate-700">Sprint atual: S3b — Parser de Escala XLSX</p>
           <p className="mt-1">
             Próximos sprints adicionam Prévia (S4), Serviço (S5), Conferências (S6-S8), Mapa Força
             (S9) e Parte Diária (S10-S11).

@@ -1,15 +1,19 @@
 import type {
   ChangePasswordInput,
+  ComposicaoEntry,
   CreateFiscalInput,
   CreateViaturaInput,
   EfetivoListResponse,
   EfetivoQuery,
+  EscalaMensal,
   FiscalCadastrado,
   IdeoEntry,
   IdeoMatrix,
+  LetraEquipe,
   LoginInput,
   LoginResponse,
   Militar,
+  PreviewEscalaResponse,
   TipoIdeo,
   UpdateViaturaInput,
   UpsertIdeoEntryInput,
@@ -156,4 +160,46 @@ export const api = {
     request<void>(`/ideo/${dia}/${tipo}`, {
       method: 'DELETE',
     }),
+
+  // Escalas (S3b)
+  escalasList: () =>
+    request<{
+      escalas: { ano: number; mes: number; origemArquivo: string; importadoEm: string }[];
+    }>(`/escalas`),
+
+  escalasGet: (ano: number, mes: number) =>
+    request<{ escala: EscalaMensal | null }>(`/escalas?ano=${ano}&mes=${mes}`),
+
+  escalasPreview: async (file: File): Promise<PreviewEscalaResponse> => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`${API_URL}/escalas/preview`, {
+      method: 'POST',
+      credentials: 'include',
+      body: fd,
+    });
+    const text = await res.text();
+    const json: unknown = text ? JSON.parse(text) : undefined;
+    if (!res.ok) {
+      const message = extractMessage(json) ?? `Erro ${res.status}`;
+      throw new ApiError(res.status, message);
+    }
+    return json as PreviewEscalaResponse;
+  },
+
+  escalasConfirm: (escala: EscalaMensal) =>
+    request<EscalaMensal>('/escalas/confirm', {
+      method: 'POST',
+      body: JSON.stringify(escala),
+    }),
+
+  escalasDelete: (ano: number, mes: number) =>
+    request<void>(`/escalas/${ano}/${mes}`, {
+      method: 'DELETE',
+    }),
+
+  escalasEscaladosDoDia: (ano: number, mes: number, data: string) =>
+    request<{ equipe: LetraEquipe | null; entries: ComposicaoEntry[] }>(
+      `/escalas/escalados-do-dia?ano=${ano}&mes=${String(mes).padStart(2, '0')}&data=${data}`,
+    ),
 };

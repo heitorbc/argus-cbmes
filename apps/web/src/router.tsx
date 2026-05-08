@@ -11,6 +11,7 @@ import { TrocarSenhaPage } from '@/pages/trocar-senha';
 import { HomePage } from '@/pages/home';
 import { EfetivoPage } from '@/pages/efetivo';
 import { ViaturasPage } from '@/pages/viaturas';
+import { EscalasPage } from '@/pages/escalas';
 import { FiscaisPage } from '@/pages/fiscais';
 import { IdeoPage } from '@/pages/ideo';
 
@@ -74,6 +75,7 @@ export const router = createBrowserRouter([
           { path: '/cadastros/viaturas', element: <ViaturasPage /> },
           { path: '/cadastros/fiscais', element: <FiscaisPage /> },
           { path: '/cadastros/ideo', element: <IdeoPage /> },
+          { path: '/cadastros/escalas', element: <EscalasPage /> },
         ],
       },
       { path: '*', element: <Navigate to="/" replace /> },
