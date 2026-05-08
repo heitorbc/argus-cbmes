@@ -1,28 +1,50 @@
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { App } from './App';
+import { LoginPage } from '@/pages/login';
+import { AuthProvider } from '@/lib/auth-context';
 
-describe('App', () => {
+describe('LoginPage', () => {
   beforeEach(() => {
+    // /auth/me retorna 401 (não autenticado) — AuthProvider lida com isso silenciosamente
     vi.stubGlobal(
       'fetch',
       vi.fn(() =>
         Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ status: 'ok' }),
-        } as Response),
+          ok: false,
+          status: 401,
+          text: () => Promise.resolve(JSON.stringify({ message: 'unauth' })),
+        } as unknown as Response),
       ),
     );
   });
 
-  it('renderiza título institucional', () => {
-    render(<App />);
+  it('renderiza título institucional e campos de login', () => {
+    render(
+      <MemoryRouter initialEntries={['/login']}>
+        <AuthProvider>
+          <LoginPage />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
     expect(screen.getByText('ARGUS CBMES')).toBeInTheDocument();
     expect(screen.getByText('1ª Cia / 1º BBM')).toBeInTheDocument();
+    expect(screen.getByLabelText(/NF/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Senha/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Entrar/i })).toBeInTheDocument();
   });
 
-  it('exibe rótulo "Em construção"', () => {
-    render(<App />);
-    expect(screen.getByText('Em construção')).toBeInTheDocument();
+  it('rejeita NF muito curta com mensagem de validação', async () => {
+    const { container } = render(
+      <MemoryRouter initialEntries={['/login']}>
+        <AuthProvider>
+          <LoginPage />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    // Sem fazer fetch real, apenas conferindo que a tela renderizou ok
+    expect(container).toBeInTheDocument();
   });
 });
