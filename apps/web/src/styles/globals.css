@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Inter via Google Fonts (até decidirmos hospedar localmente) */
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-white font-sans text-slate-900 antialiased;
+  }
+
+  /* Mobile-first: garantir que toques tenham área mínima generosa (RNF-021: 44×44px) */
+  button,
+  [role='button'],
+  a {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+}

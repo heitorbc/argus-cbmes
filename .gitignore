@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Testing
+.vitest/
+playwright-report/
+test-results/
+
+# Reference data — kept locally, not versioned
+data/
+
+# Prisma
+**/prisma/migrations/dev/
+
+# Vercel
+.vercel/
+
+# Cache
+.cache/
+.eslintcache
+
+# OS
+*.bak
+*.tmp
+
+# Secrets / keys (defense in depth)
+*.pem
+*.key
+google-service-account*.json

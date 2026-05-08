@@ -1,0 +1,20 @@
+// Schema Prisma — ARGUS CBMES
+// Fase 1: schema mínimo em S0; entidades adicionadas progressivamente em S1-S5.
+// Schema consolidado em S5 (Marco arquitetural — transição mock → real).
+// ADR-005 documentará o modelo final de dados quando entrar em vigor.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Placeholder de S0 — substituído em S1 pelo modelo Usuario.
+// Prisma exige ao menos um modelo para gerar o client.
+model Bootstrap {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+}

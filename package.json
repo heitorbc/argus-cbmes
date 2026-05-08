@@ -1,0 +1,39 @@
+{
+  "name": "argus-cbmes",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sistema de Gestão Operacional do 1º BBM — 1ª Cia/1º BBM CBMES",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "dev:web": "pnpm --filter web dev",
+    "dev:api": "pnpm --filter api start:dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yaml,yml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yaml,yml}\""
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "globals": "^17.6.0",
+    "prettier": "^3.3.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.59.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "@nestjs/core",
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma"
+    ]
+  }
+}
