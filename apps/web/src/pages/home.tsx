@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth-context';
 
 const PAPEL_LABEL: Record<string, string> = {
@@ -65,11 +65,37 @@ export function HomePage() {
           </div>
         </div>
 
-        <div className="mt-6 rounded border border-slate-200 bg-white p-4 text-sm text-slate-600">
-          <p className="font-medium text-slate-700">Sprint S1 — Auth + RBAC</p>
+        <nav className="mt-6">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+            Cadastros Mestre
+          </p>
+          <ul className="grid grid-cols-2 gap-3">
+            <li>
+              <Link
+                to="/cadastros/efetivo"
+                className="block rounded border border-slate-200 bg-white p-4 text-center text-sm font-medium text-cbmes-blue shadow-sm transition hover:border-cbmes-blue hover:bg-cbmes-blue/5"
+              >
+                <span className="block text-2xl">👥</span>
+                Efetivo
+              </Link>
+            </li>
+            <li>
+              <Link
+                to="/cadastros/viaturas"
+                className="block rounded border border-slate-200 bg-white p-4 text-center text-sm font-medium text-cbmes-blue shadow-sm transition hover:border-cbmes-blue hover:bg-cbmes-blue/5"
+              >
+                <span className="block text-2xl">🚒</span>
+                Viaturas
+              </Link>
+            </li>
+          </ul>
+        </nav>
+
+        <div className="mt-6 rounded border border-slate-200 bg-white p-4 text-xs text-slate-500">
+          <p className="font-medium text-slate-700">Sprint atual: S2 — Cadastros Mestre</p>
           <p className="mt-1">
-            Esta é a tela home placeholder. Os módulos operacionais (Cadastros, Prévia, Serviço,
-            Conferências, Mapa Força, Parte Diária) chegam a partir do Sprint S2.
+            Próximos sprints adicionam Prévia (S4), Serviço (S5), Conferências (S6-S8), Mapa Força
+            (S9) e Parte Diária (S10-S11).
           </p>
         </div>
 

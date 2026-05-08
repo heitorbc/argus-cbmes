@@ -9,6 +9,8 @@ import { AuthProvider, useAuth } from '@/lib/auth-context';
 import { LoginPage } from '@/pages/login';
 import { TrocarSenhaPage } from '@/pages/trocar-senha';
 import { HomePage } from '@/pages/home';
+import { EfetivoPage } from '@/pages/efetivo';
+import { ViaturasPage } from '@/pages/viaturas';
 
 function FullScreenLoader() {
   return (
@@ -66,6 +68,8 @@ export const router = createBrowserRouter([
         children: [
           { path: '/', element: <HomePage /> },
           { path: '/trocar-senha', element: <TrocarSenhaPage /> },
+          { path: '/cadastros/efetivo', element: <EfetivoPage /> },
+          { path: '/cadastros/viaturas', element: <ViaturasPage /> },
         ],
       },
       { path: '*', element: <Navigate to="/" replace /> },

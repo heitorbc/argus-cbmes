@@ -84,7 +84,7 @@ describe('AuthService.login', () => {
         UnauthorizedException,
       );
     }
-  });
+  }, 15_000); // bcrypt cost 12 × 9 compares pode ultrapassar 5s em hardware mais lento
 });
 
 describe('AuthService.changePassword', () => {
