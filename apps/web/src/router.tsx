@@ -11,6 +11,8 @@ import { TrocarSenhaPage } from '@/pages/trocar-senha';
 import { HomePage } from '@/pages/home';
 import { EfetivoPage } from '@/pages/efetivo';
 import { ViaturasPage } from '@/pages/viaturas';
+import { FiscaisPage } from '@/pages/fiscais';
+import { IdeoPage } from '@/pages/ideo';
 
 function FullScreenLoader() {
   return (
@@ -70,6 +72,8 @@ export const router = createBrowserRouter([
           { path: '/trocar-senha', element: <TrocarSenhaPage /> },
           { path: '/cadastros/efetivo', element: <EfetivoPage /> },
           { path: '/cadastros/viaturas', element: <ViaturasPage /> },
+          { path: '/cadastros/fiscais', element: <FiscaisPage /> },
+          { path: '/cadastros/ideo', element: <IdeoPage /> },
         ],
       },
       { path: '*', element: <Navigate to="/" replace /> },

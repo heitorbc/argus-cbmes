@@ -88,6 +88,24 @@ export function HomePage() {
                 Viaturas
               </Link>
             </li>
+            <li>
+              <Link
+                to="/cadastros/fiscais"
+                className="block rounded border border-slate-200 bg-white p-4 text-center text-sm font-medium text-cbmes-blue shadow-sm transition hover:border-cbmes-blue hover:bg-cbmes-blue/5"
+              >
+                <span className="block text-2xl">⭐</span>
+                Fiscais
+              </Link>
+            </li>
+            <li>
+              <Link
+                to="/cadastros/ideo"
+                className="block rounded border border-slate-200 bg-white p-4 text-center text-sm font-medium text-cbmes-blue shadow-sm transition hover:border-cbmes-blue hover:bg-cbmes-blue/5"
+              >
+                <span className="block text-2xl">📋</span>
+                IDEO
+              </Link>
+            </li>
           </ul>
         </nav>
 

@@ -1,12 +1,18 @@
 import type {
   ChangePasswordInput,
+  CreateFiscalInput,
   CreateViaturaInput,
   EfetivoListResponse,
   EfetivoQuery,
+  FiscalCadastrado,
+  IdeoEntry,
+  IdeoMatrix,
   LoginInput,
   LoginResponse,
   Militar,
+  TipoIdeo,
   UpdateViaturaInput,
+  UpsertIdeoEntryInput,
   UserSession,
   Viatura,
 } from '@argus/shared-types';
@@ -112,6 +118,42 @@ export const api = {
 
   viaturasSoftDelete: (id: string) =>
     request<Viatura>(`/viaturas/${id}`, {
+      method: 'DELETE',
+    }),
+
+  // Fiscais (S3a)
+  fiscaisList: () => request<FiscalCadastrado[]>('/fiscais'),
+
+  fiscaisCreate: (input: CreateFiscalInput) =>
+    request<FiscalCadastrado>('/fiscais', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  fiscaisDelete: (id: string) =>
+    request<void>(`/fiscais/${id}`, {
+      method: 'DELETE',
+    }),
+
+  fiscaisCadastradoVigente: (equipe: 'A' | 'B' | 'C' | 'D', data: string) =>
+    request<{ cadastrado: FiscalCadastrado | null }>(
+      `/fiscais/cadastrado-vigente?equipe=${equipe}&data=${data}`,
+    ),
+
+  // IDEO (S3a)
+  ideoList: () => request<IdeoMatrix>('/ideo'),
+
+  ideoGet: (dia: number, tipo: TipoIdeo) =>
+    request<{ entry: IdeoEntry | null }>(`/ideo/${dia}/${tipo}`),
+
+  ideoUpsert: (input: UpsertIdeoEntryInput) =>
+    request<IdeoEntry>('/ideo', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  ideoDelete: (dia: number, tipo: TipoIdeo) =>
+    request<void>(`/ideo/${dia}/${tipo}`, {
       method: 'DELETE',
     }),
 };
