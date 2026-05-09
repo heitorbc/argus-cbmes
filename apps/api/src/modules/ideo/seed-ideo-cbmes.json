@@ -1,0 +1,688 @@
+[
+  {
+    "dia": 1,
+    "tipo": "ABTS",
+    "itens": [
+      "Motoventilador",
+      "Câmera Térmica",
+      "Esguicho Atomizado",
+      "Escada",
+      "Detector Multigás Altair 4xr",
+      "Rádio Móvel",
+      "Garrafa Térmica Verificar Integridade;higienizar E Trocar A Água."
+    ]
+  },
+  {
+    "dia": 2,
+    "tipo": "ABTS",
+    "itens": [
+      "Blocante (rescucender)",
+      "Blocante De Punho",
+      "Blocante Ventral",
+      "Descensor (tipo Id)",
+      "Descensor (tipo Rack)",
+      "Mosquetões E Malhas Rápidas",
+      "Oito De Salvamento",
+      "Placa Organizadora",
+      "Polias",
+      "Detector Multigás Altair 4xr"
+    ]
+  },
+  {
+    "dia": 3,
+    "tipo": "ABTS",
+    "itens": [
+      "Soprador",
+      "Mochila Costal",
+      "Pinga Fogo",
+      "Receptor Gps",
+      "Detector Multigás Altair 4xr",
+      "Garrafa Térmica Verificar Integridade;higienizar E Trocar A Água."
+    ]
+  },
+  {
+    "dia": 4,
+    "tipo": "ABTS",
+    "itens": [
+      "Motobomba",
+      "Mangueiras Hidráulicas",
+      "Expansor Hidráulico",
+      "Tesoura Hidráulica",
+      "Cilindro Hidráulico",
+      "Detector Multigás Altair 4xr"
+    ]
+  },
+  {
+    "dia": 5,
+    "tipo": "ABTS",
+    "itens": [
+      "Mochila De Aph",
+      "Embarcações",
+      "Motores De Popa",
+      "Reboque Da Embarcação",
+      "Detector Multigás Altair 4xr",
+      "Garrafa Térmica Verificar Integridade;higienizar E Trocar A Água."
+    ]
+  },
+  {
+    "dia": 6,
+    "tipo": "ABTS",
+    "itens": [
+      "Conjunto Do Epr",
+      "Capacete Comb. Incêndio",
+      "Roupa De Aproximação",
+      "Detector Multigás Altair 4xr",
+      "Rádio Móvel",
+      "Garrafa Térmica Verificar Integridade;higienizar E Trocar A Água."
+    ]
+  },
+  {
+    "dia": 7,
+    "tipo": "ABTS",
+    "itens": [
+      "Maca Envelope",
+      "Corda",
+      "Cordeletes",
+      "Fitas Tubulares",
+      "Triângulo De Evacuação",
+      "Cinto Nível 3",
+      "Detector Multigás Altair 4xr"
+    ]
+  },
+  {
+    "dia": 8,
+    "tipo": "ABTS",
+    "itens": [
+      "Motosserra",
+      "Facão Com Bainha",
+      "Enxada",
+      "Foice",
+      "Detector Multigás Altair 4xr",
+      "Garrafa Térmica Verificar Integridade;higienizar E Trocar A Água."
+    ]
+  },
+  {
+    "dia": 9,
+    "tipo": "ABTS",
+    "itens": [
+      "Mini Tesoura",
+      "Bomba Manual",
+      "Estabilizador (v-strut)",
+      "Serra Sabre",
+      "Moto Abrasivo",
+      "Detector Multigás Altair 4xr"
+    ]
+  },
+  {
+    "dia": 10,
+    "tipo": "ABTS",
+    "itens": [
+      "Microrretífica",
+      "Caixa De Ferramentas",
+      "Tirfor",
+      "Corta A Frio",
+      "Torre De Iluminação",
+      "Detector Multigás Altair 4xr"
+    ]
+  },
+  {
+    "dia": 11,
+    "tipo": "ABTS",
+    "itens": [
+      "Motoventilador",
+      "Câmera Térmica",
+      "Esguicho Atomizado",
+      "Escada",
+      "Detector Multigás Altair 4xr",
+      "Rádio Móvel",
+      "Garrafa Térmica Verificar Integridade;higienizar E Trocar A Água."
+    ]
+  },
+  {
+    "dia": 12,
+    "tipo": "ABTS",
+    "itens": [
+      "Blocante (rescucender)",
+      "Blocante De Punho",
+      "Blocante Ventral",
+      "Descensor (tipo Id)",
+      "Descensor (tipo Rack)",
+      "Mosquetões E Malhas Rápidas",
+      "Oito De Salvamento",
+      "Placa Organizadora",
+      "Polias",
+      "Detector Multigás Altair 4xr"
+    ]
+  },
+  {
+    "dia": 13,
+    "tipo": "ABTS",
+    "itens": [
+      "Soprador",
+      "Mochila Costal",
+      "Pinga Fogo",
+      "Receptor Gps",
+      "Detector Multigás Altair 4xr",
+      "Garrafa Térmica Verificar Integridade;higienizar E Trocar A Água."
+    ]
+  },
+  {
+    "dia": 14,
+    "tipo": "ABTS",
+    "itens": [
+      "Motobomba",
+      "Mangueiras Hidráulicas",
+      "Expansor Hidráulico",
+      "Tesoura Hidráulica",
+      "Cilindro Hidráulico",
+      "Detector Multigás Altair 4xr"
+    ]
+  },
+  {
+    "dia": 15,
+    "tipo": "ABTS",
+    "itens": [
+      "Mochila De Aph",
+      "Embarcações",
+      "Motores De Popa",
+      "Reboque Da Embarcação",
+      "Detector Multigás Altair 4xr",
+      "Garrafa Térmica Verificar Integridade;higienizar E Trocar A Água."
+    ]
+  },
+  {
+    "dia": 16,
+    "tipo": "ABTS",
+    "itens": [
+      "Conjunto Do Epr",
+      "Capacete Comb. Incêndio",
+      "Roupa De Aproximação",
+      "Detector Multigás Altair 4xr",
+      "Rádio Móvel",
+      "Garrafa Térmica Verificar Integridade;higienizar E Trocar A Água."
+    ]
+  },
+  {
+    "dia": 17,
+    "tipo": "ABTS",
+    "itens": [
+      "Maca Envelope",
+      "Corda",
+      "Cordeletes",
+      "Fitas Tubulares",
+      "Triângulo De Evacuação",
+      "Cinto Nível 3",
+      "Detector Multigás Altair 4xr"
+    ]
+  },
+  {
+    "dia": 18,
+    "tipo": "ABTS",
+    "itens": [
+      "Motosserra",
+      "Facão Com Bainha",
+      "Enxada",
+      "Foice",
+      "Detector Multigás Altair 4xr",
+      "Garrafa Térmica Verificar Integridade;higienizar E Trocar A Água."
+    ]
+  },
+  {
+    "dia": 19,
+    "tipo": "ABTS",
+    "itens": [
+      "Mini Tesoura",
+      "Bomba Manual",
+      "Estabilizador (v-strut)",
+      "Serra Sabre",
+      "Moto Abrasivo",
+      "Detector Multigás Altair 4xr"
+    ]
+  },
+  {
+    "dia": 20,
+    "tipo": "ABTS",
+    "itens": [
+      "Microrretífica",
+      "Caixa De Ferramentas",
+      "Tirfor",
+      "Corta A Frio",
+      "Torre De Iluminação",
+      "Detector Multigás Altair 4xr"
+    ]
+  },
+  {
+    "dia": 21,
+    "tipo": "ABTS",
+    "itens": [
+      "Motoventilador",
+      "Câmera Térmica",
+      "Esguicho Atomizado",
+      "Escada",
+      "Detector Multigás Altair 4xr",
+      "Rádio Móvel",
+      "Garrafa Térmica Verificar Integridade;higienizar E Trocar A Água."
+    ]
+  },
+  {
+    "dia": 22,
+    "tipo": "ABTS",
+    "itens": [
+      "Blocante (rescucender)",
+      "Blocante De Punho",
+      "Blocante Ventral",
+      "Descensor (tipo Id)",
+      "Descensor (tipo Rack)",
+      "Mosquetões E Malhas Rápidas",
+      "Oito De Salvamento",
+      "Placa Organizadora",
+      "Polias",
+      "Detector Multigás Altair 4xr"
+    ]
+  },
+  {
+    "dia": 23,
+    "tipo": "ABTS",
+    "itens": [
+      "Soprador",
+      "Mochila Costal",
+      "Pinga Fogo",
+      "Receptor Gps",
+      "Detector Multigás Altair 4xr",
+      "Garrafa Térmica Verificar Integridade;higienizar E Trocar A Água."
+    ]
+  },
+  {
+    "dia": 24,
+    "tipo": "ABTS",
+    "itens": [
+      "Motobomba",
+      "Mangueiras Hidráulicas",
+      "Expansor Hidráulico",
+      "Tesoura Hidráulica",
+      "Cilindro Hidráulico",
+      "Detector Multigás Altair 4xr"
+    ]
+  },
+  {
+    "dia": 25,
+    "tipo": "ABTS",
+    "itens": [
+      "Mochila De Aph",
+      "Embarcações",
+      "Motores De Popa",
+      "Reboque Da Embarcação",
+      "Detector Multigás Altair 4xr",
+      "Garrafa Térmica Verificar Integridade;higienizar E Trocar A Água."
+    ]
+  },
+  {
+    "dia": 26,
+    "tipo": "ABTS",
+    "itens": [
+      "Conjunto Do Epr",
+      "Capacete Comb. Incêndio",
+      "Roupa De Aproximação",
+      "Detector Multigás Altair 4xr",
+      "Rádio Móvel",
+      "Garrafa Térmica Verificar Integridade;higienizar E Trocar A Água."
+    ]
+  },
+  {
+    "dia": 27,
+    "tipo": "ABTS",
+    "itens": [
+      "Maca Envelope",
+      "Corda",
+      "Cordeletes",
+      "Fitas Tubulares",
+      "Triângulo De Evacuação",
+      "Cinto Nível 3",
+      "Detector Multigás Altair 4xr"
+    ]
+  },
+  {
+    "dia": 28,
+    "tipo": "ABTS",
+    "itens": [
+      "Motosserra",
+      "Facão Com Bainha",
+      "Enxada",
+      "Foice",
+      "Detector Multigás Altair 4xr",
+      "Garrafa Térmica Verificar Integridade;higienizar E Trocar A Água."
+    ]
+  },
+  {
+    "dia": 29,
+    "tipo": "ABTS",
+    "itens": [
+      "Mini Tesoura",
+      "Bomba Manual",
+      "Estabilizador (v-strut)",
+      "Serra Sabre",
+      "Moto Abrasivo",
+      "Detector Multigás Altair 4xr"
+    ]
+  },
+  {
+    "dia": 30,
+    "tipo": "ABTS",
+    "itens": [
+      "Microrretífica",
+      "Caixa De Ferramentas",
+      "Tirfor",
+      "Corta A Frio",
+      "Torre De Iluminação",
+      "Detector Multigás Altair 4xr"
+    ]
+  },
+  {
+    "dia": 31,
+    "tipo": "ABTS",
+    "itens": [
+      "Detector Multigás Altair 4xr",
+      "Estrutura E Lubrificação",
+      "Sirene E Luzes Emergências",
+      "Luzes De Tráfego",
+      "Rádio Portátil (ht)",
+      "Rádio Móvel",
+      "Garrafa Térmica Verificar Integridade;higienizar E Trocar A Água."
+    ]
+  },
+  {
+    "dia": 1,
+    "tipo": "RESGATE",
+    "itens": [
+      "Limpeza Terminal Da Vtr",
+      "Sirene E Luzes Emergências",
+      "Luzes De Tráfego",
+      "Calibragem Pneus",
+      "Rádio Móvel"
+    ]
+  },
+  {
+    "dia": 2,
+    "tipo": "RESGATE",
+    "itens": [
+      "Cadeira De Rodas",
+      "Extintor Abcverificar A Validade, Nível Da Pressão E Integridade Do Lacre.",
+      "Capacetes",
+      "Lanternas"
+    ]
+  },
+  {
+    "dia": 3,
+    "tipo": "RESGATE",
+    "itens": [
+      "Régua De Oxigênio Com Acessórios",
+      "Cilindros Fixos De Oxigênio",
+      "Aspirador Elétrico",
+      "Caixa Para Descarte De Perfurocortantes",
+      "Rádio Portátil (ht)"
+    ]
+  },
+  {
+    "dia": 4,
+    "tipo": "RESGATE",
+    "itens": [
+      "Mochila Oxigenoterapia",
+      "Cilindro De O2 Portátil",
+      "Máscara De O2",
+      "Reanimador Manual",
+      "Cânulas Orofaríngeasinspeção Visual;limpeza E Desinfecção;acondicionamento."
+    ]
+  },
+  {
+    "dia": 5,
+    "tipo": "RESGATE",
+    "itens": [
+      "Colares Cervicais",
+      "Talas Moldáveis",
+      "Tala De Antebraço",
+      "Tala De Fêmur",
+      "Tala De Perna"
+    ]
+  },
+  {
+    "dia": 6,
+    "tipo": "RESGATE",
+    "itens": [
+      "Desfibrilador Externo Automático (dea)",
+      "Kit Triagem Start",
+      "Luzes De Tráfego",
+      "Rádio Móvel"
+    ]
+  },
+  {
+    "dia": 7,
+    "tipo": "RESGATE",
+    "itens": ["Maca E Colchão", "Imobilizador De Cabeça", "Prancha Longa", "Tirantes Para Prancha"]
+  },
+  {
+    "dia": 8,
+    "tipo": "RESGATE",
+    "itens": ["Microrretífica", "Kit Parto", "Rádio Portátil (ht)", "Rádio Móvel"]
+  },
+  {
+    "dia": 9,
+    "tipo": "RESGATE",
+    "itens": [
+      "Mochila De Primeiros Socorros",
+      "Tesoura Ponta Romba",
+      "Materiais De Consumo",
+      "Luva Cirúrgica Estéril"
+    ]
+  },
+  {
+    "dia": 10,
+    "tipo": "RESGATE",
+    "itens": [
+      "Oxímetro",
+      "Termômetro Digital",
+      "Lanterna Clínica",
+      "Estetoscópio",
+      "Esfigmomanômetro"
+    ]
+  },
+  {
+    "dia": 11,
+    "tipo": "RESGATE",
+    "itens": [
+      "Limpeza Terminal Da Vtr",
+      "Sirene E Luzes Emergências",
+      "Luzes De Tráfego",
+      "Calibragem Pneus",
+      "Rádio Móvel"
+    ]
+  },
+  {
+    "dia": 12,
+    "tipo": "RESGATE",
+    "itens": [
+      "Cadeira De Rodas",
+      "Extintor Abcverificar A Validade, Nível Da Pressão E Integridade Do Lacre.",
+      "Capacetes",
+      "Lanternas"
+    ]
+  },
+  {
+    "dia": 13,
+    "tipo": "RESGATE",
+    "itens": [
+      "Régua De Oxigênio Com Acessórios",
+      "Cilindros Fixos De Oxigênio",
+      "Aspirador Elétrico",
+      "Caixa Para Descarte De Perfurocortantes",
+      "Rádio Portátil (ht)"
+    ]
+  },
+  {
+    "dia": 14,
+    "tipo": "RESGATE",
+    "itens": [
+      "Mochila Oxigenoterapia",
+      "Cilindro De O2 Portátil",
+      "Máscara De O2",
+      "Reanimador Manual",
+      "Cânulas Orofaríngeasinspeção Visual;limpeza E Desinfecção;acondicionamento."
+    ]
+  },
+  {
+    "dia": 15,
+    "tipo": "RESGATE",
+    "itens": [
+      "Colares Cervicais",
+      "Talas Moldáveis",
+      "Tala De Antebraço",
+      "Tala De Fêmur",
+      "Tala De Perna"
+    ]
+  },
+  {
+    "dia": 16,
+    "tipo": "RESGATE",
+    "itens": [
+      "Desfibrilador Externo Automático (dea)",
+      "Kit Triagem Start",
+      "Luzes De Tráfego",
+      "Rádio Móvel"
+    ]
+  },
+  {
+    "dia": 17,
+    "tipo": "RESGATE",
+    "itens": ["Maca E Colchão", "Imobilizador De Cabeça", "Prancha Longa", "Tirantes Para Prancha"]
+  },
+  {
+    "dia": 18,
+    "tipo": "RESGATE",
+    "itens": ["Microrretífica", "Kit Parto", "Rádio Portátil (ht)", "Rádio Móvel"]
+  },
+  {
+    "dia": 19,
+    "tipo": "RESGATE",
+    "itens": [
+      "Mochila De Primeiros Socorros",
+      "Tesoura Ponta Romba",
+      "Materiais De Consumo",
+      "Luva Cirúrgica Estéril"
+    ]
+  },
+  {
+    "dia": 20,
+    "tipo": "RESGATE",
+    "itens": [
+      "Oxímetro",
+      "Termômetro Digital",
+      "Lanterna Clínica",
+      "Estetoscópio",
+      "Esfigmomanômetro"
+    ]
+  },
+  {
+    "dia": 21,
+    "tipo": "RESGATE",
+    "itens": [
+      "Limpeza Terminal Da Vtr",
+      "Sirene E Luzes Emergências",
+      "Luzes De Tráfego",
+      "Calibragem Pneus",
+      "Rádio Móvel"
+    ]
+  },
+  {
+    "dia": 22,
+    "tipo": "RESGATE",
+    "itens": [
+      "Cadeira De Rodas",
+      "Extintor Abcverificar A Validade, Nível Da Pressão E Integridade Do Lacre.",
+      "Capacetes",
+      "Lanternas"
+    ]
+  },
+  {
+    "dia": 23,
+    "tipo": "RESGATE",
+    "itens": [
+      "Régua De Oxigênio Com Acessórios",
+      "Cilindros Fixos De Oxigênio",
+      "Aspirador Elétrico",
+      "Caixa Para Descarte De Perfurocortantes",
+      "Rádio Portátil (ht)"
+    ]
+  },
+  {
+    "dia": 24,
+    "tipo": "RESGATE",
+    "itens": [
+      "Mochila Oxigenoterapia",
+      "Cilindro De O2 Portátil",
+      "Máscara De O2",
+      "Reanimador Manual",
+      "Cânulas Orofaríngeasinspeção Visual;limpeza E Desinfecção;acondicionamento."
+    ]
+  },
+  {
+    "dia": 25,
+    "tipo": "RESGATE",
+    "itens": [
+      "Colares Cervicais",
+      "Talas Moldáveis",
+      "Tala De Antebraço",
+      "Tala De Fêmur",
+      "Tala De Perna"
+    ]
+  },
+  {
+    "dia": 26,
+    "tipo": "RESGATE",
+    "itens": [
+      "Desfibrilador Externo Automático (dea)",
+      "Kit Triagem Start",
+      "Luzes De Tráfego",
+      "Rádio Móvel"
+    ]
+  },
+  {
+    "dia": 27,
+    "tipo": "RESGATE",
+    "itens": ["Maca E Colchão", "Imobilizador De Cabeça", "Prancha Longa", "Tirantes Para Prancha"]
+  },
+  {
+    "dia": 28,
+    "tipo": "RESGATE",
+    "itens": ["Microrretífica", "Kit Parto", "Rádio Portátil (ht)", "Rádio Móvel"]
+  },
+  {
+    "dia": 29,
+    "tipo": "RESGATE",
+    "itens": [
+      "Mochila De Primeiros Socorros",
+      "Tesoura Ponta Romba",
+      "Materiais De Consumo",
+      "Luva Cirúrgica Estéril"
+    ]
+  },
+  {
+    "dia": 30,
+    "tipo": "RESGATE",
+    "itens": [
+      "Oxímetro",
+      "Termômetro Digital",
+      "Lanterna Clínica",
+      "Estetoscópio",
+      "Esfigmomanômetro"
+    ]
+  },
+  {
+    "dia": 31,
+    "tipo": "RESGATE",
+    "itens": [
+      "Inspeção Conforme Portaria Nº 161-r, De 19.08.2009",
+      "Sirene E Luzes Emergências",
+      "Luzes De Tráfego",
+      "Rádio Móvel"
+    ]
+  }
+]

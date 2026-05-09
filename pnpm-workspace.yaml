@@ -2,6 +2,9 @@ packages:
   - 'apps/*'
   - 'packages/*'
 
+allowBuilds:
+  puppeteer: set this to true or false
+
 # pnpm 11 exige aprovação explícita de scripts pós-install.
 # Lista de dependências cujos build scripts são confiáveis.
 onlyBuiltDependencies:
@@ -10,3 +13,5 @@ onlyBuiltDependencies:
   - '@prisma/client'
   - '@prisma/engines'
   - prisma
+  - puppeteer
+  - puppeteer

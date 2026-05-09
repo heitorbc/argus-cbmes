@@ -9,16 +9,48 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Query,
 } from '@nestjs/common';
-import { TIPO_IDEO, upsertIdeoEntryInputSchema, type TipoIdeo } from '@argus/shared-types';
+import {
+  TIPO_IDEO,
+  markIdeoChecklistInputSchema,
+  upsertIdeoEntryInputSchema,
+  type TipoIdeo,
+} from '@argus/shared-types';
+import { z } from 'zod';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import type { UserSession } from '@argus/shared-types';
+import { IdeoChecklistService } from './ideo-checklist.service';
 import { IdeoService } from './ideo.service';
 
 @Controller('ideo')
 export class IdeoController {
-  constructor(private readonly ideo: IdeoService) {}
+  constructor(
+    private readonly ideo: IdeoService,
+    private readonly checklist: IdeoChecklistService,
+  ) {}
+
+  // Checklist (S5/F6c) — vem antes para não casar com a rota :dia/:tipo
+  @Get('checklist')
+  listChecklist(@Query() query: unknown) {
+    const schema = z.object({ data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) });
+    const parsed = schema.safeParse(query);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.errors.map((e) => e.message));
+    }
+    return this.checklist.list(parsed.data.data);
+  }
+
+  @Post('checklist')
+  @HttpCode(HttpStatus.OK)
+  markChecklist(@Body() body: unknown, @CurrentUser() user: UserSession) {
+    const parsed = markIdeoChecklistInputSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.errors.map((e) => e.message));
+    }
+    return this.checklist.mark(parsed.data, user.nf);
+  }
 
   @Get()
   list() {

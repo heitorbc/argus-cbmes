@@ -17,7 +17,8 @@
     "test": "pnpm build:types && pnpm -r test",
     "typecheck": "pnpm build:types && pnpm -r typecheck",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yaml,yml}\"",
-    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yaml,yml}\""
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yaml,yml}\"",
+    "scrape:ideo": "node scripts/scrape-ideo-cbmes.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -34,7 +35,8 @@
       "@nestjs/core",
       "@prisma/client",
       "@prisma/engines",
-      "prisma"
+      "prisma",
+      "puppeteer"
     ]
   }
 }

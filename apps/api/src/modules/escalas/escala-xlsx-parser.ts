@@ -2,8 +2,8 @@ import ExcelJS from 'exceljs';
 import {
   type ComposicaoEntry,
   type EscalaMensal,
-  type LetraEquipe,
-  LETRA_EQUIPE,
+  type LetraEquipeRotativa,
+  LETRA_EQUIPE_ROTATIVA,
   type MilitarRef,
 } from '@argus/shared-types';
 
@@ -200,15 +200,18 @@ function cellAsDayOfMonth(cell: ExcelJS.Cell): number | null {
  * e devolve o mapa equipe→colunaInicial. Cada equipe ocupa 4 colunas redundantes a partir
  * dessa coluna.
  */
-function findEquipeColumns(ws: ExcelJS.Worksheet, rowIdx: number): Map<LetraEquipe, number> {
-  const result = new Map<LetraEquipe, number>();
+function findEquipeColumns(
+  ws: ExcelJS.Worksheet,
+  rowIdx: number,
+): Map<LetraEquipeRotativa, number> {
+  const result = new Map<LetraEquipeRotativa, number>();
   const row = ws.getRow(rowIdx);
   const last = Math.min(ws.columnCount, 30);
   for (let c = 1; c <= last; c++) {
     const txt = cellText(row.getCell(c)).toUpperCase();
     const m = txt.match(/EQUIPE\s+([ABCD])\b/);
-    if (m && !result.has(m[1] as LetraEquipe)) {
-      result.set(m[1] as LetraEquipe, c);
+    if (m && !result.has(m[1] as LetraEquipeRotativa)) {
+      result.set(m[1] as LetraEquipeRotativa, c);
     }
   }
   return result;
@@ -225,9 +228,9 @@ function extractDiaEquipe(
   endCol: number,
   ano: number,
   mes: number,
-): { diaEquipe: Record<string, LetraEquipe>; avisos: string[] } {
+): { diaEquipe: Record<string, LetraEquipeRotativa>; avisos: string[] } {
   const avisos: string[] = [];
-  const diaEquipe: Record<string, LetraEquipe> = {};
+  const diaEquipe: Record<string, LetraEquipeRotativa> = {};
 
   // Tenta extrair dias das linhas 9 ou 10 (fallback).
   const dias: (number | null)[] = [];
@@ -242,14 +245,14 @@ function extractDiaEquipe(
   }
 
   // Equipes nas linhas 12 ou 13.
-  const equipes: (LetraEquipe | null)[] = [];
+  const equipes: (LetraEquipeRotativa | null)[] = [];
   const rowEquipes = [12, 13];
   for (let c = startCol; c <= endCol; c++) {
-    let eq: LetraEquipe | null = null;
+    let eq: LetraEquipeRotativa | null = null;
     for (const r of rowEquipes) {
       const txt = cellText(ws.getRow(r).getCell(c)).toUpperCase().trim();
-      if (LETRA_EQUIPE.includes(txt as LetraEquipe)) {
-        eq = txt as LetraEquipe;
+      if (LETRA_EQUIPE_ROTATIVA.includes(txt as LetraEquipeRotativa)) {
+        eq = txt as LetraEquipeRotativa;
         break;
       }
     }
@@ -302,12 +305,20 @@ export function parseMilitarCell(raw: string): MilitarRef | null {
  */
 function extractComposicao(
   ws: ExcelJS.Worksheet,
-  equipeCols: Map<LetraEquipe, number>,
+  equipeCols: Map<LetraEquipeRotativa, number>,
   rowStart: number,
   rowEnd: number,
 ): { entries: ComposicaoEntry[]; avisos: string[] } {
   const avisos: string[] = [];
   const entries: ComposicaoEntry[] = [];
+
+  // Conta quantas vezes (equipe|viatura|funcao base) já apareceu — para renumerar
+  // funções repetidas como "Sent. 1", "Sent. 2", "Sent. 3" ao invés de colapsar.
+  // Reset quando viatura muda (carry-forward).
+  const counters = new Map<string, number>();
+  // Quando promovemos a primeira ocorrência para "funcao 1", precisamos lembrar o
+  // entry original para reescrever sua funcao.
+  const firstEntryByKey = new Map<string, ComposicaoEntry>();
 
   let viaturaCorrente = '';
   for (let r = rowStart; r <= rowEnd; r++) {
@@ -315,7 +326,10 @@ function extractComposicao(
     const col1 = cellText(row.getCell(1));
     const col2 = cellText(row.getCell(2));
 
-    if (col1) viaturaCorrente = col1;
+    if (col1) {
+      if (col1 !== viaturaCorrente) counters.clear();
+      viaturaCorrente = col1;
+    }
     const viatura = viaturaCorrente;
     const funcao = col2;
 
@@ -340,7 +354,23 @@ function extractComposicao(
         );
         continue;
       }
-      entries.push({ equipe, viatura, funcao, militar });
+      const baseKey = `${equipe}|${viatura}|${funcao}`;
+      const seen = counters.get(baseKey) ?? 0;
+      let funcaoFinal = funcao;
+      if (seen === 0) {
+        // primeira ocorrência: ainda usa o nome original; pode ser promovida depois.
+      } else if (seen === 1) {
+        // segunda ocorrência: renomeia o primeiro para "funcao 1" e este vira "funcao 2".
+        const first = firstEntryByKey.get(baseKey);
+        if (first) first.funcao = `${funcao} 1`;
+        funcaoFinal = `${funcao} 2`;
+      } else {
+        funcaoFinal = `${funcao} ${seen + 1}`;
+      }
+      counters.set(baseKey, seen + 1);
+      const entry: ComposicaoEntry = { equipe, viatura, funcao: funcaoFinal, militar };
+      if (seen === 0) firstEntryByKey.set(baseKey, entry);
+      entries.push(entry);
     }
   }
 
@@ -356,7 +386,7 @@ function parseAba(
   ano: number,
   mes: number,
 ): {
-  diaEquipe: Record<string, LetraEquipe>;
+  diaEquipe: Record<string, LetraEquipeRotativa>;
   composicao: ComposicaoEntry[];
   avisos: string[];
 } {

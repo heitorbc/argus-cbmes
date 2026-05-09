@@ -55,6 +55,56 @@ export const previaIdeoEntrySchema = z.object({
 });
 export type PreviaIdeoEntry = z.infer<typeof previaIdeoEntrySchema>;
 
+/** Substituição pontual de militar (S5/F7a). */
+export const previaTrocaSchema = z.object({
+  substituidoNf: z.string().optional(),
+  substituidoRaw: z.string(),
+  substitutoNf: z.string().optional(),
+  substitutoRaw: z.string(),
+  /** Texto livre — ex.: "24h", "Matutino", "13:10 às 19:10". */
+  periodo: z.string(),
+  motivo: z.string().optional(),
+});
+export type PreviaTroca = z.infer<typeof previaTrocaSchema>;
+
+/** Escala especial Matutino/Vespertino (S5/F7a). */
+export const previaEscalaEspecialSchema = z.object({
+  matutina: z.object({ militarRaw: z.string(), militarNf: z.string().optional() }).optional(),
+  vespertina: z.object({ militarRaw: z.string(), militarNf: z.string().optional() }).optional(),
+});
+export type PreviaEscalaEspecial = z.infer<typeof previaEscalaEspecialSchema>;
+
+/** Item de Nota de Serviço aplicada ao dia (ex.: NS072) (S5/F7a). */
+export const previaNotaServicoSchema = z.object({
+  codigo: z.string(),
+  descricao: z.string().optional(),
+});
+export type PreviaNotaServico = z.infer<typeof previaNotaServicoSchema>;
+
+/** Dispensa do dia (S5/F7a). */
+export const previaDispensaSchema = z.object({
+  militarRaw: z.string(),
+  militarNf: z.string().optional(),
+  motivo: z.string().optional(),
+});
+export type PreviaDispensa = z.infer<typeof previaDispensaSchema>;
+
+/**
+ * "Ajustes pré-turno" da Prévia — campos adicionais editáveis pelo Fiscal antes do
+ * início do serviço. Persistidos em `AjustesPreviaService` (mock in-memory; S5b → Prisma).
+ */
+export const ajustesPreviaSchema = z.object({
+  trocas: z.array(previaTrocaSchema),
+  escalaEspecial: previaEscalaEspecialSchema,
+  notasServico: z.array(previaNotaServicoSchema),
+  dispensas: z.array(previaDispensaSchema),
+});
+export type AjustesPrevia = z.infer<typeof ajustesPreviaSchema>;
+
+/** Body do PUT /previa/:data/ajustes — overwrite completo dos 4 campos. */
+export const upsertAjustesPreviaSchema = ajustesPreviaSchema;
+export type UpsertAjustesPreviaInput = z.infer<typeof upsertAjustesPreviaSchema>;
+
 export const previaDoDiaSchema = z.object({
   /** Data ISO `YYYY-MM-DD`. */
   data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -81,10 +131,17 @@ export const previaDoDiaSchema = z.object({
       id: z.string(),
       codigo: z.string(),
       descricao: z.string(),
+      vtrStatus: z.string().nullable().optional(),
     }),
   ),
 
   inconsistencias: z.array(previaInconsistenciaSchema),
+
+  /** F7a — Ajustes pré-turno: trocas, escala especial, NS, dispensas. */
+  trocas: z.array(previaTrocaSchema),
+  escalaEspecial: previaEscalaEspecialSchema,
+  notasServico: z.array(previaNotaServicoSchema),
+  dispensas: z.array(previaDispensaSchema),
 
   /** Nome do XLSX-fonte da escala, se houver. */
   origemEscala: z.string().nullable(),

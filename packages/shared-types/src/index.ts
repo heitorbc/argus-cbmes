@@ -2,6 +2,7 @@ export * from './auth.js';
 export * from './escala.js';
 export * from './fiscal.js';
 export * from './ideo.js';
+export * from './mapa-forca.js';
 export * from './militar.js';
 export * from './previa.js';
 export * from './viatura.js';

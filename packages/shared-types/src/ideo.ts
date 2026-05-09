@@ -39,3 +39,29 @@ export const ideoMatrixSchema = z.object({
   entries: z.array(ideoEntrySchema),
 });
 export type IdeoMatrix = z.infer<typeof ideoMatrixSchema>;
+
+/**
+ * Marcação de realização de um item IDEO num dia/tipo específico (S5/F6c).
+ *
+ * Usada na Conferência da Equipe (S6) e impressa na Parte Diária (S10/S11).
+ * Em S5 só temos o backend; a UI fica para S6.
+ */
+export const ideoChecklistEntrySchema = z.object({
+  /** Data ISO `YYYY-MM-DD` (não apenas `dia`, pois mesma data pode ter múltiplas equipes ao longo de meses). */
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  tipo: z.enum(TIPO_IDEO),
+  /** Texto do item (mesmo da lista do IdeoEntry para o dia equivalente). */
+  item: z.string().min(1),
+  realizado: z.boolean(),
+  marcadoPorNf: z.string().optional(),
+  marcadoEm: z.string().optional(),
+});
+export type IdeoChecklistEntry = z.infer<typeof ideoChecklistEntrySchema>;
+
+export const markIdeoChecklistInputSchema = z.object({
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  tipo: z.enum(TIPO_IDEO),
+  item: z.string().min(1),
+  realizado: z.boolean(),
+});
+export type MarkIdeoChecklistInput = z.infer<typeof markIdeoChecklistInputSchema>;

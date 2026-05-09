@@ -1,0 +1,148 @@
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import type { MapaForcaSnapshot, RecursoMapaForca } from '@argus/shared-types';
+import { parseMapaForcaCsv } from './mapa-forca-csv-parser';
+
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const FETCH_TIMEOUT_MS = 15_000;
+
+interface CacheEntry {
+  recursos: RecursoMapaForca[];
+  fiscalDoDia?: string;
+  syncedAt: number;
+}
+
+/**
+ * Lê os recursos da 1ª Cia direto da aba `1º BBM` do Mapa Força via CSV público.
+ *
+ * Mesma estratégia de `EfetivoService`/`QdiService`:
+ * - Cache TTL 5min
+ * - Inflight lock (deduplica fetch concorrente)
+ * - Fallback stale (se nova sync falhar, devolve último snapshot com `stale=true`)
+ * - Timeout 15s na chamada HTTP
+ *
+ * Decisão (S5/F1, ADR-006): leitura direta sem auth — Mapa Força é compartilhado entre OBMs
+ * via "qualquer um com o link pode editar", e o export CSV não exige login. Idem ao padrão
+ * já adotado para Efetivo/QDI.
+ *
+ * Para escrita do Mapa Força (S9): outra estratégia (Puppeteer + conta institucional).
+ */
+@Injectable()
+export class MapaForcaService {
+  private readonly logger = new Logger(MapaForcaService.name);
+  private cache: CacheEntry | null = null;
+  private inflight: Promise<CacheEntry> | null = null;
+
+  constructor(private readonly config: ConfigService) {}
+
+  /** Devolve o snapshot mais recente. Pode estar stale se a última sync falhou. */
+  async getSnapshot(): Promise<MapaForcaSnapshot> {
+    const { entry, stale } = await this.getEntry();
+    return {
+      recursos: entry.recursos,
+      syncedAt: new Date(entry.syncedAt).toISOString(),
+      stale,
+      fiscalDoDia: entry.fiscalDoDia,
+    };
+  }
+
+  /** Atalho para apenas a lista de recursos (consumido por ViaturasService e PreviaService). */
+  async getRecursos(): Promise<readonly RecursoMapaForca[]> {
+    const { entry } = await this.getEntry();
+    return entry.recursos;
+  }
+
+  /** Procura um recurso pelo nome canônico da col A (ex.: "MERGULHO 02"). */
+  async findByRecurso(recurso: string): Promise<RecursoMapaForca | null> {
+    const recursos = await this.getRecursos();
+    return recursos.find((r) => r.recurso === recurso) ?? null;
+  }
+
+  /** Força resync, ignorando cache. */
+  async forceSync(): Promise<MapaForcaSnapshot> {
+    const previous = this.cache;
+    try {
+      const entry = await this.fetchAndParse();
+      this.cache = entry;
+      return {
+        recursos: entry.recursos,
+        syncedAt: new Date(entry.syncedAt).toISOString(),
+        stale: false,
+        fiscalDoDia: entry.fiscalDoDia,
+      };
+    } catch (err) {
+      this.logger.error(
+        `forceSync falhou: ${(err as Error).message}. ${
+          previous ? 'Servindo último snapshot.' : 'Sem snapshot anterior.'
+        }`,
+      );
+      if (previous) {
+        return {
+          recursos: previous.recursos,
+          syncedAt: new Date(previous.syncedAt).toISOString(),
+          stale: true,
+          fiscalDoDia: previous.fiscalDoDia,
+        };
+      }
+      throw new ServiceUnavailableException(
+        'Não foi possível sincronizar com a planilha do Mapa Força e não há snapshot anterior.',
+      );
+    }
+  }
+
+  private async getEntry(): Promise<{ entry: CacheEntry; stale: boolean }> {
+    const now = Date.now();
+    if (this.cache && now - this.cache.syncedAt < CACHE_TTL_MS) {
+      return { entry: this.cache, stale: false };
+    }
+    if (this.inflight) {
+      const entry = await this.inflight;
+      return { entry, stale: false };
+    }
+    this.inflight = this.fetchAndParse().finally(() => {
+      this.inflight = null;
+    });
+    try {
+      const entry = await this.inflight;
+      this.cache = entry;
+      return { entry, stale: false };
+    } catch (err) {
+      this.logger.error(
+        `Falha ao sincronizar Mapa Força: ${(err as Error).message}. ${
+          this.cache ? 'Servindo último snapshot.' : 'Sem snapshot anterior.'
+        }`,
+      );
+      if (this.cache) return { entry: this.cache, stale: true };
+      throw new ServiceUnavailableException(
+        'Não foi possível sincronizar com o Mapa Força e não há snapshot anterior.',
+      );
+    }
+  }
+
+  private async fetchAndParse(): Promise<CacheEntry> {
+    const sheetId = this.config.getOrThrow<string>('GOOGLE_SHEET_ID_MAPA_FORCA');
+    const gid = this.config.get<string>('GOOGLE_SHEET_GID_MAPA_FORCA') ?? '1468029336';
+    const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+    let csv: string;
+    try {
+      const res = await fetch(url, { signal: controller.signal, redirect: 'follow' });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} ao baixar CSV do Mapa Força`);
+      }
+      csv = await res.text();
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    const { recursos, fiscalDoDia, avisos } = parseMapaForcaCsv(csv);
+    if (recursos.length === 0) {
+      throw new Error('CSV do Mapa Força retornou 0 recursos — formato provavelmente mudou');
+    }
+    for (const a of avisos) this.logger.warn(`Mapa Força: ${a}`);
+    return { recursos, fiscalDoDia, syncedAt: Date.now() };
+  }
+}

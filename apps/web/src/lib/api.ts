@@ -10,11 +10,15 @@ import type {
   IdeoEntry,
   IdeoMatrix,
   LetraEquipe,
+  LetraEquipeRotativa,
   LoginInput,
   LoginResponse,
+  MapaForcaSnapshot,
   Militar,
+  MilitarRef,
   PreviaDoDia,
   PreviewEscalaResponse,
+  RecursoMapaForca,
   TipoIdeo,
   UpdateViaturaInput,
   UpsertIdeoEntryInput,
@@ -204,6 +208,32 @@ export const api = {
       `/escalas/escalados-do-dia?ano=${ano}&mes=${String(mes).padStart(2, '0')}&data=${data}`,
     ),
 
+  // F4 (S5) — Edição da escala importada
+  escalasUpdateDiaEquipe: (
+    ano: number,
+    mes: number,
+    data: string,
+    equipe: LetraEquipeRotativa | null,
+  ) =>
+    request<EscalaMensal>(`/escalas/${ano}/${mes}/dia-equipe`, {
+      method: 'PUT',
+      body: JSON.stringify({ data, equipe }),
+    }),
+
+  escalasUpsertComposicao: (
+    ano: number,
+    mes: number,
+    entry: { equipe: LetraEquipe; viatura: string; funcao: string; militar: MilitarRef | null },
+  ) =>
+    request<EscalaMensal>(`/escalas/${ano}/${mes}/composicao`, {
+      method: 'PUT',
+      body: JSON.stringify(entry),
+    }),
+
   // Prévia do Mapa Força (S4)
   previaDoDia: (data: string) => request<PreviaDoDia>(`/previa?data=${data}`),
+
+  // Mapa Força (S5)
+  mapaForcaSnapshot: () => request<MapaForcaSnapshot>(`/mapa-forca/snapshot`),
+  mapaForcaRecursos: () => request<RecursoMapaForca[]>(`/mapa-forca/recursos`),
 };

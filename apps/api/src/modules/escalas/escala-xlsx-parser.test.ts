@@ -117,6 +117,23 @@ describe('parseEscalaXlsx (fixture: 05 MAIO 2026)', () => {
     expect(op1).toBeDefined();
     expect(op1!.militar.nomeGuerra).toBe('FABRE');
   });
+
+  // F3a (S5) — Bug fix: 3 sentinelas da GUARDA têm a mesma funcao "Sent." no XLSX, e
+  // o mergeComposicao colapsava por chave equipe|viatura|funcao. Solução: renumerar
+  // como "Sent. 1", "Sent. 2", "Sent. 3" durante o parse.
+  it('preserva 3 sentinelas distintos por equipe (Sent. 1/2/3) — F3a', async () => {
+    const buffer = loadFixture('05 MAIO DE 2026.xlsx');
+    const escala = await parseEscalaXlsx({ buffer, filename: '05 MAIO DE 2026.xlsx' });
+
+    for (const equipe of ['A', 'B', 'C', 'D'] as const) {
+      const guarda = escala.composicao.filter((c) => c.equipe === equipe && c.viatura === 'GUARDA');
+      expect(guarda.length, `${equipe} deveria ter 3 sentinelas`).toBe(3);
+      const funcoes = new Set(guarda.map((g) => g.funcao));
+      expect(funcoes.size, `${equipe} deveria ter 3 funções únicas`).toBe(3);
+      // Esperamos "Sent. 1", "Sent. 2", "Sent. 3"
+      expect([...funcoes].sort()).toEqual(['Sent. 1', 'Sent. 2', 'Sent. 3']);
+    }
+  });
 });
 
 describe('parseEscalaXlsx (fixture: 04 ABRIL 2026)', () => {

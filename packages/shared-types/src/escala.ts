@@ -1,13 +1,23 @@
 import { z } from 'zod';
 
-export const LETRA_EQUIPE = ['A', 'B', 'C', 'D'] as const;
+export const LETRA_EQUIPE = ['A', 'B', 'C', 'D', 'AQUATICAS', 'STAFF'] as const;
 export type LetraEquipe = (typeof LETRA_EQUIPE)[number];
+
+/**
+ * Equipes operacionais rotativas (A/B/C/D) — só essas aparecem como `diaEquipe[data]`
+ * no XLSX da SOS. AQUATICAS/STAFF são bucketing de tripulação fixa (mergulho, ChOp)
+ * que vem do Mapa Força e não rotaciona.
+ */
+export const LETRA_EQUIPE_ROTATIVA = ['A', 'B', 'C', 'D'] as const;
+export type LetraEquipeRotativa = (typeof LETRA_EQUIPE_ROTATIVA)[number];
 
 export const LETRA_EQUIPE_LABEL: Record<LetraEquipe, string> = {
   A: 'ALFA',
   B: 'BRAVO',
   C: 'CHARLIE',
   D: 'DELTA',
+  AQUATICAS: 'PEL. AQUÁTICAS',
+  STAFF: 'COMANDO',
 };
 
 /** Referência de militar conforme aparece na célula da escala XLSX. */
@@ -39,8 +49,8 @@ export const escalaMensalSchema = z.object({
   /** ISO timestamp */
   importadoEm: z.string(),
   importadoPorNf: z.string().optional(),
-  /** Mapa "YYYY-MM-DD" → letra da equipe escalada nesse dia. */
-  diaEquipe: z.record(z.string(), z.enum(LETRA_EQUIPE)),
+  /** Mapa "YYYY-MM-DD" → letra da equipe rotativa (A/B/C/D) escalada nesse dia. */
+  diaEquipe: z.record(z.string(), z.enum(LETRA_EQUIPE_ROTATIVA)),
   /** Lista de posições na matriz (equipe × viatura × função). */
   composicao: z.array(composicaoEntrySchema),
   /** Lista de avisos não-fatais detectados durante o parse (NF não resolvido, célula vazia, etc.). */
@@ -56,8 +66,8 @@ export const escalaDiffSchema = z.object({
   diasAlterados: z.array(
     z.object({
       data: z.string(),
-      equipeAntes: z.enum(LETRA_EQUIPE).nullable(),
-      equipeDepois: z.enum(LETRA_EQUIPE).nullable(),
+      equipeAntes: z.enum(LETRA_EQUIPE_ROTATIVA).nullable(),
+      equipeDepois: z.enum(LETRA_EQUIPE_ROTATIVA).nullable(),
     }),
   ),
   composicaoAlterada: z.array(

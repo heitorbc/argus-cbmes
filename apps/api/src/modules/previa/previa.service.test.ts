@@ -3,12 +3,14 @@ import type {
   ComposicaoEntry,
   EscalaMensal,
   Militar,
+  RecursoMapaForca,
   TipoIdeo,
   Viatura,
 } from '@argus/shared-types';
 import { EscalasService } from '../escalas/escalas.service';
 import { FiscaisService } from '../fiscais/fiscais.service';
 import { IdeoService } from '../ideo/ideo.service';
+import { AjustesPreviaService } from './ajustes-previa.service';
 import { PreviaService } from './previa.service';
 
 function militar(p: Partial<Militar> & { nf: string; nome: string }): Militar {
@@ -62,8 +64,15 @@ class FakeEfetivoService {
 
 class FakeViaturasService {
   constructor(private readonly all: Viatura[]) {}
-  list(): Viatura[] {
+  async list(): Promise<Viatura[]> {
     return this.all;
+  }
+}
+
+class FakeMapaForcaService {
+  constructor(private readonly recursos: RecursoMapaForca[] = []) {}
+  async getRecursos(): Promise<readonly RecursoMapaForca[]> {
+    return this.recursos;
   }
 }
 
@@ -146,6 +155,8 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
       fiscais,
       ideo,
       viaturas as unknown as never,
+      new FakeMapaForcaService() as unknown as never,
+      new AjustesPreviaService(),
     );
 
     escalas.save(escalaAbril2026);
@@ -208,7 +219,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
     expect(r.ideo.find((i) => i.tipo === 'ABTS')!.itens).toEqual(['Mochila Costal', 'GPS']);
   });
 
-  it('inclui viaturas operacionais (filtra status != operacional)', async () => {
+  it('inclui todas as viaturas com status (S5: WhatsApp precisa mostrar BAIXADA inline)', async () => {
     viaturas = new FakeViaturasService([
       fakeViatura('ABTS 01'),
       fakeViatura('RESGATE'),
@@ -221,11 +232,46 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
       fiscais,
       ideo,
       viaturas as unknown as never,
+      new FakeMapaForcaService() as unknown as never,
+      new AjustesPreviaService(),
     );
     const r = await previa.getPreviaDoDia('2026-04-23');
-    const codigos = r.viaturasOperacionais.map((v) => v.codigo);
-    expect(codigos).toContain('ABTS 01');
-    expect(codigos).not.toContain('AR 044'); // baixada
+    const ar044 = r.viaturasOperacionais.find((v) => v.codigo === 'AR 044');
+    expect(ar044).toBeDefined();
+    expect(ar044?.vtrStatus).toBe('baixada');
+    const abts01 = r.viaturasOperacionais.find((v) => v.codigo === 'ABTS 01');
+    expect(abts01?.vtrStatus).toBe('operacional');
+  });
+
+  // F3b — Mergulho não está no XLSX da SOS; vem do Mapa Força como equipe AQUATICAS.
+  it('complementa tripulação com MERGULHO 02 do Mapa Força (equipe AQUATICAS, funções M1/M2)', async () => {
+    const recursosMf: RecursoMapaForca[] = [
+      {
+        recurso: 'MERGULHO 02',
+        vtrPrefixo: 'AM_002',
+        vtrStatus: 'DISPONIVEL',
+        semEquipe: false,
+        chefe: '3º SGT HUMBERTO',
+        motorista: 'CB BEATRIZ',
+        operadores: ['CB VINICIUS CORDEIRO'],
+      },
+    ];
+    previa = new PreviaService(
+      escalas,
+      efetivo as unknown as never,
+      fiscais,
+      ideo,
+      viaturas as unknown as never,
+      new FakeMapaForcaService(recursosMf) as unknown as never,
+      new AjustesPreviaService(),
+    );
+    const r = await previa.getPreviaDoDia('2026-04-23');
+    const mergulho = r.tripulacao.filter((t) => t.equipe === 'AQUATICAS');
+    expect(mergulho.length).toBeGreaterThanOrEqual(3);
+    expect(mergulho.find((t) => t.funcao === 'Ch')?.militarRef.nomeGuerra).toContain('HUMBERTO');
+    expect(mergulho.find((t) => t.funcao === 'Mot')?.militarRef.nomeGuerra).toContain('BEATRIZ');
+    // Operadores do mergulho viram M1, M2... (não Op 1, Op 2)
+    expect(mergulho.find((t) => t.funcao === 'M1')?.militarRef.nomeGuerra).toContain('VINICIUS');
   });
 });
 
@@ -249,6 +295,8 @@ describe('PreviaService — inconsistências', () => {
       fiscais,
       ideo,
       viaturas as unknown as never,
+      new FakeMapaForcaService() as unknown as never,
+      new AjustesPreviaService(),
     );
   });
 

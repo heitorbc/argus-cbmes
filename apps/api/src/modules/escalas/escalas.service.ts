@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import type { EscalaDiff, EscalaMensal, LetraEquipe } from '@argus/shared-types';
+import type {
+  EscalaDiff,
+  EscalaMensal,
+  LetraEquipe,
+  LetraEquipeRotativa,
+} from '@argus/shared-types';
 
 interface EscalaKey {
   ano: number;
@@ -84,13 +89,65 @@ export class EscalasService {
     ano: number,
     mes: number,
     diaIso: string,
-  ): { equipe: LetraEquipe | null; entries: EscalaMensal['composicao'] } {
+  ): { equipe: LetraEquipeRotativa | null; entries: EscalaMensal['composicao'] } {
     const escala = this.get(ano, mes);
     if (!escala) return { equipe: null, entries: [] };
     const equipe = escala.diaEquipe[diaIso] ?? null;
     if (!equipe) return { equipe: null, entries: [] };
     const entries = escala.composicao.filter((c) => c.equipe === equipe);
     return { equipe, entries };
+  }
+
+  /**
+   * F4 — Atualiza a equipe escalada para um dia específico (ou remove se equipe=null).
+   * Retorna a escala atualizada. Lança Error se mês/ano não foi importado.
+   */
+  updateDiaEquipe(
+    ano: number,
+    mes: number,
+    data: string,
+    equipe: LetraEquipeRotativa | null,
+  ): EscalaMensal {
+    const escala = this.get(ano, mes);
+    if (!escala) {
+      throw new Error(`Escala ${String(mes).padStart(2, '0')}/${ano} não importada`);
+    }
+    const novoMapa = { ...escala.diaEquipe };
+    if (equipe === null) {
+      delete novoMapa[data];
+    } else {
+      novoMapa[data] = equipe;
+    }
+    const atualizada: EscalaMensal = { ...escala, diaEquipe: novoMapa };
+    this.byMes.set(key(escala), atualizada);
+    return atualizada;
+  }
+
+  /**
+   * F4 — Upsert/delete de uma posição da composição. Quando `militar=null`, remove.
+   * Quando preenchido, sobrescreve por chave (equipe, viatura, funcao).
+   */
+  upsertComposicao(
+    ano: number,
+    mes: number,
+    entry:
+      | EscalaMensal['composicao'][number]
+      | { equipe: LetraEquipe; viatura: string; funcao: string; militar: null },
+  ): EscalaMensal {
+    const escala = this.get(ano, mes);
+    if (!escala) {
+      throw new Error(`Escala ${String(mes).padStart(2, '0')}/${ano} não importada`);
+    }
+    const matchKey = (c: { equipe: string; viatura: string; funcao: string }) =>
+      `${c.equipe}|${c.viatura}|${c.funcao}`;
+    const target = matchKey(entry);
+    const filtered = escala.composicao.filter((c) => matchKey(c) !== target);
+    if (entry.militar !== null) {
+      filtered.push(entry as EscalaMensal['composicao'][number]);
+    }
+    const atualizada: EscalaMensal = { ...escala, composicao: filtered };
+    this.byMes.set(key(escala), atualizada);
+    return atualizada;
   }
 
   /** Reset usado nos testes. */

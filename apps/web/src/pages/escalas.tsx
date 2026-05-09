@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   LETRA_EQUIPE_LABEL,
+  LETRA_EQUIPE_ROTATIVA,
   type EscalaDiff,
   type EscalaMensal,
   type LetraEquipe,
+  type LetraEquipeRotativa,
 } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
@@ -37,6 +39,8 @@ const EQUIPE_COLOR: Record<LetraEquipe, string> = {
   B: 'bg-amber-100 text-amber-900',
   C: 'bg-sky-100 text-sky-900',
   D: 'bg-rose-100 text-rose-900',
+  AQUATICAS: 'bg-violet-100 text-violet-900',
+  STAFF: 'bg-slate-200 text-slate-800',
 };
 
 export function EscalasPage() {
@@ -264,6 +268,8 @@ export function EscalasPage() {
               </div>
             )}
 
+            <CalendarioMensal diaEquipe={preview.diaEquipe} />
+
             <ComposicaoTable composicao={preview.composicao} />
 
             <div className="mt-4 flex gap-2">
@@ -326,7 +332,11 @@ export function EscalasPage() {
                     {loadingDetail ? (
                       <p className="text-xs text-slate-500">Carregando detalhe…</p>
                     ) : selectedDetail ? (
-                      <DetalheEscala escala={selectedDetail} />
+                      <DetalheEscala
+                        escala={selectedDetail}
+                        canEdit={canUpload}
+                        onChange={(updated) => setSelectedDetail(updated)}
+                      />
                     ) : (
                       <p className="text-xs text-slate-500">Sem detalhe disponível.</p>
                     )}
@@ -341,11 +351,124 @@ export function EscalasPage() {
   );
 }
 
-function DetalheEscala({ escala }: { escala: EscalaMensal }) {
-  const dias = Object.entries(escala.diaEquipe).sort(([a], [b]) => a.localeCompare(b));
+function DetalheEscala({
+  escala,
+  canEdit,
+  onChange,
+}: {
+  escala: EscalaMensal;
+  canEdit: boolean;
+  onChange: (updated: EscalaMensal) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [savingDay, setSavingDay] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const updateDay = async (data: string, equipe: LetraEquipeRotativa | null) => {
+    setSavingDay(data);
+    setError(null);
+    try {
+      const r = await api.escalasUpdateDiaEquipe(escala.ano, escala.mes, data, equipe);
+      onChange(r);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Erro ao salvar');
+    } finally {
+      setSavingDay(null);
+    }
+  };
+
+  const upsertComposicao = async (
+    equipe: LetraEquipe,
+    viatura: string,
+    funcao: string,
+    raw: string,
+  ) => {
+    setError(null);
+    try {
+      const militar =
+        raw.trim().length === 0
+          ? null
+          : { raw: raw.trim(), postoAbreviado: '', nomeGuerra: raw.trim().toUpperCase() };
+      const r = await api.escalasUpsertComposicao(escala.ano, escala.mes, {
+        equipe,
+        viatura,
+        funcao,
+        militar,
+      });
+      onChange(r);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Erro ao salvar composição');
+    }
+  };
+
   return (
     <div>
-      <p className="text-xs font-semibold text-slate-700">Calendário (dia → equipe)</p>
+      {canEdit && (
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-[10px] uppercase tracking-wide text-slate-500">
+            {editing ? 'Modo edição ativo' : 'Modo somente leitura'}
+          </span>
+          <button
+            type="button"
+            onClick={() => setEditing((e) => !e)}
+            className={`rounded-button px-3 py-1 text-xs font-semibold ${
+              editing
+                ? 'bg-slate-700 text-white'
+                : 'border border-cbmes-blue text-cbmes-blue hover:bg-cbmes-blue/10'
+            }`}
+          >
+            {editing ? 'Encerrar edição' : '✏️ Editar escala'}
+          </button>
+        </div>
+      )}
+      {error && (
+        <p
+          role="alert"
+          className="mb-2 rounded border border-feedback-error/30 bg-feedback-error/10 p-2 text-xs text-feedback-error"
+        >
+          {error}
+        </p>
+      )}
+      <CalendarioMensal
+        diaEquipe={escala.diaEquipe}
+        editing={editing}
+        savingDay={savingDay}
+        onUpdateDay={updateDay}
+      />
+      <ComposicaoTable
+        composicao={escala.composicao}
+        editing={editing}
+        onUpsert={upsertComposicao}
+      />
+    </div>
+  );
+}
+
+function CalendarioMensal({
+  diaEquipe,
+  editing = false,
+  savingDay = null,
+  onUpdateDay,
+}: {
+  diaEquipe: EscalaMensal['diaEquipe'];
+  editing?: boolean;
+  savingDay?: string | null;
+  onUpdateDay?: (data: string, equipe: LetraEquipeRotativa | null) => void;
+}) {
+  const dias = Object.entries(diaEquipe).sort(([a], [b]) => a.localeCompare(b));
+  if (dias.length === 0 && !editing) {
+    return (
+      <p className="mt-3 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+        Nenhum dia foi mapeado para equipe. Verifique se o XLSX tem as linhas DIAS / EQUIPES
+        preenchidas nas abas <code>01 A 14 [MES]</code> e <code>15 A 29 [MES]</code>.
+      </p>
+    );
+  }
+  return (
+    <div className="mt-3">
+      <p className="text-xs font-semibold text-slate-700">
+        Calendário (dia → equipe) — {dias.length} dias mapeados
+      </p>
       <div className="mt-2 grid grid-cols-7 gap-1 text-xs">
         {dias.map(([data, eq]) => (
           <div
@@ -355,16 +478,51 @@ function DetalheEscala({ escala }: { escala: EscalaMensal }) {
             <div className="text-[10px] text-slate-700">
               {data.slice(8, 10)}/{data.slice(5, 7)}
             </div>
-            <div className="font-bold">{eq}</div>
+            {editing ? (
+              <select
+                value={eq}
+                disabled={savingDay === data}
+                onChange={(ev) =>
+                  onUpdateDay?.(
+                    data,
+                    ev.target.value === '' ? null : (ev.target.value as LetraEquipeRotativa),
+                  )
+                }
+                className="mt-0.5 w-full rounded border border-slate-300 bg-white px-0.5 py-0.5 text-[10px] font-bold"
+              >
+                {LETRA_EQUIPE_ROTATIVA.map((l) => (
+                  <option key={l} value={l}>
+                    {l}
+                  </option>
+                ))}
+                <option value="">∅</option>
+              </select>
+            ) : (
+              <div className="font-bold">{eq}</div>
+            )}
           </div>
         ))}
       </div>
-      <ComposicaoTable composicao={escala.composicao} />
+      <div className="mt-2 flex flex-wrap gap-2 text-[10px]">
+        {(['A', 'B', 'C', 'D'] as LetraEquipe[]).map((e) => (
+          <span key={e} className={`rounded px-2 py-0.5 ${EQUIPE_COLOR[e]}`}>
+            {e} = {LETRA_EQUIPE_LABEL[e]}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
 
-function ComposicaoTable({ composicao }: { composicao: EscalaMensal['composicao'] }) {
+function ComposicaoTable({
+  composicao,
+  editing = false,
+  onUpsert,
+}: {
+  composicao: EscalaMensal['composicao'];
+  editing?: boolean;
+  onUpsert?: (equipe: LetraEquipe, viatura: string, funcao: string, raw: string) => void;
+}) {
   // Agrupa por equipe
   const byEquipe = new Map<LetraEquipe, EscalaMensal['composicao']>();
   for (const c of composicao) {
@@ -383,11 +541,25 @@ function ComposicaoTable({ composicao }: { composicao: EscalaMensal['composicao'
             </p>
             <ul className="mt-1 space-y-0.5 text-xs">
               {byEquipe.get(eq)!.map((c, i) => (
-                <li key={i} className="flex justify-between gap-2">
+                <li key={i} className="flex items-baseline justify-between gap-2">
                   <span className="text-slate-700">
                     {c.viatura} / {c.funcao}
                   </span>
-                  <span className="font-medium">{c.militar.raw}</span>
+                  {editing ? (
+                    <input
+                      type="text"
+                      defaultValue={c.militar.raw}
+                      onBlur={(ev) => {
+                        if (ev.target.value !== c.militar.raw) {
+                          onUpsert?.(eq, c.viatura, c.funcao, ev.target.value);
+                        }
+                      }}
+                      className="w-44 rounded border border-slate-300 bg-white px-1 py-0.5 text-xs"
+                      placeholder="Vazio = remover"
+                    />
+                  ) : (
+                    <span className="font-medium">{c.militar.raw}</span>
+                  )}
                 </li>
               ))}
             </ul>

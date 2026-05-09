@@ -1,13 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { LetraEquipe, PreviaDoDia, TipoInconsistencia } from '@argus/shared-types';
+import type {
+  AjustesPrevia,
+  LetraEquipe,
+  PreviaDoDia,
+  TipoInconsistencia,
+} from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
+import { formatPreviaParaWhatsapp } from '@/lib/whatsapp';
 
 const EQUIPE_COLOR: Record<LetraEquipe, string> = {
   A: 'bg-emerald-100 text-emerald-900 border-emerald-300',
   B: 'bg-amber-100 text-amber-900 border-amber-300',
   C: 'bg-sky-100 text-sky-900 border-sky-300',
   D: 'bg-rose-100 text-rose-900 border-rose-300',
+  AQUATICAS: 'bg-violet-100 text-violet-900 border-violet-300',
+  STAFF: 'bg-slate-200 text-slate-800 border-slate-400',
 };
 
 const INCONSISTENCIA_LABEL: Record<TipoInconsistencia, string> = {
@@ -30,6 +38,18 @@ export function PreviaPage() {
   const [previa, setPrevia] = useState<PreviaDoDia | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyWhatsapp = async () => {
+    if (!previa) return;
+    try {
+      await navigator.clipboard.writeText(formatPreviaParaWhatsapp(previa));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Falha ao copiar');
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -93,6 +113,15 @@ export function PreviaPage() {
             className="rounded-button border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
           >
             Hoje
+          </button>
+          <button
+            type="button"
+            disabled={!previa}
+            onClick={handleCopyWhatsapp}
+            className="rounded-button bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+            title="Copia o texto formatado da Prévia para colar no WhatsApp"
+          >
+            {copied ? '✓ Copiado!' : '📋 WhatsApp'}
           </button>
         </div>
 
@@ -254,20 +283,46 @@ export function PreviaPage() {
 
             {previa.viaturasOperacionais.length > 0 && (
               <section className="mt-4">
-                <h3 className="mb-2 text-sm font-semibold text-slate-700">Viaturas operacionais</h3>
+                <h3 className="mb-2 text-sm font-semibold text-slate-700">
+                  Viaturas (status do Mapa Força)
+                </h3>
                 <ul className="grid grid-cols-2 gap-2 text-xs md:grid-cols-3">
-                  {previa.viaturasOperacionais.map((v) => (
-                    <li
-                      key={v.id}
-                      className="rounded border border-slate-200 bg-white p-2 text-center"
-                    >
-                      <p className="font-bold text-cbmes-blue">{v.codigo}</p>
-                      <p className="text-[10px] text-slate-500">{v.descricao}</p>
-                    </li>
-                  ))}
+                  {previa.viaturasOperacionais.map((v) => {
+                    const statusClass =
+                      v.vtrStatus === 'operacional'
+                        ? 'border-emerald-300 bg-emerald-50'
+                        : v.vtrStatus === 'baixada'
+                          ? 'border-rose-300 bg-rose-50'
+                          : v.vtrStatus === 'reserva'
+                            ? 'border-amber-300 bg-amber-50'
+                            : 'border-slate-200 bg-white';
+                    return (
+                      <li key={v.id} className={`rounded border p-2 text-center ${statusClass}`}>
+                        <p className="font-bold text-cbmes-blue">{v.codigo}</p>
+                        <p className="text-[10px] text-slate-500">{v.descricao}</p>
+                        {v.vtrStatus && v.vtrStatus !== 'operacional' && (
+                          <p className="mt-0.5 text-[10px] font-bold uppercase text-rose-700">
+                            {v.vtrStatus}
+                          </p>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </section>
             )}
+
+            <AjustesPreTurno
+              data={data}
+              initial={extractAjustes(previa)}
+              onSaved={() => {
+                // recarrega a Prévia após salvar ajustes
+                api
+                  .previaDoDia(data)
+                  .then(setPrevia)
+                  .catch(() => undefined);
+              }}
+            />
 
             <p className="mt-4 text-center text-[10px] text-slate-400">
               Gerado em {new Date(previa.geradoEm).toLocaleString('pt-BR')}
@@ -276,6 +331,278 @@ export function PreviaPage() {
         )}
       </section>
     </main>
+  );
+}
+
+function extractAjustes(previa: PreviaDoDia): AjustesPrevia {
+  return {
+    trocas: previa.trocas,
+    escalaEspecial: previa.escalaEspecial,
+    notasServico: previa.notasServico,
+    dispensas: previa.dispensas,
+  };
+}
+
+function AjustesPreTurno({
+  data,
+  initial,
+  onSaved,
+}: {
+  data: string;
+  initial: AjustesPrevia;
+  onSaved: () => void;
+}) {
+  const [state, setState] = useState<AjustesPrevia>(initial);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // sincroniza quando a data muda (depende de `initial` mas evitamos loop usando data como key)
+  useEffect(() => {
+    setState(initial);
+  }, [data, initial]);
+
+  const save = async () => {
+    setSaving(true);
+    setErr(null);
+    try {
+      await fetch(
+        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/previa/${data}/ajustes`,
+        {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(state),
+        },
+      ).then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      });
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Erro ao salvar ajustes');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <details className="mt-4 rounded border border-cbmes-blue/30 bg-white p-3">
+      <summary className="cursor-pointer text-sm font-semibold text-cbmes-blue">
+        ✏️ Ajustes pré-turno (trocas, escala especial, NS, dispensas)
+      </summary>
+      <div className="mt-3 space-y-4 text-xs">
+        {err && (
+          <p
+            role="alert"
+            className="rounded border border-feedback-error/30 bg-feedback-error/10 p-2 text-feedback-error"
+          >
+            {err}
+          </p>
+        )}
+
+        <fieldset className="rounded border border-slate-200 p-2">
+          <legend className="px-1 font-medium text-slate-700">Trocas</legend>
+          {state.trocas.map((t, i) => (
+            <div key={i} className="mt-2 grid grid-cols-1 gap-1 md:grid-cols-4">
+              <input
+                placeholder="Substituído"
+                value={t.substituidoRaw}
+                onChange={(e) => {
+                  const trocas = [...state.trocas];
+                  trocas[i] = { ...trocas[i]!, substituidoRaw: e.target.value };
+                  setState({ ...state, trocas });
+                }}
+                className="rounded border border-slate-300 px-2 py-1"
+              />
+              <input
+                placeholder="Substituto"
+                value={t.substitutoRaw}
+                onChange={(e) => {
+                  const trocas = [...state.trocas];
+                  trocas[i] = { ...trocas[i]!, substitutoRaw: e.target.value };
+                  setState({ ...state, trocas });
+                }}
+                className="rounded border border-slate-300 px-2 py-1"
+              />
+              <input
+                placeholder="Período (ex: 24h)"
+                value={t.periodo}
+                onChange={(e) => {
+                  const trocas = [...state.trocas];
+                  trocas[i] = { ...trocas[i]!, periodo: e.target.value };
+                  setState({ ...state, trocas });
+                }}
+                className="rounded border border-slate-300 px-2 py-1"
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  setState({ ...state, trocas: state.trocas.filter((_, j) => j !== i) })
+                }
+                className="rounded border border-feedback-error px-2 py-1 text-feedback-error"
+              >
+                Remover
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() =>
+              setState({
+                ...state,
+                trocas: [
+                  ...state.trocas,
+                  { substituidoRaw: '', substitutoRaw: '', periodo: '24h' },
+                ],
+              })
+            }
+            className="mt-2 rounded border border-cbmes-blue px-3 py-1 text-cbmes-blue"
+          >
+            + Adicionar troca
+          </button>
+        </fieldset>
+
+        <fieldset className="rounded border border-slate-200 p-2">
+          <legend className="px-1 font-medium text-slate-700">Escala Especial</legend>
+          <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+            <label className="block">
+              <span className="text-slate-600">Matutina</span>
+              <input
+                value={state.escalaEspecial.matutina?.militarRaw ?? ''}
+                onChange={(e) =>
+                  setState({
+                    ...state,
+                    escalaEspecial: {
+                      ...state.escalaEspecial,
+                      matutina: e.target.value ? { militarRaw: e.target.value } : undefined,
+                    },
+                  })
+                }
+                placeholder="Ex.: SGT BRUNO MELO"
+                className="mt-1 w-full rounded border border-slate-300 px-2 py-1"
+              />
+            </label>
+            <label className="block">
+              <span className="text-slate-600">Vespertina</span>
+              <input
+                value={state.escalaEspecial.vespertina?.militarRaw ?? ''}
+                onChange={(e) =>
+                  setState({
+                    ...state,
+                    escalaEspecial: {
+                      ...state.escalaEspecial,
+                      vespertina: e.target.value ? { militarRaw: e.target.value } : undefined,
+                    },
+                  })
+                }
+                placeholder="Ex.: CB ELSON"
+                className="mt-1 w-full rounded border border-slate-300 px-2 py-1"
+              />
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset className="rounded border border-slate-200 p-2">
+          <legend className="px-1 font-medium text-slate-700">Notas de Serviço</legend>
+          {state.notasServico.map((n, i) => (
+            <div key={i} className="mt-2 grid grid-cols-1 gap-1 md:grid-cols-3">
+              <input
+                placeholder="Código (NS072)"
+                value={n.codigo}
+                onChange={(e) => {
+                  const ns = [...state.notasServico];
+                  ns[i] = { ...ns[i]!, codigo: e.target.value };
+                  setState({ ...state, notasServico: ns });
+                }}
+                className="rounded border border-slate-300 px-2 py-1"
+              />
+              <input
+                placeholder="Descrição (opcional)"
+                value={n.descricao ?? ''}
+                onChange={(e) => {
+                  const ns = [...state.notasServico];
+                  ns[i] = { ...ns[i]!, descricao: e.target.value };
+                  setState({ ...state, notasServico: ns });
+                }}
+                className="rounded border border-slate-300 px-2 py-1"
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  setState({ ...state, notasServico: state.notasServico.filter((_, j) => j !== i) })
+                }
+                className="rounded border border-feedback-error px-2 py-1 text-feedback-error"
+              >
+                Remover
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() =>
+              setState({ ...state, notasServico: [...state.notasServico, { codigo: '' }] })
+            }
+            className="mt-2 rounded border border-cbmes-blue px-3 py-1 text-cbmes-blue"
+          >
+            + Adicionar NS
+          </button>
+        </fieldset>
+
+        <fieldset className="rounded border border-slate-200 p-2">
+          <legend className="px-1 font-medium text-slate-700">Dispensas</legend>
+          {state.dispensas.map((d, i) => (
+            <div key={i} className="mt-2 grid grid-cols-1 gap-1 md:grid-cols-3">
+              <input
+                placeholder="Militar (ex.: 2ºSGT HOFFMAM)"
+                value={d.militarRaw}
+                onChange={(e) => {
+                  const ds = [...state.dispensas];
+                  ds[i] = { ...ds[i]!, militarRaw: e.target.value };
+                  setState({ ...state, dispensas: ds });
+                }}
+                className="rounded border border-slate-300 px-2 py-1"
+              />
+              <input
+                placeholder="Motivo (opcional)"
+                value={d.motivo ?? ''}
+                onChange={(e) => {
+                  const ds = [...state.dispensas];
+                  ds[i] = { ...ds[i]!, motivo: e.target.value };
+                  setState({ ...state, dispensas: ds });
+                }}
+                className="rounded border border-slate-300 px-2 py-1"
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  setState({ ...state, dispensas: state.dispensas.filter((_, j) => j !== i) })
+                }
+                className="rounded border border-feedback-error px-2 py-1 text-feedback-error"
+              >
+                Remover
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() =>
+              setState({ ...state, dispensas: [...state.dispensas, { militarRaw: '' }] })
+            }
+            className="mt-2 rounded border border-cbmes-blue px-3 py-1 text-cbmes-blue"
+          >
+            + Adicionar dispensa
+          </button>
+        </fieldset>
+
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="rounded-button bg-cbmes-red px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+        >
+          {saving ? 'Salvando…' : 'Salvar ajustes'}
+        </button>
+      </div>
+    </details>
   );
 }
 

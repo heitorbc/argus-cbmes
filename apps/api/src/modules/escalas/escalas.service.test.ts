@@ -145,3 +145,68 @@ describe('computeDiff', () => {
     ]);
   });
 });
+
+describe('EscalasService.updateDiaEquipe (F4)', () => {
+  let service: EscalasService;
+  beforeEach(() => {
+    service = new EscalasService();
+    service.save(fakeEscala());
+  });
+
+  it('atualiza equipe escalada de um dia', () => {
+    const r = service.updateDiaEquipe(2026, 5, '2026-05-01', 'D');
+    expect(r.diaEquipe['2026-05-01']).toBe('D');
+  });
+
+  it('remove dia quando equipe=null', () => {
+    const r = service.updateDiaEquipe(2026, 5, '2026-05-01', null);
+    expect(r.diaEquipe['2026-05-01']).toBeUndefined();
+  });
+
+  it('lança erro se mês não importado', () => {
+    expect(() => service.updateDiaEquipe(2026, 11, '2026-11-01', 'A')).toThrow(/não importada/);
+  });
+});
+
+describe('EscalasService.upsertComposicao (F4)', () => {
+  let service: EscalasService;
+  beforeEach(() => {
+    service = new EscalasService();
+    service.save(fakeEscala());
+  });
+
+  it('insere nova posição', () => {
+    const r = service.upsertComposicao(2026, 5, {
+      equipe: 'C',
+      viatura: 'GUARDA',
+      funcao: 'Sent. 1',
+      militar: { raw: 'SD NOVO', postoAbreviado: 'SD', nomeGuerra: 'NOVO' },
+    });
+    const novo = r.composicao.find(
+      (c) => c.equipe === 'C' && c.viatura === 'GUARDA' && c.funcao === 'Sent. 1',
+    );
+    expect(novo?.militar.nomeGuerra).toBe('NOVO');
+  });
+
+  it('atualiza posição existente (mesma chave)', () => {
+    const r = service.upsertComposicao(2026, 5, {
+      equipe: 'C',
+      viatura: 'ABTS 01',
+      funcao: 'Ch',
+      militar: { raw: 'CB SUBSTITUTO', postoAbreviado: 'CB', nomeGuerra: 'SUBSTITUTO' },
+    });
+    const ch = r.composicao.find((c) => c.equipe === 'C' && c.funcao === 'Ch');
+    expect(ch?.militar.nomeGuerra).toBe('SUBSTITUTO');
+    expect(r.composicao.filter((c) => c.equipe === 'C' && c.funcao === 'Ch')).toHaveLength(1);
+  });
+
+  it('remove posição quando militar=null', () => {
+    const r = service.upsertComposicao(2026, 5, {
+      equipe: 'C',
+      viatura: 'ABTS 01',
+      funcao: 'Ch',
+      militar: null,
+    });
+    expect(r.composicao.find((c) => c.equipe === 'C' && c.funcao === 'Ch')).toBeUndefined();
+  });
+});

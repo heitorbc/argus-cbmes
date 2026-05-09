@@ -6,8 +6,10 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  NotFoundException,
   Param,
   Post,
+  Put,
   Query,
   UploadedFile,
   UseInterceptors,
@@ -171,5 +173,62 @@ export class EscalasController {
       throw new BadRequestException('ano/mês inválidos');
     }
     this.escalas.delete(a, m);
+  }
+
+  /**
+   * F4 — Atualiza/remove a equipe escalada para um dia específico.
+   * Body: `{data: 'YYYY-MM-DD', equipe: 'A'|'B'|'C'|'D' | null}`
+   */
+  @Roles('admin', 'sargenteante')
+  @Put(':ano/:mes/dia-equipe')
+  updateDiaEquipe(@Param('ano') ano: string, @Param('mes') mes: string, @Body() body: unknown) {
+    const schema = z.object({
+      data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      equipe: z.enum(['A', 'B', 'C', 'D']).nullable(),
+    });
+    const parsed = schema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.errors.map((e) => e.message));
+    }
+    const a = Number.parseInt(ano, 10);
+    const m = Number.parseInt(mes, 10);
+    try {
+      return this.escalas.updateDiaEquipe(a, m, parsed.data.data, parsed.data.equipe);
+    } catch (err) {
+      throw new NotFoundException((err as Error).message);
+    }
+  }
+
+  /**
+   * F4 — Upsert/remove de uma posição da composição (equipe × viatura × função).
+   * Body: `{equipe, viatura, funcao, militar: MilitarRef | null}` (null = remove)
+   */
+  @Roles('admin', 'sargenteante')
+  @Put(':ano/:mes/composicao')
+  upsertComposicao(@Param('ano') ano: string, @Param('mes') mes: string, @Body() body: unknown) {
+    const schema = z.object({
+      equipe: z.enum(['A', 'B', 'C', 'D', 'AQUATICAS', 'STAFF']),
+      viatura: z.string(),
+      funcao: z.string(),
+      militar: z
+        .object({
+          raw: z.string(),
+          postoAbreviado: z.string(),
+          nomeGuerra: z.string(),
+          nf: z.string().optional(),
+        })
+        .nullable(),
+    });
+    const parsed = schema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.errors.map((e) => e.message));
+    }
+    const a = Number.parseInt(ano, 10);
+    const m = Number.parseInt(mes, 10);
+    try {
+      return this.escalas.upsertComposicao(a, m, parsed.data);
+    } catch (err) {
+      throw new NotFoundException((err as Error).message);
+    }
   }
 }
