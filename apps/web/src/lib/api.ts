@@ -13,6 +13,7 @@ import type {
   LoginInput,
   LoginResponse,
   Militar,
+  PreviaDoDia,
   PreviewEscalaResponse,
   TipoIdeo,
   UpdateViaturaInput,
@@ -202,4 +203,7 @@ export const api = {
     request<{ equipe: LetraEquipe | null; entries: ComposicaoEntry[] }>(
       `/escalas/escalados-do-dia?ano=${ano}&mes=${String(mes).padStart(2, '0')}&data=${data}`,
     ),
+
+  // Prévia do Mapa Força (S4)
+  previaDoDia: (data: string) => request<PreviaDoDia>(`/previa?data=${data}`),
 };

@@ -14,6 +14,7 @@ import { ViaturasPage } from '@/pages/viaturas';
 import { EscalasPage } from '@/pages/escalas';
 import { FiscaisPage } from '@/pages/fiscais';
 import { IdeoPage } from '@/pages/ideo';
+import { PreviaPage } from '@/pages/previa';
 
 function FullScreenLoader() {
   return (
@@ -76,6 +77,7 @@ export const router = createBrowserRouter([
           { path: '/cadastros/fiscais', element: <FiscaisPage /> },
           { path: '/cadastros/ideo', element: <IdeoPage /> },
           { path: '/cadastros/escalas', element: <EscalasPage /> },
+          { path: '/previa', element: <PreviaPage /> },
         ],
       },
       { path: '*', element: <Navigate to="/" replace /> },

@@ -78,6 +78,18 @@ export class EfetivoService {
     return consolidated.items.find((m) => m.nf === nf) ?? null;
   }
 
+  /**
+   * Retorna a lista consolidada completa (sem paginação). Usada por consumidores que
+   * precisam do efetivo inteiro: NomeMatcher (S4 — Prévia), futura conferência (S6).
+   */
+  async getAll(options: { somente1aCia?: boolean } = {}): Promise<Militar[]> {
+    const consolidated = await this.consolidate();
+    if (options.somente1aCia) {
+      return consolidated.items.filter((m) => m.subSecao !== undefined);
+    }
+    return consolidated.items;
+  }
+
   /** Força resync de ambas as fontes, ignorando cache. */
   async forceSync(): Promise<EfetivoListResponse> {
     const previous = this.cache;

@@ -67,6 +67,23 @@ export function HomePage() {
 
         <nav className="mt-6">
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+            Operacional
+          </p>
+          <ul>
+            <li>
+              <Link
+                to="/previa"
+                className="block rounded border-2 border-cbmes-red bg-cbmes-red/5 p-4 text-center text-sm font-bold text-cbmes-red shadow-sm transition hover:bg-cbmes-red/10"
+              >
+                <span className="mb-1 block text-2xl">🗺️</span>
+                Prévia do Mapa Força
+              </Link>
+            </li>
+          </ul>
+        </nav>
+
+        <nav className="mt-6">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
             Cadastros Mestre
           </p>
           <ul className="grid grid-cols-2 gap-3">
@@ -119,10 +136,10 @@ export function HomePage() {
         </nav>
 
         <div className="mt-6 rounded border border-slate-200 bg-white p-4 text-xs text-slate-500">
-          <p className="font-medium text-slate-700">Sprint atual: S3b — Parser de Escala XLSX</p>
+          <p className="font-medium text-slate-700">Sprint atual: S4 — Prévia do Mapa Força</p>
           <p className="mt-1">
-            Próximos sprints adicionam Prévia (S4), Serviço (S5), Conferências (S6-S8), Mapa Força
-            (S9) e Parte Diária (S10-S11).
+            Próximos sprints adicionam Serviço (S5 — persistência Supabase), Conferências (S6-S8),
+            Mapa Força (S9) e Parte Diária (S10-S11).
           </p>
         </div>
 

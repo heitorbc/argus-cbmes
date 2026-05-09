@@ -6,6 +6,7 @@ import { EscalasModule } from './modules/escalas/escalas.module';
 import { FiscaisModule } from './modules/fiscais/fiscais.module';
 import { HealthModule } from './modules/health/health.module';
 import { IdeoModule } from './modules/ideo/ideo.module';
+import { PreviaModule } from './modules/previa/previa.module';
 import { ViaturasModule } from './modules/viaturas/viaturas.module';
 
 @Module({
@@ -19,6 +20,7 @@ import { ViaturasModule } from './modules/viaturas/viaturas.module';
     FiscaisModule,
     HealthModule,
     IdeoModule,
+    PreviaModule,
     ViaturasModule,
   ],
 })
