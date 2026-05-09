@@ -2,6 +2,8 @@ import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config';
 import type { EfetivoListResponse, EfetivoQuery, Militar } from '@argus/shared-types';
 import { parseEfetivoCsv } from './efetivo-csv-parser';
+import type { MilitarDados } from './qdi-dados-csv-parser';
+import { QdiDadosService } from './qdi-dados.service';
 import type { MilitarQdi } from './qdi-csv-parser';
 import { QdiService } from './qdi.service';
 
@@ -34,6 +36,7 @@ export class EfetivoService {
   constructor(
     private readonly config: ConfigService,
     private readonly qdi: QdiService,
+    private readonly qdiDados: QdiDadosService,
   ) {}
 
   async list(query: EfetivoQuery): Promise<EfetivoListResponse> {
@@ -133,15 +136,34 @@ export class EfetivoService {
   }
 
   /**
-   * Consolida EFETIVO + QDI. Se o QDI estiver indisponível, retorna apenas EFETIVO
-   * (com `stale=true` se a sync recente do QDI falhou).
+   * Consolida 3 fontes (S6a/ADR-008): DADOS > 1ª1º > EFETIVO.
+   *
+   * - **DADOS** (aba LOCAL=1ª1º): primária. Cobre todos os campos básicos + classe/CNH/incorp.
+   * - **1ª1º** (aba operacional do QDI): complementar. Adiciona subSecao/funcao/postoPrevisto.
+   * - **EFETIVO**: fallback para campos não cobertos (idade, serviço).
+   *
+   * Se DADOS ou 1ª1º estiverem indisponíveis, segue com o que conseguiu (com `stale=true`).
    */
   private async consolidate(): Promise<{ items: Militar[]; syncedAt: number; stale: boolean }> {
     const efetivo = await this.getEntry();
+
+    let dadosByNf: Map<string, MilitarDados> = new Map();
+    let dadosStale = false;
+    let dadosSyncedAt = efetivo.entry.syncedAt;
+    try {
+      const r = await this.qdiDados.getByNf();
+      dadosByNf = r.byNf;
+      dadosStale = r.stale;
+      dadosSyncedAt = r.syncedAt;
+    } catch (err) {
+      this.logger.warn(
+        `QDI/DADOS indisponível: ${(err as Error).message}. Consolidando sem essa fonte.`,
+      );
+    }
+
     let qdiByNf: Map<string, MilitarQdi> = new Map();
     let qdiStale = false;
     let qdiSyncedAt = efetivo.entry.syncedAt;
-
     try {
       const qdi = await this.qdi.getByNf();
       qdiByNf = qdi.byNf;
@@ -149,16 +171,16 @@ export class EfetivoService {
       qdiSyncedAt = qdi.syncedAt;
     } catch (err) {
       this.logger.warn(
-        `QDI indisponível: ${(err as Error).message}. Consolidando apenas com EFETIVO.`,
+        `QDI/1ª1º indisponível: ${(err as Error).message}. Consolidando sem essa fonte.`,
       );
     }
 
-    const merged = mergeSources(efetivo.entry.byNf, qdiByNf);
+    const merged = mergeThreeSources(dadosByNf, qdiByNf, efetivo.entry.byNf);
 
     return {
       items: merged,
-      syncedAt: Math.max(efetivo.entry.syncedAt, qdiSyncedAt),
-      stale: efetivo.stale || qdiStale,
+      syncedAt: Math.max(efetivo.entry.syncedAt, qdiSyncedAt, dadosSyncedAt),
+      stale: efetivo.stale || qdiStale || dadosStale,
     };
   }
 
@@ -167,16 +189,24 @@ export class EfetivoService {
     syncedAt: number;
   }> {
     let qdiByNf: Map<string, MilitarQdi> = new Map();
+    let dadosByNf: Map<string, MilitarDados> = new Map();
     let qdiSyncedAt = entry.syncedAt;
     try {
       const qdi = await this.qdi.getByNf();
       qdiByNf = qdi.byNf;
       qdiSyncedAt = qdi.syncedAt;
     } catch {
-      // segue só com efetivo
+      // segue
+    }
+    try {
+      const r = await this.qdiDados.getByNf();
+      dadosByNf = r.byNf;
+      qdiSyncedAt = Math.max(qdiSyncedAt, r.syncedAt);
+    } catch {
+      // segue
     }
     return {
-      items: mergeSources(entry.byNf, qdiByNf),
+      items: mergeThreeSources(dadosByNf, qdiByNf, entry.byNf),
       syncedAt: Math.max(entry.syncedAt, qdiSyncedAt),
     };
   }
@@ -243,54 +273,94 @@ export class EfetivoService {
 }
 
 /**
- * Merge das duas fontes:
- *  - QDI vence em ANT, posto, situação (se houver no QDI).
- *  - QDI adiciona: nomeGuerra, funcao, unidade, subSecao, postoPrevisto.
- *  - EFETIVO mantém: nome (completo), idade, servico, municipio.
- *  - Militares só no QDI (sem EFETIVO) entram com nome = nomeGuerra (fallback).
- *  - Lista final ordenada por ANT crescente.
+ * Merge 3-way (S6a/ADR-008): DADOS > 1ª1º > EFETIVO.
+ *
+ * - **DADOS** (aba LOCAL=1ª1º): primária — ANT, posto, nome, nomeGuerra, situação,
+ *   classe, conceito disciplinar, CNH, incorporação, plano férias, mergulho, FTBA, etc.
+ * - **1ª1º** (aba operacional do QDI): complementa subSecao/funcao/unidade/postoPrevisto;
+ *   pode sobrescrever situacao/posto se mais atualizado.
+ * - **EFETIVO**: fallback — preenche idade/serviço/município se ausentes nas anteriores.
+ *
+ * União de NFs: militar presente em qualquer fonte aparece. Lista final ordenada por ANT.
+ *
+ * Cada militar carrega `origensFonte: string[]` indicando quais fontes contribuíram.
  */
-function mergeSources(
-  efetivoByNf: Map<string, Militar>,
+function mergeThreeSources(
+  dadosByNf: Map<string, MilitarDados>,
   qdiByNf: Map<string, MilitarQdi>,
+  efetivoByNf: Map<string, Militar>,
 ): Militar[] {
-  const allNfs = new Set<string>([...efetivoByNf.keys(), ...qdiByNf.keys()]);
+  const allNfs = new Set<string>([...dadosByNf.keys(), ...qdiByNf.keys(), ...efetivoByNf.keys()]);
   const result: Militar[] = [];
 
   for (const nf of allNfs) {
-    const e = efetivoByNf.get(nf);
+    const d = dadosByNf.get(nf);
     const q = qdiByNf.get(nf);
+    const e = efetivoByNf.get(nf);
 
-    if (e && q) {
-      result.push({
-        ...e,
-        // QDI vence
-        ant: q.ant,
-        posto: q.postoAtual,
-        situacao: q.situacao ?? e.situacao,
-        // QDI agrega
-        nomeGuerra: q.nomeGuerra,
-        funcao: q.funcao,
-        unidade: q.unidade,
-        subSecao: q.subSecao,
-        postoPrevisto: q.postoPrevisto,
-      });
-    } else if (e) {
-      result.push(e);
-    } else if (q) {
-      result.push({
-        nf: q.nf,
-        ant: q.ant,
-        posto: q.postoAtual,
-        nome: q.nomeGuerra, // fallback obrigatório do schema
-        nomeGuerra: q.nomeGuerra,
-        funcao: q.funcao,
-        unidade: q.unidade,
-        subSecao: q.subSecao,
-        postoPrevisto: q.postoPrevisto,
-        situacao: q.situacao,
-      });
+    const origens: ('DADOS' | '1ª1º' | 'EFETIVO')[] = [];
+    if (d) origens.push('DADOS');
+    if (q) origens.push('1ª1º');
+    if (e) origens.push('EFETIVO');
+
+    // Começa com EFETIVO como base (idade, serviço, município, situação inicial),
+    // depois sobrescreve com QDI/1ª1º (operacional), depois com DADOS (mais detalhado e completo).
+    let m: Militar = {
+      nf,
+      ant: 0,
+      posto: '',
+      nome: '',
+      origensFonte: origens,
+    };
+
+    if (e) {
+      m = { ...m, ...e };
     }
+    if (q) {
+      m = {
+        ...m,
+        ant: q.ant,
+        posto: q.postoAtual,
+        nome: m.nome || q.nomeGuerra,
+        nomeGuerra: q.nomeGuerra,
+        funcao: q.funcao,
+        unidade: q.unidade,
+        subSecao: q.subSecao,
+        postoPrevisto: q.postoPrevisto,
+        situacao: q.situacao ?? m.situacao,
+      };
+    }
+    if (d) {
+      m = {
+        ...m,
+        ant: d.ant, // DADOS é primária para ANT
+        posto: d.posto, // DADOS é primária para posto atual
+        nome: d.nome || m.nome,
+        nomeGuerra: d.nomeGuerra ?? m.nomeGuerra,
+        municipio: d.municipio ?? m.municipio,
+        situacao: d.situacao ?? m.situacao,
+        // Campos novos só vêm de DADOS:
+        lotacao: d.lotacao,
+        classe: d.classe,
+        conceitoDisciplinar: d.conceitoDisciplinar,
+        pontos: d.pontos,
+        cnh: d.cnh,
+        cnhValidade: d.cnhValidade,
+        incorporacao: d.incorporacao,
+        planoFerias: d.planoFerias,
+        mergulho: d.mergulho,
+        ftba: d.ftba,
+        etsp: d.etsp,
+        ccve: d.ccve,
+        ccveValidade: d.ccveValidade,
+        censo: d.censo,
+      };
+    }
+
+    // Garante invariantes do schema
+    if (!m.posto || !m.nome) continue;
+    m.origensFonte = origens;
+    result.push(m);
   }
 
   result.sort((a, b) => a.ant - b.ant);

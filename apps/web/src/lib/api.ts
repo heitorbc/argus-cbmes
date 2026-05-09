@@ -5,6 +5,7 @@ import type {
   CreateViaturaInput,
   EfetivoListResponse,
   EfetivoQuery,
+  EscalaEspecialMensal,
   EscalaMensal,
   FiscalCadastrado,
   IdeoEntry,
@@ -17,6 +18,7 @@ import type {
   Militar,
   MilitarRef,
   PreviaDoDia,
+  PreviewEscalaEspecialResponse,
   PreviewEscalaResponse,
   RecursoMapaForca,
   TipoIdeo,
@@ -236,4 +238,47 @@ export const api = {
   // Mapa Força (S5)
   mapaForcaSnapshot: () => request<MapaForcaSnapshot>(`/mapa-forca/snapshot`),
   mapaForcaRecursos: () => request<RecursoMapaForca[]>(`/mapa-forca/recursos`),
+
+  // Escalas Especiais (S6a)
+  escalasEspeciaisList: () =>
+    request<{
+      escalas: {
+        ano: number;
+        mes: number;
+        origemArquivo: string;
+        importadoEm: string;
+        totalAtos: number;
+      }[];
+    }>(`/escalas-especiais`),
+
+  escalasEspeciaisGet: (ano: number, mes: number) =>
+    request<{ escala: EscalaEspecialMensal | null }>(`/escalas-especiais?ano=${ano}&mes=${mes}`),
+
+  escalasEspeciaisPreview: async (file: File): Promise<PreviewEscalaEspecialResponse> => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`${API_URL}/escalas-especiais/preview`, {
+      method: 'POST',
+      credentials: 'include',
+      body: fd,
+    });
+    const text = await res.text();
+    const json: unknown = text ? JSON.parse(text) : undefined;
+    if (!res.ok) {
+      const message = extractMessage(json) ?? `Erro ${res.status}`;
+      throw new ApiError(res.status, message);
+    }
+    return json as PreviewEscalaEspecialResponse;
+  },
+
+  escalasEspeciaisConfirm: (escala: EscalaEspecialMensal) =>
+    request<EscalaEspecialMensal>(`/escalas-especiais/confirm`, {
+      method: 'POST',
+      body: JSON.stringify(escala),
+    }),
+
+  escalasEspeciaisDelete: (ano: number, mes: number) =>
+    request<void>(`/escalas-especiais/${ano}/${mes}`, {
+      method: 'DELETE',
+    }),
 };

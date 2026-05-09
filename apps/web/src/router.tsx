@@ -10,8 +10,10 @@ import { LoginPage } from '@/pages/login';
 import { TrocarSenhaPage } from '@/pages/trocar-senha';
 import { HomePage } from '@/pages/home';
 import { EfetivoPage } from '@/pages/efetivo';
+import { EfetivoDetalhePage } from '@/pages/efetivo-detalhe';
 import { ViaturasPage } from '@/pages/viaturas';
 import { EscalasPage } from '@/pages/escalas';
+import { EscalasEspeciaisPage } from '@/pages/escalas-especiais';
 import { FiscaisPage } from '@/pages/fiscais';
 import { IdeoPage } from '@/pages/ideo';
 import { PreviaPage } from '@/pages/previa';
@@ -73,10 +75,12 @@ export const router = createBrowserRouter([
           { path: '/', element: <HomePage /> },
           { path: '/trocar-senha', element: <TrocarSenhaPage /> },
           { path: '/cadastros/efetivo', element: <EfetivoPage /> },
+          { path: '/cadastros/efetivo/:nf', element: <EfetivoDetalhePage /> },
           { path: '/cadastros/viaturas', element: <ViaturasPage /> },
           { path: '/cadastros/fiscais', element: <FiscaisPage /> },
           { path: '/cadastros/ideo', element: <IdeoPage /> },
           { path: '/cadastros/escalas', element: <EscalasPage /> },
+          { path: '/cadastros/escalas-especiais', element: <EscalasEspeciaisPage /> },
           { path: '/previa', element: <PreviaPage /> },
         ],
       },

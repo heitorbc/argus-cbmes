@@ -218,29 +218,31 @@ export function EfetivoPage() {
 
 function MilitarRow({ m }: { m: Militar }) {
   return (
-    <li className="p-3 text-sm">
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="font-medium text-cbmes-blue">{formatDisplayName(m)}</span>
-        <span className="shrink-0 text-xs text-slate-500">ANT {m.ant}</span>
-      </div>
-      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-        <span>NF: {m.nf}</span>
-        {m.subSecao && <SubSecaoBadge subSecao={m.subSecao} />}
-        {m.funcao && <span className="italic">{m.funcao}</span>}
-        {m.situacao && m.situacao !== 'APTO' && (
-          <span className="rounded bg-feedback-warn/15 px-2 py-0.5 text-[10px] font-medium text-feedback-warn">
-            {m.situacao}
-          </span>
-        )}
-      </div>
-      {(m.idade !== undefined || m.servico !== undefined || m.municipio || m.nomeGuerra) && (
-        <div className="mt-1 text-xs text-slate-400">
-          {m.nomeGuerra && m.nome !== m.nomeGuerra && <>Nome completo: {m.nome}</>}
-          {m.idade !== undefined && <> · {m.idade} anos</>}
-          {m.servico !== undefined && <> · {m.servico} anos de serviço</>}
-          {m.municipio && <> · {m.municipio}</>}
+    <li className="text-sm">
+      <Link to={`/cadastros/efetivo/${m.nf}`} className="block p-3 transition hover:bg-slate-50">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="font-medium text-cbmes-blue">{formatDisplayName(m)}</span>
+          <span className="shrink-0 text-xs text-slate-500">ANT {m.ant}</span>
         </div>
-      )}
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+          <span>NF: {m.nf}</span>
+          {m.subSecao && <SubSecaoBadge subSecao={m.subSecao} />}
+          {m.funcao && <span className="italic">{m.funcao}</span>}
+          {m.situacao && m.situacao !== 'APTO' && (
+            <span className="rounded bg-feedback-warn/15 px-2 py-0.5 text-[10px] font-medium text-feedback-warn">
+              {m.situacao}
+            </span>
+          )}
+        </div>
+        {(m.idade !== undefined || m.servico !== undefined || m.municipio || m.nomeGuerra) && (
+          <div className="mt-1 text-xs text-slate-400">
+            {m.nomeGuerra && m.nome !== m.nomeGuerra && <>Nome completo: {m.nome}</>}
+            {m.idade !== undefined && <> · {m.idade} anos</>}
+            {m.servico !== undefined && <> · {m.servico} anos de serviço</>}
+            {m.municipio && <> · {m.municipio}</>}
+          </div>
+        )}
+      </Link>
     </li>
   );
 }

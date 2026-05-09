@@ -59,6 +59,37 @@ export const militarSchema = z.object({
   // ---------- Combinado ---------- //
   /** Situação funcional. Do QDI: `APTO`, `FÉRIAS`, `ADIDO`, `OUTROS`. */
   situacao: z.string().optional(),
+
+  // ---------- Campos novos (S6a — aba DADOS do QDI) ---------- //
+  /** Lotação (col LOCAL da aba DADOS): "1ª1º", "2ª/1º", "SAT", etc. */
+  lotacao: z.string().optional(),
+  /** Classe (ex.: "ADM 11", "PRONT 11", "GUARD 11", "PRONT AA"). */
+  classe: z.string().optional(),
+  /** Conceito disciplinar (ex.: "CD-A", "CD-B"). */
+  conceitoDisciplinar: z.string().optional(),
+  /** Pontos disciplinares. */
+  pontos: z.number().int().nonnegative().optional(),
+  /** Carteira de habilitação (ex.: "AB", "B", "AD", "D"). */
+  cnh: z.string().optional(),
+  /** Validade da CNH (formato bruto da planilha, ex.: "12/02/2024"). */
+  cnhValidade: z.string().optional(),
+  /** Data de incorporação (formato bruto, ex.: "19/03/2001"). */
+  incorporacao: z.string().optional(),
+  /** Plano de férias previsto (mês ex.: "NOV", "MAR"). */
+  planoFerias: z.string().optional(),
+  /** Curso de mergulho (SIM/NÃO). */
+  mergulho: z.string().optional(),
+  /** Curso FTBA (SIM/NÃO). */
+  ftba: z.string().optional(),
+  /** Curso ETSP (SIM/NÃO). */
+  etsp: z.string().optional(),
+  /** Curso CCVE (SIM/NÃO) + validade. */
+  ccve: z.string().optional(),
+  ccveValidade: z.string().optional(),
+  /** Censo (mês/ano última realização). */
+  censo: z.string().optional(),
+  /** Origens das fontes que contribuíram para este militar (debug). */
+  origensFonte: z.array(z.enum(['DADOS', '1ª1º', 'EFETIVO'])).optional(),
 });
 export type Militar = z.infer<typeof militarSchema>;
 

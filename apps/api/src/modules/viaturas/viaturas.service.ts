@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type {
   CreateViaturaInput,
@@ -13,7 +18,7 @@ import { MapaForcaService } from '../mapa-forca/mapa-forca.service';
 
 /** Mapeia o prefixo da viatura (ABTS_011, AR_044) para o tipo institucional. */
 function tipoFromPrefixo(prefixo: string): TipoViatura {
-  const tag = prefixo.split('_')[0]?.toUpperCase() ?? '';
+  const tag = prefixo.split(/[_ ]/)[0]?.toUpperCase() ?? '';
   if (tag === 'ABTS') return 'ABTS';
   if (tag === 'AR') return 'AR';
   if (tag === 'ATB') return 'ATB';
@@ -21,21 +26,21 @@ function tipoFromPrefixo(prefixo: string): TipoViatura {
   if (tag === 'AM') return 'AM';
   if (tag === 'AC') return 'AC';
   if (tag === 'TE') return 'TE';
-  // fallback defensivo
   return 'AU';
 }
 
-/** Mapeia status do Mapa Força (col C) para status interno do ARGUS. */
+/**
+ * S6a/ADR-009: nomenclatura interna agora espelha o MF (DISPONIVEL/BAIXADA/EMPRESTADA).
+ * NAO_POSSUI vira `null` (recurso sem viatura).
+ */
 function statusFromMapaForca(mf: StatusVtr | null): StatusViatura | null {
   if (mf === null) return null;
-  if (mf === 'DISPONIVEL') return 'operacional';
-  if (mf === 'BAIXADA') return 'baixada';
-  if (mf === 'EMPRESTADA') return 'reserva';
-  if (mf === 'NAO_POSSUI') return null; // recurso sem viatura — não cria entry
+  if (mf === 'DISPONIVEL') return 'DISPONIVEL';
+  if (mf === 'BAIXADA') return 'BAIXADA';
+  if (mf === 'EMPRESTADA') return 'EMPRESTADA';
   return null;
 }
 
-/** Constrói uma Viatura sintética a partir de um RecursoMapaForca (apenas se tem prefix + status). */
 function viaturaFromRecurso(r: RecursoMapaForca): Viatura | null {
   if (!r.vtrPrefixo) return null;
   const status = statusFromMapaForca(r.vtrStatus);
@@ -46,8 +51,9 @@ function viaturaFromRecurso(r: RecursoMapaForca): Viatura | null {
     prefixo: r.vtrPrefixo,
     tipo: tipoFromPrefixo(r.vtrPrefixo),
     status,
+    origem: 'mapa_forca',
     composicaoFuncoes: [],
-    funcaoOperacional: r.recurso, // ex.: "MERGULHO 02", "ABTS_01"
+    funcaoOperacional: r.recurso,
     criadoEm: now,
     atualizadoEm: now,
   };
@@ -57,8 +63,11 @@ function viaturaFromRecurso(r: RecursoMapaForca): Viatura | null {
  * Source of truth: aba "1º BBM" do Mapa Força (via `MapaForcaService`).
  * Overrides locais ficam em memória (Fase 1) e sobrepõem por `prefixo`.
  *
- * Em S5b, overrides migram para Prisma. Em paralelo, o admin pode criar viaturas que
- * não estão no Mapa Força (caso edge — ex.: viatura emprestada de outra OBM por dias).
+ * S6a/ADR-009 — nova regra:
+ * - Viaturas com `origem === 'mapa_forca'`: status só pode mudar via Conferência
+ *   da Viatura (S6b). Tentativas via PUT comum retornam 400 com instrução clara.
+ * - Campos novos (kmAtual, tipoCombustivel, ARLA32, dimensões, militar responsável)
+ *   ficam em override local mesmo para viaturas do MF — esses dados não vêm da planilha.
  */
 @Injectable()
 export class ViaturasService {
@@ -73,10 +82,35 @@ export class ViaturasService {
       .map((r) => viaturaFromRecurso(r))
       .filter((v): v is Viatura => v !== null);
 
-    // Aplica overrides por prefixo (admin venceu MF).
+    // Aplica overrides por prefixo (admin venceu MF — mas para origem=mapa_forca
+    // só substituímos campos auxiliares, mantendo `status` e `origem` do MF).
     const merged = new Map<string, Viatura>();
     for (const v of fromMf) merged.set(v.prefixo, v);
-    for (const v of this.overrides.values()) merged.set(v.prefixo, v);
+    for (const v of this.overrides.values()) {
+      const baseDoMf = merged.get(v.prefixo);
+      if (baseDoMf) {
+        // É override sobre viatura do MF — preserva status/origem do MF, sobrescreve auxiliares
+        merged.set(v.prefixo, {
+          ...baseDoMf,
+          // Auxiliares: kmAtual, tipoCombustivel, etc. vêm do override
+          placa: v.placa ?? baseDoMf.placa,
+          anoModelo: v.anoModelo ?? baseDoMf.anoModelo,
+          composicaoFuncoes: v.composicaoFuncoes,
+          observacoes: v.observacoes ?? baseDoMf.observacoes,
+          kmAtual: v.kmAtual ?? baseDoMf.kmAtual,
+          tipoCombustivel: v.tipoCombustivel ?? baseDoMf.tipoCombustivel,
+          usaArla32: v.usaArla32 ?? baseDoMf.usaArla32,
+          capacidadeTanqueLitros: v.capacidadeTanqueLitros ?? baseDoMf.capacidadeTanqueLitros,
+          estadoTanquePercent: v.estadoTanquePercent ?? baseDoMf.estadoTanquePercent,
+          alturaMetros: v.alturaMetros ?? baseDoMf.alturaMetros,
+          larguraMetros: v.larguraMetros ?? baseDoMf.larguraMetros,
+          militarResponsavelNf: v.militarResponsavelNf ?? baseDoMf.militarResponsavelNf,
+          atualizadoEm: v.atualizadoEm,
+        });
+      } else {
+        merged.set(v.prefixo, v);
+      }
+    }
 
     return [...merged.values()].sort((a, b) => a.prefixo.localeCompare(b.prefixo));
   }
@@ -101,6 +135,7 @@ export class ViaturasService {
     const viatura: Viatura = {
       ...input,
       id: randomUUID(),
+      origem: 'override_admin',
       composicaoFuncoes: input.composicaoFuncoes ?? [],
       criadoEm: now,
       atualizadoEm: now,
@@ -111,6 +146,21 @@ export class ViaturasService {
 
   async update(id: string, input: UpdateViaturaInput): Promise<Viatura> {
     const current = await this.findById(id);
+
+    // S6a/ADR-009 — viaturas do MF: bloqueia edição de status e prefixo
+    if (current.origem === 'mapa_forca') {
+      if (input.status !== undefined && input.status !== current.status) {
+        throw new BadRequestException(
+          'Status de viatura gerenciada pelo Mapa Força só pode ser alterado via Conferência da Viatura (S6b).',
+        );
+      }
+      if (input.prefixo !== undefined && input.prefixo !== current.prefixo) {
+        throw new BadRequestException(
+          'Prefixo de viatura gerenciada pelo Mapa Força não pode ser alterado.',
+        );
+      }
+    }
+
     if (input.prefixo && input.prefixo !== current.prefixo) {
       const conflict = await this.findByPrefixo(input.prefixo);
       if (conflict && conflict.id !== id) {
@@ -122,17 +172,24 @@ export class ViaturasService {
       ...input,
       composicaoFuncoes: input.composicaoFuncoes ?? current.composicaoFuncoes,
       id: current.id,
+      origem: current.origem, // não muda via update
       criadoEm: current.criadoEm,
       atualizadoEm: new Date().toISOString(),
     };
-    // Override entra com prefixo (chave) — atualizado override sempre por prefixo.
+    // Override sempre por prefixo (mesmo para mapa_forca, guarda os campos extras)
     this.overrides.delete(current.prefixo);
     this.overrides.set(updated.prefixo, updated);
     return updated;
   }
 
-  /** Soft delete: muda status para 'baixada'. Mantém na lista para histórico (RF-CM-104). */
+  /** Soft delete: muda status para BAIXADA. Bloqueado para origem=mapa_forca. */
   async softDelete(id: string): Promise<Viatura> {
-    return this.update(id, { status: 'baixada' });
+    const current = await this.findById(id);
+    if (current.origem === 'mapa_forca') {
+      throw new BadRequestException(
+        'Viatura gerenciada pelo Mapa Força não pode ser baixada manualmente.',
+      );
+    }
+    return this.update(id, { status: 'BAIXADA' });
   }
 }

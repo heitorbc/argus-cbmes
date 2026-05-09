@@ -123,13 +123,22 @@ export function HomePage() {
                 IDEO
               </Link>
             </li>
-            <li className="col-span-2">
+            <li>
               <Link
                 to="/cadastros/escalas"
                 className="block rounded border border-slate-200 bg-white p-4 text-center text-sm font-medium text-cbmes-blue shadow-sm transition hover:border-cbmes-blue hover:bg-cbmes-blue/5"
               >
                 <span className="block text-2xl">📅</span>
                 Escala Mensal (XLSX)
+              </Link>
+            </li>
+            <li>
+              <Link
+                to="/cadastros/escalas-especiais"
+                className="block rounded border border-slate-200 bg-white p-4 text-center text-sm font-medium text-cbmes-blue shadow-sm transition hover:border-cbmes-blue hover:bg-cbmes-blue/5"
+              >
+                <span className="block text-2xl">📆</span>
+                Escala Especial (XLSM)
               </Link>
             </li>
           </ul>
