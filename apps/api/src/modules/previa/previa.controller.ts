@@ -2,19 +2,26 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
+  NotFoundException,
   Param,
+  Post,
   Put,
   Query,
 } from '@nestjs/common';
 import { z } from 'zod';
 import {
+  addTrocaEscalaEspecialSchema,
   upsertAjustesPreviaSchema,
   type AjustesPrevia,
   type PreviaDoDia,
+  type TrocaEscalaEspecial,
+  type UserSession,
 } from '@argus/shared-types';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AjustesPreviaService } from './ajustes-previa.service';
 import { PreviaService } from './previa.service';
@@ -67,5 +74,38 @@ export class PreviaController {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     }
     return this.ajustes.upsert(data, parsed.data);
+  }
+
+  /** S6a-fix item 4 — registra uma troca de Escala Especial por ato. */
+  @Roles('admin', 'fiscal', 'sargenteante')
+  @Post(':data/ajustes/escala-especial/trocas')
+  @HttpCode(HttpStatus.OK)
+  addTrocaEscalaEspecial(
+    @Param('data') data: string,
+    @Body() body: unknown,
+    @CurrentUser() user: UserSession,
+  ): TrocaEscalaEspecial {
+    if (!dataParamRegex.test(data)) {
+      throw new BadRequestException('data inválida (esperado YYYY-MM-DD)');
+    }
+    const parsed = addTrocaEscalaEspecialSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.errors.map((e) => e.message));
+    }
+    return this.ajustes.addTrocaEscalaEspecial(data, parsed.data, user.nf);
+  }
+
+  /** S6a-fix item 4 — remove uma troca de Escala Especial pelo identificador do ato. */
+  @Roles('admin', 'fiscal', 'sargenteante')
+  @Delete(':data/ajustes/escala-especial/trocas/:atoKey')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  removeTrocaEscalaEspecial(@Param('data') data: string, @Param('atoKey') atoKey: string): void {
+    if (!dataParamRegex.test(data)) {
+      throw new BadRequestException('data inválida (esperado YYYY-MM-DD)');
+    }
+    const removed = this.ajustes.removeTrocaEscalaEspecial(data, decodeURIComponent(atoKey));
+    if (!removed) {
+      throw new NotFoundException('Troca de Escala Especial não encontrada para este ato.');
+    }
   }
 }

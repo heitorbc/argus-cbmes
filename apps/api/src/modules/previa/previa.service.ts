@@ -13,8 +13,10 @@ import {
   type RecursoMapaForca,
   type TipoIdeo,
 } from '@argus/shared-types';
+import { ChefesOperacoesService } from '../chefes-operacoes/chefes-operacoes.service';
 import { EfetivoService } from '../efetivo/efetivo.service';
 import { EscalasService } from '../escalas/escalas.service';
+import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.service';
 import { FiscaisService } from '../fiscais/fiscais.service';
 import { IdeoService } from '../ideo/ideo.service';
 import { MapaForcaService } from '../mapa-forca/mapa-forca.service';
@@ -47,6 +49,8 @@ export class PreviaService {
     private readonly viaturas: ViaturasService,
     private readonly mapaForca: MapaForcaService,
     private readonly ajustes: AjustesPreviaService,
+    private readonly escalasEspeciais: EscalasEspeciaisService,
+    private readonly chefesOperacoes: ChefesOperacoesService,
   ) {}
 
   async getPreviaDoDia(dataIso: string): Promise<PreviaDoDia> {
@@ -142,6 +146,17 @@ export class PreviaService {
     // F7a — Ajustes pré-turno (trocas/escala especial/NS/dispensas) persistidos por data.
     const ajustes = this.ajustes.get(dataIso);
 
+    // S6a-fix item 4 — atos da Escala Especial do dia (read-only injetado).
+    const atosEspeciais = this.escalasEspeciais.getAtosDoDia(ano, mes, dataIso).map((a) => ({
+      data: a.data,
+      militarRaw: a.militarRaw,
+      horario: a.horario,
+      funcao: a.funcao,
+    }));
+
+    // S6a-fix item 6 — Chefes de Operações escalados no dia (planilha externa).
+    const chefes = await this.chefesOperacoes.getEscaladosDoDia(ano, mes, dia).catch(() => []);
+
     return {
       data: dataIso,
       ano,
@@ -158,6 +173,9 @@ export class PreviaService {
       escalaEspecial: ajustes.escalaEspecial,
       notasServico: ajustes.notasServico,
       dispensas: ajustes.dispensas,
+      escalaEspecialAtos: atosEspeciais,
+      trocasEscalaEspecial: ajustes.trocasEscalaEspecial,
+      chefesOperacoes: chefes,
       origemEscala: escala?.origemArquivo ?? null,
       geradoEm: new Date().toISOString(),
     };

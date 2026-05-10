@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './modules/auth/auth.module';
+import { ChefesOperacoesModule } from './modules/chefes-operacoes/chefes-operacoes.module';
 import { EfetivoModule } from './modules/efetivo/efetivo.module';
 import { EscalasModule } from './modules/escalas/escalas.module';
 import { EscalasEspeciaisModule } from './modules/escalas-especiais/escalas-especiais.module';
@@ -17,6 +18,7 @@ import { ViaturasModule } from './modules/viaturas/viaturas.module';
       isGlobal: true,
     }),
     AuthModule,
+    ChefesOperacoesModule,
     EfetivoModule,
     EscalasModule,
     EscalasEspeciaisModule,

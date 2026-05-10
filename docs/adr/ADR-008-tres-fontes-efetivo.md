@@ -1,9 +1,17 @@
 # ADR-008 — Três fontes de Efetivo (DADOS > 1ª1º > EFETIVO)
 
-**Status:** Aceito
+**Status:** Aceito (revisado em 2026-05-09 pelo S6a-fix item 2)
 **Data:** 2026-05-09
-**Sprint:** S6a
+**Sprint:** S6a (revisado em S6a-fix)
 **Decisor:** 2º SGT Heitor Barcellos Coelho — Tech Lead
+
+> **Nota S6a-fix (2026-05-09):** EFETIVO contribui apenas para
+> **enriquecimento** de campos demográficos (idade, serviço, município)
+> de militares já presentes em DADOS+1ª1º. NFs novas vêm exclusivamente
+> de DADOS (com LOCAL=1ª1º) ou de 1ª1º. Antes do fix, militares só
+> presentes em EFETIVO geral (ex.: CAP ALAN NF 3269779, TEN ALINE NF
+> 4544935) vazavam para a lista da 1ª Cia. Veja `mergeThreeSources()`
+> em [efetivo.service.ts](../../apps/api/src/modules/efetivo/efetivo.service.ts).
 
 ## Contexto
 

@@ -281,7 +281,10 @@ export class EfetivoService {
  *   pode sobrescrever situacao/posto se mais atualizado.
  * - **EFETIVO**: fallback — preenche idade/serviço/município se ausentes nas anteriores.
  *
- * União de NFs: militar presente em qualquer fonte aparece. Lista final ordenada por ANT.
+ * **Inclusão de NFs:** apenas militares presentes em DADOS (com LOCAL=1ª1º) OU 1ª1º.
+ * EFETIVO é exclusivamente fonte de **enriquecimento** — nunca adiciona novas NFs.
+ * (Caso contrário, militares de outras unidades como CAP ALAN/TEN ALINE apareceriam
+ *  na lista da 1ª Cia só por estarem no EFETIVO geral.)
  *
  * Cada militar carrega `origensFonte: string[]` indicando quais fontes contribuíram.
  */
@@ -290,7 +293,7 @@ function mergeThreeSources(
   qdiByNf: Map<string, MilitarQdi>,
   efetivoByNf: Map<string, Militar>,
 ): Militar[] {
-  const allNfs = new Set<string>([...dadosByNf.keys(), ...qdiByNf.keys(), ...efetivoByNf.keys()]);
+  const allNfs = new Set<string>([...dadosByNf.keys(), ...qdiByNf.keys()]);
   const result: Militar[] = [];
 
   for (const nf of allNfs) {

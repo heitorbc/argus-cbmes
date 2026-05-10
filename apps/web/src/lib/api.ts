@@ -22,6 +22,7 @@ import type {
   PreviewEscalaResponse,
   RecursoMapaForca,
   TipoIdeo,
+  TrocaEscalaEspecial,
   UpdateViaturaInput,
   UpsertIdeoEntryInput,
   UserSession,
@@ -100,6 +101,7 @@ export const api = {
     if (query.q) params.set('q', query.q);
     if (query.page) params.set('page', String(query.page));
     if (query.pageSize) params.set('pageSize', String(query.pageSize));
+    if (query.somente1aCia) params.set('somente1aCia', 'true');
     return request<EfetivoListResponse>(`/efetivo?${params.toString()}`);
   },
 
@@ -234,6 +236,27 @@ export const api = {
 
   // Prévia do Mapa Força (S4)
   previaDoDia: (data: string) => request<PreviaDoDia>(`/previa?data=${data}`),
+
+  // Trocas de Escala Especial (S6a-fix item 4)
+  previaAddTrocaEscalaEspecial: (
+    data: string,
+    input: {
+      atoOriginal: { data: string; militarRaw: string; horario: string; funcao: string };
+      substituidoRaw: string;
+      substituidoNf?: string;
+      substitutoRaw: string;
+      substitutoNf?: string;
+    },
+  ) =>
+    request<TrocaEscalaEspecial>(`/previa/${data}/ajustes/escala-especial/trocas`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  previaRemoveTrocaEscalaEspecial: (data: string, atoKey: string) =>
+    request<void>(`/previa/${data}/ajustes/escala-especial/trocas/${encodeURIComponent(atoKey)}`, {
+      method: 'DELETE',
+    }),
 
   // Mapa Força (S5)
   mapaForcaSnapshot: () => request<MapaForcaSnapshot>(`/mapa-forca/snapshot`),

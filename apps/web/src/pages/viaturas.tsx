@@ -7,13 +7,13 @@ import {
   TIPOS_VIATURA,
   TIPO_COMBUSTIVEL_LABEL,
   TIPO_VIATURA_LABEL,
-  type Militar,
   type StatusViatura,
   type TipoCombustivel,
   type Viatura,
 } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { MilitarSelect } from '@/components/militar-select';
 
 interface FormState {
   prefixo: string;
@@ -114,18 +114,6 @@ export function ViaturasPage() {
     });
     setFormError(null);
     setShowForm(true);
-    // Resolve nome do militar para preview
-    if (v.militarResponsavelNf) {
-      api
-        .efetivoFindByNf(v.militarResponsavelNf)
-        .then((m) =>
-          setForm((f) => ({
-            ...f,
-            militarResponsavelNome: `${m.posto} ${m.nomeGuerra ?? m.nome.split(' ')[0]}`,
-          })),
-        )
-        .catch(() => undefined);
-    }
   };
 
   const closeForm = () => {
@@ -329,25 +317,6 @@ function ViaturaForm({
   onSave,
   onCancel,
 }: ViaturaFormProps) {
-  // Lookup militar com debounce
-  const [search, setSearch] = useState('');
-  const [results, setResults] = useState<Militar[]>([]);
-  const [showLookup, setShowLookup] = useState(false);
-
-  useEffect(() => {
-    if (search.trim().length < 2) {
-      setResults([]);
-      return;
-    }
-    const t = setTimeout(() => {
-      api
-        .efetivoList({ q: search.trim(), somente1aCia: true, page: 1, pageSize: 10 })
-        .then((r) => setResults(r.items))
-        .catch(() => setResults([]));
-    }, 300);
-    return () => clearTimeout(t);
-  }, [search]);
-
   return (
     <form
       onSubmit={onSave}
@@ -519,61 +488,17 @@ function ViaturaForm({
 
       <fieldset className="rounded border border-slate-200 p-2">
         <legend className="px-1 text-xs font-medium text-slate-700">Militar responsável</legend>
-        {form.militarResponsavelNf && (
-          <div className="mb-2 flex items-center justify-between rounded bg-slate-50 p-2 text-xs">
-            <span>
-              <strong>NF {form.militarResponsavelNf}</strong>
-              {form.militarResponsavelNome && ` — ${form.militarResponsavelNome}`}
-            </span>
-            <button
-              type="button"
-              onClick={() =>
-                setForm({ ...form, militarResponsavelNf: '', militarResponsavelNome: '' })
-              }
-              className="text-feedback-error"
-            >
-              Remover
-            </button>
-          </div>
-        )}
-        {!form.militarResponsavelNf && (
-          <>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setShowLookup(true);
-              }}
-              placeholder="Digite NF ou nome para buscar (mín. 2 chars)"
-              className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-            />
-            {showLookup && results.length > 0 && (
-              <ul className="mt-1 max-h-40 divide-y divide-slate-100 overflow-y-auto rounded border border-slate-200 bg-white text-xs">
-                {results.map((m) => (
-                  <li key={m.nf}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setForm({
-                          ...form,
-                          militarResponsavelNf: m.nf,
-                          militarResponsavelNome: `${m.posto} ${m.nomeGuerra ?? m.nome.split(' ')[0]}`,
-                        });
-                        setSearch('');
-                        setShowLookup(false);
-                      }}
-                      className="block w-full p-2 text-left hover:bg-slate-50"
-                    >
-                      <strong>{m.posto}</strong> {m.nomeGuerra ?? m.nome.split(' ')[0]} · NF {m.nf}{' '}
-                      · ANT {m.ant}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </>
-        )}
+        <MilitarSelect
+          value={form.militarResponsavelNf || undefined}
+          onChange={(nf, m) =>
+            setForm({
+              ...form,
+              militarResponsavelNf: nf ?? '',
+              militarResponsavelNome: m ? `${m.posto} ${m.nomeGuerra ?? m.nome.split(' ')[0]}` : '',
+            })
+          }
+          placeholder="Digite NF ou nome (mín. 2 chars)"
+        />
       </fieldset>
 
       <div>

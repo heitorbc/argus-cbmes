@@ -1,0 +1,74 @@
+,GOVERNO DO ESTADO DO ESPÍRITO SANTO,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,CORPO DE BOMBEIROS MILITAR,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,MAIO,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,5,,,,
+,ESCALA DE CHEFE DE OPERAÇÕES,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,X,Y,,
+#,Nº,ANT,POSTO,NOME DE GUERRA,TELEFONE,NF,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,EDOCs,FÉRIAS,U,F,S,TOTAL
+1,1,63,CAP QOC,CALIMAN,27 996002598,2981157,,,,,,,,,,,,,,,,,,,,X,,*,,,,,,,,,,,,,,,
+1,2,94,CAP QOC,PECANHA,27998436060,3269108,,,,,X,,,,,,,,,,,,,,,,,,,,,,,,,,,,,1,,,1
+1,3,98,CAP QOA,BAUSEN,27996505549,903891,,,,X,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,1,,,1
+1,4,103,CAP QOA,GIOVANI,27988299808,643066,,Y,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,1,,1
+1,5,104,CAP QOA,FRANCA,27999914888,566497,,,Y,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,1,,1
+1,6,107,CAP QOA,JUREWISKI,27998303625,902795,,,,,,,,,Y,,,,,,,,,,,,,,,,,,,,,,,,,,1,,1
+1,7,112,1ºTEN QOA,PISKE,27999925795,902564,,,,,,,,,,Y,,,,,,,,,,,,,,,,,,,,,,,,,1,,1
+3,8,113,1ºTEN QOC,ALINE,27998645355,4544935,CURSO,,,,,,,,,,X,,,,,,,,,,X,,,,,X,,,,,,,,3,,,3
+1,9,119,1ºTEN QOA,BOREL,27996493249,903246,,,,,,,,,,,,,,,,Y,,,,,,,,,,,,,,,,,,,1,,1
+1,10,121,1ºTEN QOC,ARAUJO,27998366363,4207157,,,,,,,,,,,,,,,,,,,,,,,Y,,,,,,,,,,,,1,,1
+1,11,123,1ºTEN QOC,BRENNER,27998694857,4151240,,,,,,,,,,,,,,,,,Y,,,,,,,,,,,,,,,,,,1,,1
+1,12,124,1ºTEN QOC,VASSEM,41999279942,4207190,,,,,,,,,,,,,,,,,,,,,,,,Y,,,,,,,,,,,1,,1
+1,13,126,1ºTEN QOC,VITORINO,27997228733,3592081,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Y,,,,,1,,1
+1,14,133,1ºTEN QOA,BENTO,27998885222,2598264,,,,,,,,,,,,,,,,,,,,,,,,,,,,,S,,,,,,,1,1
+1,15,134,1ºTEN QOA,ROGERIO NUNES,27997773513,633565,,,,,,,,X,,,,,,,,,,,,,,,,,,,,,,,*,,,1,,,1
+1,16,136,1ºTEN QOA,NOVAES,27999170694,902291,,,,,,,,,,,,,,,,,,,,,,,,,,,,,X,,,,,1,,,1
+1,17,139,2ºTEN QOA,ALVES JUNIOR,27998257033,903465,,,,,,,,,,,,,,,,,,,,,,,,,,,,X,,,,,,1,,,1
+1,18,140,2ºTEN QOA,ELIZABETH,27996881393,903260,,,,,,,,,,,,,,,,,,,,,,,,,,,X,,,,,,,1,,,1
+1,19,141,2ºTEN QOA,ROCHA,,2533081,,,,,,,,,,,,,,,X,,,,,,,,,,,,,,,,,,,1,,,1
+1,20,142,2ºTEN QOA,EVANGELISTA,27997628698,903404,,,,,,,,,,,,,,S,,,,,,,,,,,,,,,,,,,,,,1,1
+1,21,144,2ºTEN QOA,STTOFEL,27996860263,902382,,,,,,,,,,,,,,,,,,,,,,,,,X,,,,,,,,,1,,,1
+1,22,147,2ºTEN QOA,BERTOLDE,27996568039,903003,,,,,,,,,,,,,,,,,,,,*,,X,,,,,,,,,,,,1,,,1
+1,23,150,2ºTEN QOA,SHARLE,27998503955,903830,,,,,,,,,,,,,,,,,,,X,,,,,,,,,,,,,,,1,,,1
+1,24,158,2ºTEN QOC,NATA,27997790611,4469763,Y,,,,,,,,,,,,,,,,,*,,,,,,,,,,,,,,,,,1,,1
+1,25,162,2ºTEN QOC,DOMINGUES,21999021886,4469798,,,,,,,,,,,,,,X,,,,,,,,,,,,,,,,,,,,1,,,1
+1,26,168,2ºTEN QOA,MARLUCE,2799587115,2498570,,,,,,,,,,,,,X,,,,,,,,,,,,,,,,,,,,,1,,,1
+1,27,169,2ºTEN QOA,FERREIRA,27996422699,903489,,,,,,,,,,,,X,,,,,,,,,,,,,,,,,,,,,,,,,
+1,28,170,2ºTEN QOA,PASCOAL,,902540,,,,,,,,*,,,,,,,,,,,,,,,,,,,,,,,Y,,,,1,,1
+1,29,171,2ºTEN QOA,BONELA,27998302255,903416,,,,,,,X,,,,,,,,,,,,,,,,,,,,,,,,,,,1,,,1
+1,30,175,2ºTEN QOA,JUSLEI,27998132822,903532,,,,,,X,,,,,,,,,,,,,,,,,,,,,,,,,,,,1,,,1
+1,31,180,2°TEN QOA,JOAO JUNIOR,27998248466,903453,,S,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+1,32,181,2ºTEN QOA,ALVES COSTA,27997022447,902229,*,,,,,,,,,,,,,,,,,X,,,,,,,,,,,,,,,,1,,,1
+0,33,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,0
+0,34,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,0
+0,35,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,0
+0,36,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,0
+0,37,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,0
+0,38,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,0
+0,39,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,0
+0,40,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,0
+0,41,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,0
+0,42,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,0
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,,,,,,
+,,,,,,,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,,,,,,
+,,,,,,,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,,,,,,
+,,,,,,,F,F,F,U,U,U,U,U,F,F,U,U,U,U,U,F,F,U,U,U,U,U,F,F,U,U,U,U,U,F,F,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,1/MAIO,2/MAIO,3/MAIO,4/MAIO,5/MAIO,6/MAIO,7/MAIO,8/MAIO,9/MAIO,10/MAIO,11/MAIO,12/MAIO,13/MAIO,14/MAIO,15/MAIO,16/MAIO,17/MAIO,18/MAIO,19/MAIO,20/MAIO,21/MAIO,22/MAIO,23/MAIO,24/MAIO,25/MAIO,26/MAIO,27/MAIO,28/MAIO,29/MAIO,30/MAIO,31/MAIO,,,,,,
+,,,,,,,6,7,1,2,3,4,5,6,7,1,2,3,4,5,6,7,1,2,3,4,5,6,7,1,2,3,4,5,6,7,1,,,,,,
+,LEGENDA DA ESCALA:,,,,OBSERVAÇÕES:,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,X,Dias úteis,,,1) Escala como Chefe de Operações com início às 7h com duração de 24 horas. PRESENCIAL na sede do 1ºBBM;                                                                                                                                                                                                                                                ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,Y,"Sábado, Domingo ou Feriados",,,2) Qualquer permuta de serviço que venha alterar a escala acima deverá ser avisada a DGP através de troca de serviço (padrão EDOCs) com a assinatura dos envolvidos e encaminhado para o setor BMSPIM;                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,*,Dia que seria a escala porém houve alguma necessidade de modificação na sequência - Ajustes para não conflitar ou ficar sem escala,,,3) Para receber a GSE em sua totalidade por essas escalas os oficiais deverão fazer até 6h além da carga horária administrativa durante dias úteis.                                                                                                                                                                                                                                 ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,"4) Os militares que extrapolarem 6h de carga horária cumpridas na escala especial mensal, deverão compensá-las conforme ajuste com sua Chefia imediata durante o horário administrativo (8hrs as 17hrs).",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,"5) O militar que cumprir escala no final de semana ou feriado, terá o direito de folgar no 1º dia útil subsequente ao serviço, em acordo com sua Chefia Imediata.                                                                                                                                                                                                                                                ",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,"6) Qualquer situação que ocorra, que impossibilite o militar de cumprir a respectiva escala, tais como baixa médica, nojo, viagem a serviço (a comando) ou outro motivo que seja imprevisível no ato da publicação da escala e que ocorra posteriormente, deve ser cientificado imediatamente a DGP para que possa realizar as alterações na escala.",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,"7) A DGP, sempre que cientificada, irá repor impedimentos imprevisíveis de militares, porém encerrada a situação descrita no item 5, o militar substituído deverá compensar ao militar substituto para não haver desequilíbrio nas escalas.                                                                                                                                                                                                                                           ",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,ALEXANDRE DOS SANTOS CERQUEIRA,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,COMANDANTE GERAL,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,

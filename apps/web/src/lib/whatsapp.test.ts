@@ -74,6 +74,9 @@ const previaCharlie: PreviaDoDia = {
   },
   notasServico: [{ codigo: 'NS072', descricao: 'PB RESGATE DIAS 23/04 E 24/04' }],
   dispensas: [{ militarRaw: '2° SGT HOFFMAM' }],
+  escalaEspecialAtos: [],
+  trocasEscalaEspecial: [],
+  chefesOperacoes: [],
   origemEscala: '04 ABRIL DE 2026.xlsx',
   geradoEm: '2026-05-09T00:00:00.000Z',
 };

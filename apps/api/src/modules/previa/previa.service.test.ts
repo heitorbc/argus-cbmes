@@ -8,6 +8,7 @@ import type {
   Viatura,
 } from '@argus/shared-types';
 import { EscalasService } from '../escalas/escalas.service';
+import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.service';
 import { FiscaisService } from '../fiscais/fiscais.service';
 import { IdeoService } from '../ideo/ideo.service';
 import { AjustesPreviaService } from './ajustes-previa.service';
@@ -73,6 +74,12 @@ class FakeMapaForcaService {
   constructor(private readonly recursos: RecursoMapaForca[] = []) {}
   async getRecursos(): Promise<readonly RecursoMapaForca[]> {
     return this.recursos;
+  }
+}
+
+class FakeChefesOperacoesService {
+  async getEscaladosDoDia(): Promise<readonly never[]> {
+    return [];
   }
 }
 
@@ -157,6 +164,8 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
       viaturas as unknown as never,
       new FakeMapaForcaService() as unknown as never,
       new AjustesPreviaService(),
+      new EscalasEspeciaisService(),
+      new FakeChefesOperacoesService() as unknown as never,
     );
 
     escalas.save(escalaAbril2026);
@@ -234,6 +243,8 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
       viaturas as unknown as never,
       new FakeMapaForcaService() as unknown as never,
       new AjustesPreviaService(),
+      new EscalasEspeciaisService(),
+      new FakeChefesOperacoesService() as unknown as never,
     );
     const r = await previa.getPreviaDoDia('2026-04-23');
     const ar044 = r.viaturasOperacionais.find((v) => v.codigo === 'AR 044');
@@ -264,6 +275,8 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
       viaturas as unknown as never,
       new FakeMapaForcaService(recursosMf) as unknown as never,
       new AjustesPreviaService(),
+      new EscalasEspeciaisService(),
+      new FakeChefesOperacoesService() as unknown as never,
     );
     const r = await previa.getPreviaDoDia('2026-04-23');
     const mergulho = r.tripulacao.filter((t) => t.equipe === 'AQUATICAS');
@@ -297,6 +310,8 @@ describe('PreviaService — inconsistências', () => {
       viaturas as unknown as never,
       new FakeMapaForcaService() as unknown as never,
       new AjustesPreviaService(),
+      new EscalasEspeciaisService(),
+      new FakeChefesOperacoesService() as unknown as never,
     );
   });
 

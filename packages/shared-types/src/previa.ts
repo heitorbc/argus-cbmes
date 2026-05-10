@@ -90,6 +90,43 @@ export const previaDispensaSchema = z.object({
 export type PreviaDispensa = z.infer<typeof previaDispensaSchema>;
 
 /**
+ * Ato leve da Escala Especial injetado read-only na Prévia (S6a-fix item 4).
+ * Identificador único: combinação de `data + militarRaw + horario + funcao`.
+ */
+export const escalaEspecialAtoLightSchema = z.object({
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  militarRaw: z.string(),
+  horario: z.string(),
+  funcao: z.string(),
+});
+export type EscalaEspecialAtoLight = z.infer<typeof escalaEspecialAtoLightSchema>;
+
+/**
+ * Troca de Escala Especial registrada pelo Fiscal (S6a-fix item 4).
+ * Persiste em `PreviaDoDia.trocasEscalaEspecial`; será lida pela Parte Diária (S10/S11).
+ */
+export const trocaEscalaEspecialSchema = z.object({
+  atoOriginal: escalaEspecialAtoLightSchema,
+  substituidoNf: z.string().optional(),
+  substituidoRaw: z.string(),
+  substitutoNf: z.string().optional(),
+  substitutoRaw: z.string(),
+  registradoEm: z.string(),
+  registradoPorNf: z.string(),
+});
+export type TrocaEscalaEspecial = z.infer<typeof trocaEscalaEspecialSchema>;
+
+/** Chefe de Operações escalado num dia (S6a-fix item 6). Vem da planilha ChOp. */
+export const chefeOperacoesSchema = z.object({
+  posto: z.string(),
+  nomeGuerra: z.string(),
+  nf: z.string(),
+  telefone: z.string().optional(),
+  marcador: z.string().optional(),
+});
+export type ChefeOperacoes = z.infer<typeof chefeOperacoesSchema>;
+
+/**
  * "Ajustes pré-turno" da Prévia — campos adicionais editáveis pelo Fiscal antes do
  * início do serviço. Persistidos em `AjustesPreviaService` (mock in-memory; S5b → Prisma).
  */
@@ -98,12 +135,23 @@ export const ajustesPreviaSchema = z.object({
   escalaEspecial: previaEscalaEspecialSchema,
   notasServico: z.array(previaNotaServicoSchema),
   dispensas: z.array(previaDispensaSchema),
+  trocasEscalaEspecial: z.array(trocaEscalaEspecialSchema).default([]),
 });
 export type AjustesPrevia = z.infer<typeof ajustesPreviaSchema>;
 
-/** Body do PUT /previa/:data/ajustes — overwrite completo dos 4 campos. */
+/** Body do PUT /previa/:data/ajustes — overwrite completo. */
 export const upsertAjustesPreviaSchema = ajustesPreviaSchema;
 export type UpsertAjustesPreviaInput = z.infer<typeof upsertAjustesPreviaSchema>;
+
+/** Body do POST /previa/:data/ajustes/escala-especial/trocas. */
+export const addTrocaEscalaEspecialSchema = z.object({
+  atoOriginal: escalaEspecialAtoLightSchema,
+  substituidoRaw: z.string().min(1),
+  substituidoNf: z.string().optional(),
+  substitutoRaw: z.string().min(1),
+  substitutoNf: z.string().optional(),
+});
+export type AddTrocaEscalaEspecialInput = z.infer<typeof addTrocaEscalaEspecialSchema>;
 
 export const previaDoDiaSchema = z.object({
   /** Data ISO `YYYY-MM-DD`. */
@@ -142,6 +190,13 @@ export const previaDoDiaSchema = z.object({
   escalaEspecial: previaEscalaEspecialSchema,
   notasServico: z.array(previaNotaServicoSchema),
   dispensas: z.array(previaDispensaSchema),
+
+  /** S6a-fix item 4 — atos da Escala Especial do dia (read-only) + trocas registradas. */
+  escalaEspecialAtos: z.array(escalaEspecialAtoLightSchema).default([]),
+  trocasEscalaEspecial: z.array(trocaEscalaEspecialSchema).default([]),
+
+  /** S6a-fix item 6 — Chefes de Operações escalados no dia (planilha ChOp externa). */
+  chefesOperacoes: z.array(chefeOperacoesSchema).default([]),
 
   /** Nome do XLSX-fonte da escala, se houver. */
   origemEscala: z.string().nullable(),

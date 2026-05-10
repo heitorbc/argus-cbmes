@@ -2,12 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type {
   AjustesPrevia,
+  EscalaEspecialAtoLight,
   LetraEquipe,
   PreviaDoDia,
   TipoInconsistencia,
+  TrocaEscalaEspecial,
 } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
 import { formatPreviaParaWhatsapp } from '@/lib/whatsapp';
+import { MilitarSelect } from '@/components/militar-select';
 
 const EQUIPE_COLOR: Record<LetraEquipe, string> = {
   A: 'bg-emerald-100 text-emerald-900 border-emerald-300',
@@ -315,6 +318,8 @@ export function PreviaPage() {
             <AjustesPreTurno
               data={data}
               initial={extractAjustes(previa)}
+              atosEspeciais={previa.escalaEspecialAtos}
+              chefesOperacoes={previa.chefesOperacoes}
               onSaved={() => {
                 // recarrega a Prévia após salvar ajustes
                 api
@@ -340,23 +345,33 @@ function extractAjustes(previa: PreviaDoDia): AjustesPrevia {
     escalaEspecial: previa.escalaEspecial,
     notasServico: previa.notasServico,
     dispensas: previa.dispensas,
+    trocasEscalaEspecial: previa.trocasEscalaEspecial,
   };
+}
+
+function atoKey(a: EscalaEspecialAtoLight): string {
+  return `${a.data}|${a.militarRaw}|${a.horario}|${a.funcao}`;
 }
 
 function AjustesPreTurno({
   data,
   initial,
+  atosEspeciais,
+  chefesOperacoes,
   onSaved,
 }: {
   data: string;
   initial: AjustesPrevia;
+  atosEspeciais: EscalaEspecialAtoLight[];
+  chefesOperacoes: PreviaDoDia['chefesOperacoes'];
   onSaved: () => void;
 }) {
   const [state, setState] = useState<AjustesPrevia>(initial);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [modalAto, setModalAto] = useState<EscalaEspecialAtoLight | null>(null);
 
-  // sincroniza quando a data muda (depende de `initial` mas evitamos loop usando data como key)
+  // sincroniza quando a data muda
   useEffect(() => {
     setState(initial);
   }, [data, initial]);
@@ -384,225 +399,434 @@ function AjustesPreTurno({
     }
   };
 
+  const removerTrocaEspecial = async (ato: EscalaEspecialAtoLight) => {
+    try {
+      await api.previaRemoveTrocaEscalaEspecial(data, atoKey(ato));
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Erro ao remover troca');
+    }
+  };
+
+  const trocasPorAto = new Map<string, TrocaEscalaEspecial>();
+  for (const t of state.trocasEscalaEspecial) trocasPorAto.set(atoKey(t.atoOriginal), t);
+
   return (
-    <details className="mt-4 rounded border border-cbmes-blue/30 bg-white p-3">
-      <summary className="cursor-pointer text-sm font-semibold text-cbmes-blue">
-        ✏️ Ajustes pré-turno (trocas, escala especial, NS, dispensas)
-      </summary>
-      <div className="mt-3 space-y-4 text-xs">
+    <>
+      {chefesOperacoes.length > 0 && (
+        <section className="mt-4 rounded border border-slate-200 bg-white p-3">
+          <h3 className="mb-2 text-sm font-semibold text-slate-700">
+            Chefe de Operações (escalados no dia)
+          </h3>
+          <ul className="divide-y divide-slate-100 text-sm">
+            {chefesOperacoes.map((c) => (
+              <li key={c.nf} className="flex items-baseline justify-between gap-2 py-1">
+                <span>
+                  <strong>{c.posto}</strong> {c.nomeGuerra}
+                  {c.marcador && (
+                    <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-700">
+                      {c.marcador}
+                    </span>
+                  )}
+                </span>
+                <span className="text-xs text-slate-500">
+                  NF {c.nf}
+                  {c.telefone && <> · 📞 {c.telefone}</>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <details className="mt-4 rounded border border-cbmes-blue/30 bg-white p-3">
+        <summary className="cursor-pointer text-sm font-semibold text-cbmes-blue">
+          ✏️ Ajustes pré-turno (trocas, escala especial, NS, dispensas)
+        </summary>
+        <div className="mt-3 space-y-4 text-xs">
+          {err && (
+            <p
+              role="alert"
+              className="rounded border border-feedback-error/30 bg-feedback-error/10 p-2 text-feedback-error"
+            >
+              {err}
+            </p>
+          )}
+
+          <fieldset className="rounded border border-slate-200 p-2">
+            <legend className="px-1 font-medium text-slate-700">Trocas</legend>
+            {state.trocas.map((t, i) => (
+              <div
+                key={i}
+                className="mt-2 grid grid-cols-1 items-end gap-2 md:grid-cols-[1fr,1fr,120px,auto]"
+              >
+                <div>
+                  <p className="text-[10px] text-slate-500">Substituído</p>
+                  <MilitarSelect
+                    value={t.substituidoNf}
+                    valueRaw={t.substituidoRaw}
+                    onChange={(nf, m) => {
+                      const trocas = [...state.trocas];
+                      trocas[i] = {
+                        ...trocas[i]!,
+                        substituidoNf: nf ?? undefined,
+                        substituidoRaw: m
+                          ? `${m.posto} ${m.nomeGuerra ?? m.nome.split(' ')[0]}`
+                          : '',
+                      };
+                      setState({ ...state, trocas });
+                    }}
+                    placeholder="Substituído"
+                    excluirNfs={t.substitutoNf ? [t.substitutoNf] : []}
+                  />
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-500">Substituto</p>
+                  <MilitarSelect
+                    value={t.substitutoNf}
+                    valueRaw={t.substitutoRaw}
+                    onChange={(nf, m) => {
+                      const trocas = [...state.trocas];
+                      trocas[i] = {
+                        ...trocas[i]!,
+                        substitutoNf: nf ?? undefined,
+                        substitutoRaw: m
+                          ? `${m.posto} ${m.nomeGuerra ?? m.nome.split(' ')[0]}`
+                          : '',
+                      };
+                      setState({ ...state, trocas });
+                    }}
+                    placeholder="Substituto"
+                    excluirNfs={t.substituidoNf ? [t.substituidoNf] : []}
+                  />
+                </div>
+                <input
+                  placeholder="Período"
+                  value={t.periodo}
+                  onChange={(e) => {
+                    const trocas = [...state.trocas];
+                    trocas[i] = { ...trocas[i]!, periodo: e.target.value };
+                    setState({ ...state, trocas });
+                  }}
+                  className="rounded border border-slate-300 px-2 py-2"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setState({ ...state, trocas: state.trocas.filter((_, j) => j !== i) })
+                  }
+                  className="self-end rounded border border-feedback-error px-2 py-2 text-feedback-error"
+                >
+                  Remover
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() =>
+                setState({
+                  ...state,
+                  trocas: [
+                    ...state.trocas,
+                    { substituidoRaw: '', substitutoRaw: '', periodo: '24h' },
+                  ],
+                })
+              }
+              className="mt-2 rounded border border-cbmes-blue px-3 py-1 text-cbmes-blue"
+            >
+              + Adicionar troca
+            </button>
+          </fieldset>
+
+          <fieldset className="rounded border border-slate-200 p-2">
+            <legend className="px-1 font-medium text-slate-700">Escala Especial</legend>
+            {atosEspeciais.length === 0 ? (
+              <p className="mt-2 text-slate-500">
+                Nenhum ato de Escala Especial importado para este dia. Importe o XLSM em{' '}
+                <Link to="/cadastros/escalas-especiais" className="text-cbmes-blue underline">
+                  /cadastros/escalas-especiais
+                </Link>
+                .
+              </p>
+            ) : (
+              <ul className="mt-2 divide-y divide-slate-100">
+                {atosEspeciais.map((a) => {
+                  const key = atoKey(a);
+                  const troca = trocasPorAto.get(key);
+                  return (
+                    <li key={key} className="py-2">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span>
+                          {troca ? (
+                            <>
+                              <s className="text-slate-400">{a.militarRaw}</s> →{' '}
+                              <strong className="text-cbmes-blue">{troca.substitutoRaw}</strong>
+                            </>
+                          ) : (
+                            <strong>{a.militarRaw}</strong>
+                          )}
+                          <span className="ml-2 text-slate-500">
+                            {a.horario} · {a.funcao}
+                          </span>
+                        </span>
+                        {troca ? (
+                          <button
+                            type="button"
+                            onClick={() => removerTrocaEspecial(a)}
+                            className="rounded border border-feedback-error px-2 py-1 text-feedback-error"
+                          >
+                            Desfazer troca
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setModalAto(a)}
+                            className="rounded border border-cbmes-blue px-2 py-1 text-cbmes-blue"
+                          >
+                            Registrar Troca
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </fieldset>
+
+          <fieldset className="rounded border border-slate-200 p-2">
+            <legend className="px-1 font-medium text-slate-700">Notas de Serviço</legend>
+            {state.notasServico.map((n, i) => (
+              <div key={i} className="mt-2 grid grid-cols-1 gap-1 md:grid-cols-3">
+                <input
+                  placeholder="Código (NS072)"
+                  value={n.codigo}
+                  onChange={(e) => {
+                    const ns = [...state.notasServico];
+                    ns[i] = { ...ns[i]!, codigo: e.target.value };
+                    setState({ ...state, notasServico: ns });
+                  }}
+                  className="rounded border border-slate-300 px-2 py-1"
+                />
+                <input
+                  placeholder="Descrição (opcional)"
+                  value={n.descricao ?? ''}
+                  onChange={(e) => {
+                    const ns = [...state.notasServico];
+                    ns[i] = { ...ns[i]!, descricao: e.target.value };
+                    setState({ ...state, notasServico: ns });
+                  }}
+                  className="rounded border border-slate-300 px-2 py-1"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setState({
+                      ...state,
+                      notasServico: state.notasServico.filter((_, j) => j !== i),
+                    })
+                  }
+                  className="rounded border border-feedback-error px-2 py-1 text-feedback-error"
+                >
+                  Remover
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() =>
+                setState({ ...state, notasServico: [...state.notasServico, { codigo: '' }] })
+              }
+              className="mt-2 rounded border border-cbmes-blue px-3 py-1 text-cbmes-blue"
+            >
+              + Adicionar NS
+            </button>
+          </fieldset>
+
+          <fieldset className="rounded border border-slate-200 p-2">
+            <legend className="px-1 font-medium text-slate-700">Dispensas</legend>
+            {state.dispensas.map((d, i) => (
+              <div
+                key={i}
+                className="mt-2 grid grid-cols-1 items-end gap-2 md:grid-cols-[1fr,1fr,auto]"
+              >
+                <div>
+                  <p className="text-[10px] text-slate-500">Militar</p>
+                  <MilitarSelect
+                    value={d.militarNf}
+                    valueRaw={d.militarRaw}
+                    onChange={(nf, m) => {
+                      const ds = [...state.dispensas];
+                      ds[i] = {
+                        ...ds[i]!,
+                        militarNf: nf ?? undefined,
+                        militarRaw: m ? `${m.posto} ${m.nomeGuerra ?? m.nome.split(' ')[0]}` : '',
+                      };
+                      setState({ ...state, dispensas: ds });
+                    }}
+                    placeholder="Selecione o militar"
+                  />
+                </div>
+                <input
+                  placeholder="Motivo (opcional)"
+                  value={d.motivo ?? ''}
+                  onChange={(e) => {
+                    const ds = [...state.dispensas];
+                    ds[i] = { ...ds[i]!, motivo: e.target.value };
+                    setState({ ...state, dispensas: ds });
+                  }}
+                  className="rounded border border-slate-300 px-2 py-2"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setState({ ...state, dispensas: state.dispensas.filter((_, j) => j !== i) })
+                  }
+                  className="self-end rounded border border-feedback-error px-2 py-2 text-feedback-error"
+                >
+                  Remover
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() =>
+                setState({ ...state, dispensas: [...state.dispensas, { militarRaw: '' }] })
+              }
+              className="mt-2 rounded border border-cbmes-blue px-3 py-1 text-cbmes-blue"
+            >
+              + Adicionar dispensa
+            </button>
+          </fieldset>
+
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving}
+            className="rounded-button bg-cbmes-red px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {saving ? 'Salvando…' : 'Salvar ajustes'}
+          </button>
+        </div>
+      </details>
+
+      {modalAto && (
+        <ModalTrocaEscalaEspecial
+          ato={modalAto}
+          data={data}
+          onSaved={() => {
+            setModalAto(null);
+            onSaved();
+          }}
+          onCancel={() => setModalAto(null)}
+        />
+      )}
+    </>
+  );
+}
+
+function ModalTrocaEscalaEspecial({
+  ato,
+  data,
+  onSaved,
+  onCancel,
+}: {
+  ato: EscalaEspecialAtoLight;
+  data: string;
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const [substitutoNf, setSubstitutoNf] = useState<string | undefined>();
+  const [substitutoRaw, setSubstitutoRaw] = useState<string>('');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (!substitutoRaw && !substitutoNf) {
+      setErr('Selecione o militar substituto.');
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    try {
+      await api.previaAddTrocaEscalaEspecial(data, {
+        atoOriginal: ato,
+        substituidoRaw: ato.militarRaw,
+        substitutoRaw,
+        substitutoNf,
+      });
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Erro ao registrar troca');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-troca-titulo"
+    >
+      <div className="w-full max-w-lg rounded border border-slate-200 bg-white p-4 shadow-xl">
+        <h3 id="modal-troca-titulo" className="text-base font-bold text-cbmes-blue">
+          Registrar Troca de Escala Especial
+        </h3>
+
+        <div className="mt-3 rounded bg-slate-50 p-3 text-xs">
+          <p className="font-semibold text-slate-700">Ato original</p>
+          <p className="mt-1">
+            <strong>{ato.militarRaw}</strong> — {ato.horario} · <em>{ato.funcao}</em>
+          </p>
+          <p className="text-slate-500">{ato.data}</p>
+        </div>
+
+        <div className="mt-3">
+          <label className="text-xs font-medium text-slate-700">Substituto</label>
+          <div className="mt-1">
+            <MilitarSelect
+              value={substitutoNf}
+              valueRaw={substitutoRaw}
+              onChange={(nf, m) => {
+                setSubstitutoNf(nf ?? undefined);
+                setSubstitutoRaw(m ? `${m.posto} ${m.nomeGuerra ?? m.nome.split(' ')[0]}` : '');
+              }}
+              placeholder="Selecione o militar substituto"
+            />
+          </div>
+        </div>
+
         {err && (
           <p
             role="alert"
-            className="rounded border border-feedback-error/30 bg-feedback-error/10 p-2 text-feedback-error"
+            className="mt-3 rounded border border-feedback-error/30 bg-feedback-error/10 p-2 text-xs text-feedback-error"
           >
             {err}
           </p>
         )}
 
-        <fieldset className="rounded border border-slate-200 p-2">
-          <legend className="px-1 font-medium text-slate-700">Trocas</legend>
-          {state.trocas.map((t, i) => (
-            <div key={i} className="mt-2 grid grid-cols-1 gap-1 md:grid-cols-4">
-              <input
-                placeholder="Substituído"
-                value={t.substituidoRaw}
-                onChange={(e) => {
-                  const trocas = [...state.trocas];
-                  trocas[i] = { ...trocas[i]!, substituidoRaw: e.target.value };
-                  setState({ ...state, trocas });
-                }}
-                className="rounded border border-slate-300 px-2 py-1"
-              />
-              <input
-                placeholder="Substituto"
-                value={t.substitutoRaw}
-                onChange={(e) => {
-                  const trocas = [...state.trocas];
-                  trocas[i] = { ...trocas[i]!, substitutoRaw: e.target.value };
-                  setState({ ...state, trocas });
-                }}
-                className="rounded border border-slate-300 px-2 py-1"
-              />
-              <input
-                placeholder="Período (ex: 24h)"
-                value={t.periodo}
-                onChange={(e) => {
-                  const trocas = [...state.trocas];
-                  trocas[i] = { ...trocas[i]!, periodo: e.target.value };
-                  setState({ ...state, trocas });
-                }}
-                className="rounded border border-slate-300 px-2 py-1"
-              />
-              <button
-                type="button"
-                onClick={() =>
-                  setState({ ...state, trocas: state.trocas.filter((_, j) => j !== i) })
-                }
-                className="rounded border border-feedback-error px-2 py-1 text-feedback-error"
-              >
-                Remover
-              </button>
-            </div>
-          ))}
+        <div className="mt-4 flex gap-2">
           <button
             type="button"
-            onClick={() =>
-              setState({
-                ...state,
-                trocas: [
-                  ...state.trocas,
-                  { substituidoRaw: '', substitutoRaw: '', periodo: '24h' },
-                ],
-              })
-            }
-            className="mt-2 rounded border border-cbmes-blue px-3 py-1 text-cbmes-blue"
+            onClick={submit}
+            disabled={saving}
+            className="flex-1 rounded-button bg-cbmes-red py-2 text-sm font-semibold text-white disabled:opacity-60"
           >
-            + Adicionar troca
+            {saving ? 'Salvando…' : 'Salvar'}
           </button>
-        </fieldset>
-
-        <fieldset className="rounded border border-slate-200 p-2">
-          <legend className="px-1 font-medium text-slate-700">Escala Especial</legend>
-          <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-            <label className="block">
-              <span className="text-slate-600">Matutina</span>
-              <input
-                value={state.escalaEspecial.matutina?.militarRaw ?? ''}
-                onChange={(e) =>
-                  setState({
-                    ...state,
-                    escalaEspecial: {
-                      ...state.escalaEspecial,
-                      matutina: e.target.value ? { militarRaw: e.target.value } : undefined,
-                    },
-                  })
-                }
-                placeholder="Ex.: SGT BRUNO MELO"
-                className="mt-1 w-full rounded border border-slate-300 px-2 py-1"
-              />
-            </label>
-            <label className="block">
-              <span className="text-slate-600">Vespertina</span>
-              <input
-                value={state.escalaEspecial.vespertina?.militarRaw ?? ''}
-                onChange={(e) =>
-                  setState({
-                    ...state,
-                    escalaEspecial: {
-                      ...state.escalaEspecial,
-                      vespertina: e.target.value ? { militarRaw: e.target.value } : undefined,
-                    },
-                  })
-                }
-                placeholder="Ex.: CB ELSON"
-                className="mt-1 w-full rounded border border-slate-300 px-2 py-1"
-              />
-            </label>
-          </div>
-        </fieldset>
-
-        <fieldset className="rounded border border-slate-200 p-2">
-          <legend className="px-1 font-medium text-slate-700">Notas de Serviço</legend>
-          {state.notasServico.map((n, i) => (
-            <div key={i} className="mt-2 grid grid-cols-1 gap-1 md:grid-cols-3">
-              <input
-                placeholder="Código (NS072)"
-                value={n.codigo}
-                onChange={(e) => {
-                  const ns = [...state.notasServico];
-                  ns[i] = { ...ns[i]!, codigo: e.target.value };
-                  setState({ ...state, notasServico: ns });
-                }}
-                className="rounded border border-slate-300 px-2 py-1"
-              />
-              <input
-                placeholder="Descrição (opcional)"
-                value={n.descricao ?? ''}
-                onChange={(e) => {
-                  const ns = [...state.notasServico];
-                  ns[i] = { ...ns[i]!, descricao: e.target.value };
-                  setState({ ...state, notasServico: ns });
-                }}
-                className="rounded border border-slate-300 px-2 py-1"
-              />
-              <button
-                type="button"
-                onClick={() =>
-                  setState({ ...state, notasServico: state.notasServico.filter((_, j) => j !== i) })
-                }
-                className="rounded border border-feedback-error px-2 py-1 text-feedback-error"
-              >
-                Remover
-              </button>
-            </div>
-          ))}
           <button
             type="button"
-            onClick={() =>
-              setState({ ...state, notasServico: [...state.notasServico, { codigo: '' }] })
-            }
-            className="mt-2 rounded border border-cbmes-blue px-3 py-1 text-cbmes-blue"
+            onClick={onCancel}
+            disabled={saving}
+            className="flex-1 rounded-button border border-slate-300 bg-white py-2 text-sm text-slate-700"
           >
-            + Adicionar NS
+            Cancelar
           </button>
-        </fieldset>
-
-        <fieldset className="rounded border border-slate-200 p-2">
-          <legend className="px-1 font-medium text-slate-700">Dispensas</legend>
-          {state.dispensas.map((d, i) => (
-            <div key={i} className="mt-2 grid grid-cols-1 gap-1 md:grid-cols-3">
-              <input
-                placeholder="Militar (ex.: 2ºSGT HOFFMAM)"
-                value={d.militarRaw}
-                onChange={(e) => {
-                  const ds = [...state.dispensas];
-                  ds[i] = { ...ds[i]!, militarRaw: e.target.value };
-                  setState({ ...state, dispensas: ds });
-                }}
-                className="rounded border border-slate-300 px-2 py-1"
-              />
-              <input
-                placeholder="Motivo (opcional)"
-                value={d.motivo ?? ''}
-                onChange={(e) => {
-                  const ds = [...state.dispensas];
-                  ds[i] = { ...ds[i]!, motivo: e.target.value };
-                  setState({ ...state, dispensas: ds });
-                }}
-                className="rounded border border-slate-300 px-2 py-1"
-              />
-              <button
-                type="button"
-                onClick={() =>
-                  setState({ ...state, dispensas: state.dispensas.filter((_, j) => j !== i) })
-                }
-                className="rounded border border-feedback-error px-2 py-1 text-feedback-error"
-              >
-                Remover
-              </button>
-            </div>
-          ))}
-          <button
-            type="button"
-            onClick={() =>
-              setState({ ...state, dispensas: [...state.dispensas, { militarRaw: '' }] })
-            }
-            className="mt-2 rounded border border-cbmes-blue px-3 py-1 text-cbmes-blue"
-          >
-            + Adicionar dispensa
-          </button>
-        </fieldset>
-
-        <button
-          type="button"
-          onClick={save}
-          disabled={saving}
-          className="rounded-button bg-cbmes-red px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-        >
-          {saving ? 'Salvando…' : 'Salvar ajustes'}
-        </button>
+        </div>
       </div>
-    </details>
+    </div>
   );
 }
 
