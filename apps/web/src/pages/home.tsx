@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth-context';
+import { canSeeSection } from '@/lib/permissions';
 
 const PAPEL_LABEL: Record<string, string> = {
   admin: 'Administrador',
@@ -22,7 +23,11 @@ export function HomePage() {
   const [logging, setLogging] = useState(false);
 
   if (!user) return null;
-  const isAdmin = user.papeis.includes('admin');
+
+  // S6f — RBAC visual: Prontidão é universal, demais seções por papel.
+  const showSargenteacao = canSeeSection(user.papeis, 'sargenteacao');
+  const showLogistica = canSeeSection(user.papeis, 'logistica');
+  const showConfiguracoes = canSeeSection(user.papeis, 'configuracoes');
 
   const handleLogout = async () => {
     setLogging(true);
@@ -84,25 +89,29 @@ export function HomePage() {
           />
         </ModuloSection>
 
-        <ModuloSection
-          titulo="Sargenteação"
-          descricao="Cadastros de pessoal e escalas (RH operacional)."
-          accent="border-l-cbmes-blue"
-        >
-          <CardLink to="/cadastros/efetivo" icon="👥" label="Efetivo" />
-          <CardLink to="/cadastros/escalas" icon="📅" label="Escala Mensal (XLSX)" />
-          <CardLink to="/cadastros/escalas-especiais" icon="📆" label="Escala Especial (XLSM)" />
-        </ModuloSection>
+        {showSargenteacao && (
+          <ModuloSection
+            titulo="Sargenteação"
+            descricao="Cadastros de pessoal e escalas (RH operacional)."
+            accent="border-l-cbmes-blue"
+          >
+            <CardLink to="/cadastros/efetivo" icon="👥" label="Efetivo" />
+            <CardLink to="/cadastros/escalas" icon="📅" label="Escala Mensal (XLSX)" />
+            <CardLink to="/cadastros/escalas-especiais" icon="📆" label="Escala Especial (XLSM)" />
+          </ModuloSection>
+        )}
 
-        <ModuloSection
-          titulo="Logística"
-          descricao="Frota e equipamento: viaturas e seus dados operacionais."
-          accent="border-l-amber-500"
-        >
-          <CardLink to="/cadastros/viaturas" icon="🚒" label="Viaturas" />
-        </ModuloSection>
+        {showLogistica && (
+          <ModuloSection
+            titulo="Logística"
+            descricao="Frota e equipamento: viaturas e seus dados operacionais."
+            accent="border-l-amber-500"
+          >
+            <CardLink to="/cadastros/viaturas" icon="🚒" label="Viaturas" />
+          </ModuloSection>
+        )}
 
-        {isAdmin && (
+        {showConfiguracoes && (
           <ModuloSection
             titulo="Configurações"
             descricao="Admin · Unidades e Recursos do sistema (whitelist do MF)."
@@ -114,9 +123,7 @@ export function HomePage() {
         )}
 
         <div className="mt-6 rounded border border-slate-200 bg-white p-4 text-xs text-slate-500">
-          <p className="font-medium text-slate-700">
-            Sprint atual: S6e — CRUD admin Unidades + Recursos
-          </p>
+          <p className="font-medium text-slate-700">Sprint atual: S6f — RBAC visual da home</p>
           <p className="mt-1">
             Próximo: S5b (persistência Supabase), S9 (escrita MF), S10-S11 (Parte Diária).
           </p>

@@ -6,6 +6,7 @@ import {
   useLocation,
 } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
+import { canAccessRoute } from '@/lib/permissions';
 import { LoginPage } from '@/pages/login';
 import { TrocarSenhaPage } from '@/pages/trocar-senha';
 import { HomePage } from '@/pages/home';
@@ -43,6 +44,11 @@ function ProtectedRoute() {
   // Força troca de senha no primeiro acesso, exceto se já estiver na tela de troca
   if (user.primeiroAcesso && location.pathname !== '/trocar-senha') {
     return <Navigate to="/trocar-senha" replace />;
+  }
+
+  // S6f — RBAC por seção: redireciona para `/` se a rota for de seção não permitida.
+  if (!canAccessRoute(user.papeis, location.pathname)) {
+    return <Navigate to="/" replace />;
   }
 
   return <Outlet />;
