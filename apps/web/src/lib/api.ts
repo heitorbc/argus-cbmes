@@ -499,4 +499,35 @@ export const api = {
     }),
 
   notasServicoRemove: (id: string) => request<void>(`/notas-servico/${id}`, { method: 'DELETE' }),
+
+  // S6m — Preview de PDF de NS (não persiste, retorna sugestões editáveis)
+  notasServicoPreviewPdf: async (file: File): Promise<NotaServicoPreviewPdfResponse> => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`${API_URL}/notas-servico/preview-pdf`, {
+      method: 'POST',
+      credentials: 'include',
+      body: fd,
+    });
+    const text = await res.text();
+    const json: unknown = text ? JSON.parse(text) : undefined;
+    if (!res.ok) {
+      const message = extractMessage(json) ?? `Erro ${res.status}`;
+      throw new ApiError(res.status, message);
+    }
+    return json as NotaServicoPreviewPdfResponse;
+  },
 };
+
+/** Shape devolvido por POST /notas-servico/preview-pdf (S6m). */
+export interface NotaServicoPreviewPdfResponse {
+  codigoSugerido: string | null;
+  descricaoSugerida: string | null;
+  militaresNfs: string[];
+  dataSugerida: string | null;
+  horaInicioSugerida: string | null;
+  horaFimSugerida: string | null;
+  viaturaSugerida: string | null;
+  textoBruto: string;
+  avisos: string[];
+}

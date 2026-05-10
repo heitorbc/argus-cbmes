@@ -10,7 +10,10 @@ import {
   Post,
   Put,
   Query,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { z } from 'zod';
 import {
   createNotaServicoInputSchema,
@@ -20,7 +23,17 @@ import {
 } from '@argus/shared-types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { parseNotaServicoPdf, type ParseNotaServicoPdfResult } from './nota-servico-pdf-parser';
 import { NotasServicoService } from './notas-servico.service';
+
+interface MulterFile {
+  buffer: Buffer;
+  originalname: string;
+  size: number;
+  mimetype: string;
+}
+
+const MAX_PDF_BYTES = 5 * 1024 * 1024; // 5 MB
 
 const listQuerySchema = z.object({
   data: z
@@ -78,5 +91,36 @@ export class NotasServicoController {
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param('id') id: string): void {
     this.notas.remove(id);
+  }
+
+  /**
+   * S6m — Importa PDF institucional de Nota de Serviço e devolve um preview
+   * com sugestões editáveis (codigo, descrição, militares NFs, viatura, data,
+   * hora). O frontend mostra esses sugeridos no formulário e o user
+   * confirma/edita antes do POST normal.
+   *
+   * Não persiste — apenas extrai e devolve. Persistência é via POST normal.
+   */
+  @Roles('admin', 'sargenteante', 'fiscal')
+  @Post('preview-pdf')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_PDF_BYTES } }))
+  async previewPdf(@UploadedFile() file: MulterFile): Promise<ParseNotaServicoPdfResult> {
+    if (!file) {
+      throw new BadRequestException('Arquivo obrigatório no campo "file" (multipart/form-data).');
+    }
+    if (file.size > MAX_PDF_BYTES) {
+      throw new BadRequestException(
+        `PDF grande demais (${file.size} bytes). Limite: ${MAX_PDF_BYTES} bytes.`,
+      );
+    }
+    if (!file.originalname.toLowerCase().endsWith('.pdf')) {
+      throw new BadRequestException('Apenas arquivos .pdf são aceitos.');
+    }
+    try {
+      return await parseNotaServicoPdf(file.buffer);
+    } catch (err) {
+      throw new BadRequestException(`Falha ao parsear PDF: ${(err as Error).message}`);
+    }
   }
 }

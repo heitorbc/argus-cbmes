@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { CreateNotaServicoInput, Militar, NotaServico, Viatura } from '@argus/shared-types';
-import { ApiError, api } from '@/lib/api';
+import { ApiError, api, type NotaServicoPreviewPdfResponse } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { MilitarSelect } from '@/components/militar-select';
 
@@ -236,13 +236,44 @@ export function NotasServicoPage() {
         </div>
 
         {podeCriar && !showForm && (
-          <button
-            type="button"
-            onClick={startCreate}
-            className="mt-3 w-full rounded-button bg-cbmes-red py-2.5 text-base font-semibold text-white"
-          >
-            + Nova Nota de Serviço
-          </button>
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={startCreate}
+              className="rounded-button bg-cbmes-red py-2.5 text-base font-semibold text-white"
+            >
+              + Nova Nota de Serviço
+            </button>
+            <ImportarPdfButton
+              onPreview={async (resp) => {
+                const militares = await Promise.all(
+                  resp.militaresNfs.map(async (nf) => {
+                    try {
+                      const m = await api.efetivoFindByNf(nf);
+                      return { nf, raw: `${m.posto} ${m.nomeGuerra ?? m.nome.split(' ')[0]}` };
+                    } catch {
+                      return { nf, raw: `NF ${nf}` };
+                    }
+                  }),
+                );
+                setForm({
+                  codigo: resp.codigoSugerido ?? '',
+                  descricao: resp.descricaoSugerida ?? '',
+                  data: resp.dataSugerida ?? todayIso(),
+                  horaInicio: resp.horaInicioSugerida ?? '08:00',
+                  horaFim: resp.horaFimSugerida ?? '18:00',
+                  viaturaPrefixo: resp.viaturaSugerida ?? '',
+                  militares,
+                  observacoes: '',
+                });
+                setEditingId(null);
+                setFormError(
+                  resp.avisos.length > 0 ? `Avisos do parser: ${resp.avisos.join('; ')}` : null,
+                );
+                setShowForm(true);
+              }}
+            />
+          </div>
         )}
 
         {showForm && podeCriar && (
@@ -463,5 +494,50 @@ export function NotasServicoPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+/**
+ * S6m — Botão de upload de PDF de NS. Chama POST /notas-servico/preview-pdf
+ * e devolve o resultado para o caller via `onPreview` (que pré-preenche o
+ * formulário).
+ */
+function ImportarPdfButton({
+  onPreview,
+}: {
+  onPreview: (resp: NotaServicoPreviewPdfResponse) => Promise<void> | void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const handleFile = async (file: File) => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const resp = await api.notasServicoPreviewPdf(file);
+      await onPreview(resp);
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Erro ao importar PDF');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <label className="cursor-pointer rounded-button border border-cbmes-blue bg-white py-2.5 text-center text-base font-semibold text-cbmes-blue hover:bg-cbmes-blue/5">
+      <input
+        type="file"
+        accept="application/pdf,.pdf"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void handleFile(f);
+          e.target.value = ''; // reset para permitir re-upload do mesmo arquivo
+        }}
+        className="hidden"
+        disabled={loading}
+      />
+      {loading ? 'Lendo PDF…' : '📄 Importar PDF (preencher formulário)'}
+      {err && <span className="ml-2 text-xs text-feedback-error">— {err}</span>}
+    </label>
   );
 }
