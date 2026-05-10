@@ -3,7 +3,6 @@ import type {
   ComposicaoEntry,
   EscalaMensal,
   Militar,
-  RecursoMapaForca,
   TipoIdeo,
   Viatura,
 } from '@argus/shared-types';
@@ -11,20 +10,9 @@ import { EscalasService } from '../escalas/escalas.service';
 import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.service';
 import { FiscaisService } from '../fiscais/fiscais.service';
 import { IdeoService } from '../ideo/ideo.service';
-import { RecursosService } from '../recursos/recursos.service';
 import { ServicoService } from '../servico/servico.service';
-import { UnidadesService } from '../unidades/unidades.service';
 import { AjustesPreviaService } from './ajustes-previa.service';
 import { PreviaService } from './previa.service';
-
-/** Helper: cria RecursosService já com seed da 1ª1º (espelha o boot do Nest). */
-function makeRecursosService(): RecursosService {
-  const u = new UnidadesService();
-  u.onModuleInit();
-  const r = new RecursosService(u);
-  r.onModuleInit();
-  return r;
-}
 
 function militar(p: Partial<Militar> & { nf: string; nome: string }): Militar {
   return {
@@ -79,13 +67,6 @@ class FakeViaturasService {
   constructor(private readonly all: Viatura[]) {}
   async list(): Promise<Viatura[]> {
     return this.all;
-  }
-}
-
-class FakeMapaForcaService {
-  constructor(private readonly recursos: RecursoMapaForca[] = []) {}
-  async getRecursos(): Promise<readonly RecursoMapaForca[]> {
-    return this.recursos;
   }
 }
 
@@ -174,12 +155,10 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
       fiscais,
       ideo,
       viaturas as unknown as never,
-      new FakeMapaForcaService() as unknown as never,
       new AjustesPreviaService(new ServicoService()),
       new EscalasEspeciaisService(),
       new FakeChefesOperacoesService() as unknown as never,
       new ServicoService(),
-      makeRecursosService(),
     );
 
     escalas.save(escalaAbril2026);
@@ -255,12 +234,10 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
       fiscais,
       ideo,
       viaturas as unknown as never,
-      new FakeMapaForcaService() as unknown as never,
       new AjustesPreviaService(new ServicoService()),
       new EscalasEspeciaisService(),
       new FakeChefesOperacoesService() as unknown as never,
       new ServicoService(),
-      makeRecursosService(),
     );
     const r = await previa.getPreviaDoDia('2026-04-23');
     const ar044 = r.viaturasOperacionais.find((v) => v.codigo === 'AR 044');
@@ -270,39 +247,18 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
     expect(abts01?.vtrStatus).toBe('operacional');
   });
 
-  // F3b — Mergulho não está no XLSX da SOS; vem do Mapa Força como equipe AQUATICAS.
-  it('complementa tripulação com MERGULHO 02 do Mapa Força (equipe AQUATICAS, funções M1/M2)', async () => {
-    const recursosMf: RecursoMapaForca[] = [
-      {
-        recurso: 'MERGULHO 02',
-        vtrPrefixo: 'AM_002',
-        vtrStatus: 'DISPONIVEL',
-        semEquipe: false,
-        chefe: '3º SGT HUMBERTO',
-        motorista: 'CB BEATRIZ',
-        operadores: ['CB VINICIUS CORDEIRO'],
-      },
-    ];
-    previa = new PreviaService(
-      escalas,
-      efetivo as unknown as never,
-      fiscais,
-      ideo,
-      viaturas as unknown as never,
-      new FakeMapaForcaService(recursosMf) as unknown as never,
-      new AjustesPreviaService(new ServicoService()),
-      new EscalasEspeciaisService(),
-      new FakeChefesOperacoesService() as unknown as never,
-      new ServicoService(),
-      makeRecursosService(),
-    );
+  // S6g (2026-05-10) — Antes do fix, militares de AQUATICAS/STAFF do MF eram
+  // adicionados à tripulação automaticamente. Agora a Prévia ignora militares
+  // do MF; eles devem vir 100% do XLSX da SOS.
+  it('S6g — não complementa tripulação com militares do MF (mesmo AQUATICAS/STAFF)', async () => {
+    // Cenário: XLSX importado tem 5 militares (composicaoCharlie). Mesmo com
+    // o MF retornando MERGULHO 02 + CHEFE DE OPERAÇÕES com militares, NADA
+    // é adicionado à tripulação além dos 5 do XLSX.
     const r = await previa.getPreviaDoDia('2026-04-23');
-    const mergulho = r.tripulacao.filter((t) => t.equipe === 'AQUATICAS');
-    expect(mergulho.length).toBeGreaterThanOrEqual(3);
-    expect(mergulho.find((t) => t.funcao === 'Ch')?.militarRef.nomeGuerra).toContain('HUMBERTO');
-    expect(mergulho.find((t) => t.funcao === 'Mot')?.militarRef.nomeGuerra).toContain('BEATRIZ');
-    // Operadores do mergulho viram M1, M2... (não Op 1, Op 2)
-    expect(mergulho.find((t) => t.funcao === 'M1')?.militarRef.nomeGuerra).toContain('VINICIUS');
+    expect(r.tripulacao).toHaveLength(5);
+    // Nenhuma equipe AQUATICAS ou STAFF aparece (vinha só do complemento MF):
+    expect(r.tripulacao.filter((t) => t.equipe === 'AQUATICAS')).toEqual([]);
+    expect(r.tripulacao.filter((t) => t.equipe === 'STAFF')).toEqual([]);
   });
 });
 
@@ -326,12 +282,10 @@ describe('PreviaService — inconsistências', () => {
       fiscais,
       ideo,
       viaturas as unknown as never,
-      new FakeMapaForcaService() as unknown as never,
       new AjustesPreviaService(new ServicoService()),
       new EscalasEspeciaisService(),
       new FakeChefesOperacoesService() as unknown as never,
       new ServicoService(),
-      makeRecursosService(),
     );
   });
 
@@ -340,6 +294,17 @@ describe('PreviaService — inconsistências', () => {
     expect(r.tripulacao).toEqual([]);
     expect(r.fiscal).toBeNull();
     expect(r.inconsistencias.some((i) => i.tipo === 'SEM_ESCALA_NO_MES')).toBe(true);
+  });
+
+  // S6g (2026-05-10) — Cenário do screenshot do Tech Lead: 10/05/2026 sem XLSX,
+  // antes do fix apareciam AU_154/AC_001/AM_002 com militares vindos do MF.
+  // Após o fix, Tripulação deve ficar vazia. Recursos do MF não complementam mais.
+  it('S6g — sem XLSX, Tripulação fica vazia mesmo se houvesse recursos AQUATICAS/STAFF no MF', async () => {
+    // Não chama escalas.save — mês 2026-07 não existe no storage
+    const r = await previa.getPreviaDoDia('2026-07-15');
+    expect(r.tripulacao).toEqual([]);
+    expect(r.tripulacao.filter((t) => t.equipe === 'AQUATICAS')).toEqual([]);
+    expect(r.tripulacao.filter((t) => t.equipe === 'STAFF')).toEqual([]);
   });
 
   it('EQUIPE_NAO_ESCALADA_NO_DIA quando mês existe mas dia sem equipe', async () => {

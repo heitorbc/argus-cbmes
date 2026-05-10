@@ -13,7 +13,6 @@ import {
   type PreviaIdeoEntry,
   type PreviaInconsistencia,
   type PreviaTripulacaoEntry,
-  type RecursoMapaForca,
   type StatusViatura,
   type TipoIdeo,
 } from '@argus/shared-types';
@@ -23,10 +22,7 @@ import { EscalasService } from '../escalas/escalas.service';
 import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.service';
 import { FiscaisService } from '../fiscais/fiscais.service';
 import { IdeoService } from '../ideo/ideo.service';
-import { MapaForcaService } from '../mapa-forca/mapa-forca.service';
-import { RecursosService } from '../recursos/recursos.service';
 import { ServicoService } from '../servico/servico.service';
-import { UNIDADE_1CIA_1BBM_ID } from '../unidades/unidades.service';
 import { ViaturasService } from '../viaturas/viaturas.service';
 import { AjustesPreviaService } from './ajustes-previa.service';
 import { NomeMatcher } from './nome-matching';
@@ -36,11 +32,14 @@ import { NomeMatcher } from './nome-matching';
  *
  * Fontes consolidadas:
  *   - EscalasService: equipe escalada (A/B/C/D) + composição rotativa (parsed XLSX, S3b)
- *   - MapaForcaService: complemento da tripulação fixa (MERGULHO, ChefeOp, etc.) + status viaturas (S5)
+ *   - MapaForcaService: status real das viaturas (S5). NÃO usado para militares —
+ *     S6g/2026-05-10 removeu o complemento de militares vindos do MF
+ *     (`buildComplementosFromMapaForca`). Tripulação vem 100% da Escala XLSX da SOS.
  *   - EfetivoService (consolidado QDI+EFETIVO): resolução nome→NF (S2.5)
  *   - FiscaisService: cadastros override (S3a)
  *   - IdeoService: itens do dia por tipo (S3a)
  *   - ViaturasService: lista de viaturas operacionais (status real do MF, S5)
+ *   - ChefesOperacoesService: planilha externa (NÃO o MF da CIODES) — S6a-fix item 6
  */
 @Injectable()
 export class PreviaService {
@@ -50,12 +49,10 @@ export class PreviaService {
     private readonly fiscais: FiscaisService,
     private readonly ideo: IdeoService,
     private readonly viaturas: ViaturasService,
-    private readonly mapaForca: MapaForcaService,
     private readonly ajustes: AjustesPreviaService,
     private readonly escalasEspeciais: EscalasEspeciaisService,
     private readonly chefesOperacoes: ChefesOperacoesService,
     private readonly servico: ServicoService,
-    private readonly recursos: RecursosService,
   ) {}
 
   async getPreviaDoDia(dataIso: string): Promise<PreviaDoDia> {
@@ -90,24 +87,14 @@ export class PreviaService {
     });
     const matcher = new NomeMatcher(efetivoTotal);
 
+    // S6g (2026-05-10) — Tripulação vem 100% da Escala XLSX da SOS. O complemento
+    // via MF (`buildComplementosFromMapaForca`) foi removido: militares do MF
+    // (chefe/motorista/operadores das colunas D-J) NÃO entram mais na Prévia.
+    // Do MF continuam vindo apenas: status das viaturas (vtrStatus) e a whitelist
+    // de Recursos válidos. Sem XLSX importado, `tripulacao` fica vazia.
     const tripulacao: PreviaTripulacaoEntry[] = escalados.entries.map((entry) =>
       this.buildTripulacaoEntry(entry, matcher, inconsistencias),
     );
-
-    // F3b — Complemento via Mapa Força: mergulho + staff fixo que não está no XLSX da SOS.
-    // S6d/F4 — categorias vêm da entidade Recurso (RecursosService), não mais hardcoded.
-    const recursosMf = await this.mapaForca.getRecursos().catch(() => [] as RecursoMapaForca[]);
-    const recursosAquaticas = this.recursos.nomesPorCategoria(UNIDADE_1CIA_1BBM_ID, 'AQUATICA');
-    const recursosStaff = this.recursos.nomesPorCategoria(UNIDADE_1CIA_1BBM_ID, 'STAFF');
-    const complementos = buildComplementosFromMapaForca(
-      recursosMf,
-      tripulacao,
-      recursosAquaticas,
-      recursosStaff,
-    );
-    for (const entry of complementos) {
-      tripulacao.push(this.buildTripulacaoEntry(entry, matcher, inconsistencias));
-    }
 
     // Cálculo do Fiscal (cadastrado → default por menor ANT da equipe rotativa do dia).
     const fiscal = equipe
@@ -289,86 +276,6 @@ export class PreviaService {
       origem: 'default',
     };
   }
-}
-
-/**
- * Constrói entries de tripulação para recursos do Mapa Força que não estão no XLSX da SOS.
- * Cobre o Pelotão de Atividades Aquáticas e o staff fixo (CHEFE DE OPERAÇÕES).
- * Funções para mergulho usam `M1`/`M2`/... ao invés de `Op N`.
- *
- * S6d/F4 — listas de aquáticas/staff vêm da entidade Recurso (categoria), não mais hardcoded.
- */
-function buildComplementosFromMapaForca(
-  recursos: readonly RecursoMapaForca[],
-  tripulacaoExistente: readonly PreviaTripulacaoEntry[],
-  recursosAquaticas: readonly string[],
-  recursosStaff: readonly string[],
-): ComposicaoEntry[] {
-  const ja = new Set(
-    tripulacaoExistente.map((t) => normalizeViaturaCode(t.viatura)).filter((s) => s.length > 0),
-  );
-  const out: ComposicaoEntry[] = [];
-
-  for (const r of recursos) {
-    const isAquatica = recursosAquaticas.includes(r.recurso);
-    const isStaff = recursosStaff.includes(r.recurso);
-    if (!isAquatica && !isStaff) continue;
-
-    const equipeBucket = isAquatica ? 'AQUATICAS' : 'STAFF';
-    const viaturaCodigo = r.vtrPrefixo ?? r.recurso;
-
-    // Se a viatura já está na escala importada, pula (evita duplicatas para ChOp).
-    if (r.vtrPrefixo && ja.has(normalizeViaturaCode(r.vtrPrefixo))) continue;
-
-    const opPrefix = r.recurso.startsWith('MERGULHO') ? 'M' : 'Op';
-
-    if (r.chefe) {
-      out.push(makeEntry(equipeBucket, viaturaCodigo, 'Ch', r.chefe));
-    }
-    if (r.motorista) {
-      out.push(makeEntry(equipeBucket, viaturaCodigo, 'Mot', r.motorista));
-    }
-    r.operadores.forEach((op, i) => {
-      out.push(makeEntry(equipeBucket, viaturaCodigo, `${opPrefix}${i + 1}`, op));
-    });
-  }
-  return out;
-}
-
-function makeEntry(
-  equipe: 'AQUATICAS' | 'STAFF',
-  viatura: string,
-  funcao: string,
-  militarRaw: string,
-): ComposicaoEntry {
-  const parsed = parseMilitarRawSimple(militarRaw);
-  return {
-    equipe,
-    viatura,
-    funcao,
-    militar: parsed,
-  };
-}
-
-/**
- * Parse leve do texto cru "2ºSGT MARIANE" → MilitarRef. Espelha `parseMilitarCell` do parser
- * XLSX, mas aqui aceita o formato do Mapa Força (sem espaço entre o ordinal e SGT, etc.).
- */
-function parseMilitarRawSimple(raw: string): {
-  raw: string;
-  postoAbreviado: string;
-  nomeGuerra: string;
-} {
-  const cleaned = raw.trim().replace(/\s+/g, ' ');
-  const re =
-    /^(?<posto>(?:[1-3]º\s*)?(?:CEL|TEN\s*CEL|MAJ|CAP|TEN(?:\s+QO[ACSE])?|SUB\s*TEN|SGT|CB|SD|AL))\s+(?<nome>.+)$/i;
-  const m = cleaned.match(re);
-  if (!m?.groups) {
-    return { raw: raw.trim(), postoAbreviado: '', nomeGuerra: cleaned.toUpperCase() };
-  }
-  const posto = m.groups.posto.replace(/\s+/g, '').toUpperCase();
-  const nome = m.groups.nome.trim().toUpperCase();
-  return { raw: raw.trim(), postoAbreviado: posto, nomeGuerra: nome };
 }
 
 function parseDataIso(dataIso: string): [number, number, number] {
