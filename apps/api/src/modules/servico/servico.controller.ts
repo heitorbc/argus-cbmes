@@ -58,6 +58,25 @@ export class ServicoController {
     return this.servico.encerrar(data, user.nf, isAdmin && force === 'true');
   }
 
+  /**
+   * S6h/2.1 — Mock do "Preencher Mapa Força". Transiciona o estado para
+   * PREENCHENDO_MF e retorna mensagem. A escrita real chega no S9 (Puppeteer).
+   */
+  @Roles('admin', 'fiscal', 'sargenteante')
+  @Post(':data/preencher-mf')
+  @HttpCode(HttpStatus.OK)
+  preencherMf(@Param('data') data: string): { estado: ServicoEstado; mensagem: string } {
+    if (!dataParamRegex.test(data)) {
+      throw new BadRequestException('data inválida (esperado YYYY-MM-DD)');
+    }
+    const estado = this.servico.marcarPreenchimentoMfIniciado(data);
+    return {
+      estado,
+      mensagem:
+        'Preenchimento do Mapa Força iniciado (mock). A escrita automatizada será implementada no S9.',
+    };
+  }
+
   // ── Alterações Diversas (S6b/F6) ────────────────────────────────────────
 
   @Get(':data/alteracoes')

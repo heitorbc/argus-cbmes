@@ -100,4 +100,34 @@ describe('ConferenciaEquipeService', () => {
     expect(r[0]?.substitutoNf).toBe('9999999');
     expect(r[0]?.motivo).toBe('Acionamento urgente');
   });
+
+  // S6h/2.1 — agregação por equipe
+  it('getStatusPorEquipe vazio quando não há marcações', () => {
+    expect(svc.getStatusPorEquipe(dataIso).size).toBe(0);
+  });
+
+  it('getStatusPorEquipe retorna em_conferencia quando 1+ marcado mas há pendentes', () => {
+    svc.bulkUpdate(dataIso, { entries: [e1, e3] }, chefeEquipeNf);
+    expect(svc.getStatusPorEquipe(dataIso).get('ABTS_01')).toBe('em_conferencia');
+    expect(svc.equipeConferida(dataIso, 'ABTS_01')).toBe(false);
+  });
+
+  it('getStatusPorEquipe retorna conferida quando todas != pendente', () => {
+    svc.bulkUpdate(dataIso, { entries: [e1, e2] }, chefeEquipeNf);
+    expect(svc.getStatusPorEquipe(dataIso).get('ABTS_01')).toBe('conferida');
+    expect(svc.equipeConferida(dataIso, 'ABTS_01')).toBe(true);
+  });
+
+  it('getStatusPorEquipe agrega por recurso (várias equipes coexistem)', () => {
+    const e4 = {
+      recurso: 'RESGATE_01',
+      funcao: 'Ch',
+      militarOriginalNf: '8888888',
+      statusConferencia: 'presente' as const,
+    };
+    svc.bulkUpdate(dataIso, { entries: [e1, e3, e4] }, chefeEquipeNf);
+    const m = svc.getStatusPorEquipe(dataIso);
+    expect(m.get('ABTS_01')).toBe('em_conferencia'); // tem pendente (e3)
+    expect(m.get('RESGATE_01')).toBe('conferida'); // só e4 e está presente
+  });
 });

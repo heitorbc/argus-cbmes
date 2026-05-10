@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import type { ConferenciaViaturaEntry, UpsertConferenciaViaturaInput } from '@argus/shared-types';
+import { ConferenciaEquipeService } from '../conferencia-equipe/conferencia-equipe.service';
 import { ServicoService } from '../servico/servico.service';
 import { ViaturasService } from '../viaturas/viaturas.service';
 
@@ -23,6 +24,7 @@ export class ConferenciaViaturaService {
   constructor(
     private readonly servico: ServicoService,
     private readonly viaturas: ViaturasService,
+    private readonly conferenciaEquipe: ConferenciaEquipeService,
   ) {}
 
   getByData(dataIso: string): ConferenciaViaturaEntry[] {
@@ -38,6 +40,20 @@ export class ConferenciaViaturaService {
   ): Promise<ConferenciaViaturaEntry> {
     const viaturaAntes = await this.viaturas.findByPrefixo(vtrPrefixo);
     const statusAnterior = viaturaAntes?.status;
+
+    // S6h/2.1 — Conferência de Viatura só libera depois que a equipe correspondente
+    // foi conferida. Identifica a equipe pela `funcaoOperacional` da viatura
+    // (que é o nome do recurso, ex.: "ABTS_01").
+    const recurso = viaturaAntes?.funcaoOperacional;
+    if (
+      recurso &&
+      this.servico.get(dataIso).estado !== 'NAO_INICIADO' &&
+      !this.conferenciaEquipe.equipeConferida(dataIso, recurso)
+    ) {
+      throw new ConflictException(
+        `Equipe "${recurso}" ainda não foi conferida — confira a equipe primeiro antes da viatura.`,
+      );
+    }
 
     await this.viaturas.aplicarConferencia(vtrPrefixo, { ...input, vtrPrefixo }, registradoPorNf);
 

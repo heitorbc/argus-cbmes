@@ -97,6 +97,30 @@ describe('ServicoService — estado do dia', () => {
     svc.reset(data);
     expect(svc.get(data).estado).toBe('NAO_INICIADO');
   });
+
+  // S6h/2.1 — botão "Preencher Mapa Força" (mock)
+  it('marcarPreenchimentoMfIniciado transita VIATURA_CONFERIDA → PREENCHENDO_MF', () => {
+    svc.iniciar(data, fiscalNf);
+    svc.marcarEquipeConferida(data);
+    svc.marcarViaturaConferida(data);
+    const r = svc.marcarPreenchimentoMfIniciado(data);
+    expect(r.estado).toBe('PREENCHENDO_MF');
+    expect(r.preenchendoMfEm).toBeDefined();
+  });
+
+  it('marcarPreenchimentoMfIniciado rejeita se equipe/viatura não conferidas', () => {
+    svc.iniciar(data, fiscalNf);
+    expect(() => svc.marcarPreenchimentoMfIniciado(data)).toThrow(BadRequestException);
+  });
+
+  it('marcarPreenchimentoMfIniciado é idempotente (mantém timestamp)', () => {
+    svc.iniciar(data, fiscalNf);
+    svc.marcarEquipeConferida(data);
+    svc.marcarViaturaConferida(data);
+    const r1 = svc.marcarPreenchimentoMfIniciado(data);
+    const r2 = svc.marcarPreenchimentoMfIniciado(data);
+    expect(r2.preenchendoMfEm).toBe(r1.preenchendoMfEm);
+  });
 });
 
 describe('ServicoService — Alterações Diversas (F6)', () => {

@@ -98,14 +98,57 @@ export const previaIdeoEntrySchema = z.object({
 });
 export type PreviaIdeoEntry = z.infer<typeof previaIdeoEntrySchema>;
 
-/** Substituição pontual de militar (S5/F7a). */
+/**
+ * Período da troca (S6h/1.1).
+ *
+ * 5 opções predefinidas com horários institucionais + opção `custom` para
+ * casos pontuais (hora início e fim livres). Substitui o antigo texto livre.
+ */
+export const PERIODO_TROCA_PREDEFINIDO = [
+  'TURNO_24H',
+  'DIURNO_12H', // 07:10 às 19:10
+  'NOTURNO_12H', // 19:10 às 07:10
+  'MATUTINO_6H', // 07:10 às 13:10
+  'VESPERTINO_6H', // 13:10 às 19:10
+] as const;
+export type PeriodoTrocaPredefinido = (typeof PERIODO_TROCA_PREDEFINIDO)[number];
+
+export const PERIODO_TROCA_PREDEFINIDO_LABEL: Record<PeriodoTrocaPredefinido, string> = {
+  TURNO_24H: '24h',
+  DIURNO_12H: '12h diurnas (07:10 às 19:10)',
+  NOTURNO_12H: '12h noturnas (19:10 às 07:10)',
+  MATUTINO_6H: '6h matutinas (07:10 às 13:10)',
+  VESPERTINO_6H: '6h vespertinas (13:10 às 19:10)',
+};
+
+const horaRegex = /^\d{2}:\d{2}$/;
+export const periodoTrocaSchema = z.discriminatedUnion('tipo', [
+  z.object({
+    tipo: z.literal('predefinido'),
+    valor: z.enum(PERIODO_TROCA_PREDEFINIDO),
+  }),
+  z.object({
+    tipo: z.literal('custom'),
+    horaInicio: z.string().regex(horaRegex, 'Hora início no formato HH:MM'),
+    horaFim: z.string().regex(horaRegex, 'Hora fim no formato HH:MM'),
+  }),
+]);
+export type PeriodoTroca = z.infer<typeof periodoTrocaSchema>;
+
+/**
+ * Substituição pontual de militar (S5/F7a).
+ *
+ * S6h/1.1 — Campo `periodo` migrou de string livre para `PeriodoTroca`
+ * estruturado. Para compat com dados antigos, schema aceita ambos: string
+ * legacy (será normalizada na leitura) ou o novo objeto.
+ */
 export const previaTrocaSchema = z.object({
   substituidoNf: z.string().optional(),
   substituidoRaw: z.string(),
   substitutoNf: z.string().optional(),
   substitutoRaw: z.string(),
-  /** Texto livre — ex.: "24h", "Matutino", "13:10 às 19:10". */
-  periodo: z.string(),
+  /** Período da troca — `string` é legacy (S5); novo formato é `PeriodoTroca` (S6h). */
+  periodo: z.union([z.string(), periodoTrocaSchema]),
   motivo: z.string().optional(),
 });
 export type PreviaTroca = z.infer<typeof previaTrocaSchema>;

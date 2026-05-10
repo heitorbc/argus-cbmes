@@ -1,4 +1,5 @@
 import type { LetraEquipe, PreviaDoDia, PreviaTripulacaoEntry } from '@argus/shared-types';
+import { periodoToLabel } from './periodo-troca';
 
 /**
  * Geração do texto da Prévia no formato Markdown WhatsApp esperado pelo Fiscal.
@@ -158,7 +159,7 @@ export function formatPreviaParaWhatsapp(previa: PreviaDoDia): string {
       lines.push(`${i + 1}.`);
       lines.push(`SUBSTITUÍDO: ${t.substituidoRaw}`);
       lines.push(`SUBSTITUTO: ${t.substitutoRaw}`);
-      lines.push(`PERÍODO: ${t.periodo}`);
+      lines.push(`PERÍODO: ${periodoToLabel(t.periodo)}`);
       if (t.motivo) lines.push(`MOTIVO: ${t.motivo}`);
     });
   }

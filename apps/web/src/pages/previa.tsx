@@ -6,6 +6,8 @@ import {
   type AlteracaoDiversa,
   type EscalaEspecialAtoLight,
   type LetraEquipe,
+  type PeriodoTroca,
+  type PeriodoTrocaPredefinido,
   type PreviaDoDia,
   type TipoInconsistencia,
   type TrocaEscalaEspecial,
@@ -14,6 +16,11 @@ import { ApiError, api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { formatPreviaParaWhatsapp } from '@/lib/whatsapp';
 import { MilitarSelect } from '@/components/militar-select';
+import {
+  PERIODO_TROCA_DEFAULT,
+  PERIODO_TROCA_OPCOES,
+  legacyStringToPeriodo,
+} from '@/lib/periodo-troca';
 import { STATUS_VIATURA_BADGE, STATUS_VIATURA_CARD } from '@/lib/status-viatura-style';
 
 const EQUIPE_COLOR: Record<LetraEquipe, string> = {
@@ -567,15 +574,13 @@ function AjustesPreTurno({
                     excluirNfs={t.substituidoNf ? [t.substituidoNf] : []}
                   />
                 </div>
-                <input
-                  placeholder="Período"
+                <PeriodoTrocaPicker
                   value={t.periodo}
-                  onChange={(e) => {
+                  onChange={(periodo) => {
                     const trocas = [...state.trocas];
-                    trocas[i] = { ...trocas[i]!, periodo: e.target.value };
+                    trocas[i] = { ...trocas[i]!, periodo };
                     setState({ ...state, trocas });
                   }}
-                  className="rounded border border-slate-300 px-2 py-2"
                 />
                 <button
                   type="button"
@@ -595,7 +600,7 @@ function AjustesPreTurno({
                   ...state,
                   trocas: [
                     ...state.trocas,
-                    { substituidoRaw: '', substitutoRaw: '', periodo: '24h' },
+                    { substituidoRaw: '', substitutoRaw: '', periodo: PERIODO_TROCA_DEFAULT },
                   ],
                 })
               }
@@ -930,6 +935,24 @@ function ServicoCard({
 }) {
   const estado = previa.estadoServico;
   const isEncerrado = estado === 'ENCERRADO';
+  const podePreencherMf = estado === 'VIATURA_CONFERIDA';
+  const [preenchendoMf, setPreenchendoMf] = useState(false);
+  const [mfMsg, setMfMsg] = useState<string | null>(null);
+
+  const handlePreencherMf = async () => {
+    if (!confirm('Iniciar preenchimento do Mapa Força? (mock — escrita real chega no S9)')) return;
+    setPreenchendoMf(true);
+    setMfMsg(null);
+    try {
+      const r = await api.servicoPreencherMf(previa.data);
+      setMfMsg(r.mensagem);
+      onSaved();
+    } catch (e) {
+      setMfMsg(e instanceof ApiError ? e.message : 'Erro ao iniciar preenchimento do MF');
+    } finally {
+      setPreenchendoMf(false);
+    }
+  };
 
   if (estado === 'NAO_INICIADO') {
     if (!podeIniciar) return null;
@@ -1006,6 +1029,35 @@ function ServicoCard({
             </p>
           </Link>
           <ConferenciaViaturasMenu data={previa.data} composicaoMf={previa.composicaoMf} />
+        </div>
+      )}
+
+      {/* S6h/2.1 — Botão "Preencher Mapa Força" (mock até S9) */}
+      {podePreencherMf && podeIniciar && (
+        <section className="mt-3 rounded border-2 border-emerald-500 bg-emerald-50 p-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-emerald-900">
+                ✓ Equipes e viaturas conferidas
+              </h3>
+              <p className="text-xs text-emerald-800">
+                Pronto para preencher o Mapa Força. (Escrita automatizada chega no S9.)
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handlePreencherMf}
+              disabled={preenchendoMf}
+              className="rounded-button bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {preenchendoMf ? 'Preenchendo…' : '🗺️ Preencher Mapa Força'}
+            </button>
+          </div>
+        </section>
+      )}
+      {mfMsg && (
+        <div className="mt-2 rounded border border-emerald-300 bg-emerald-50 p-2 text-xs text-emerald-900">
+          {mfMsg}
         </div>
       )}
 
@@ -1318,6 +1370,73 @@ function ModalAlteracaoDiversa({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * S6h/1.1 — Picker de período da troca. Combobox com 5 predefinidos +
+ * "Personalizado" (com hora início/fim). Aceita string legacy e normaliza.
+ */
+function PeriodoTrocaPicker({
+  value,
+  onChange,
+}: {
+  value: string | PeriodoTroca;
+  onChange: (next: PeriodoTroca) => void;
+}) {
+  const normalizado: PeriodoTroca =
+    typeof value === 'string' ? (legacyStringToPeriodo(value) ?? PERIODO_TROCA_DEFAULT) : value;
+  const tipoSelecionado: PeriodoTrocaPredefinido | 'custom' =
+    normalizado.tipo === 'custom' ? 'custom' : normalizado.valor;
+  return (
+    <div className="flex flex-col gap-1">
+      <select
+        value={tipoSelecionado}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v === 'custom') {
+            onChange({ tipo: 'custom', horaInicio: '07:10', horaFim: '19:10' });
+          } else {
+            onChange({ tipo: 'predefinido', valor: v as PeriodoTrocaPredefinido });
+          }
+        }}
+        className="rounded border border-slate-300 px-2 py-2 text-sm"
+      >
+        {PERIODO_TROCA_OPCOES.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+        <option value="custom">Personalizado…</option>
+      </select>
+      {normalizado.tipo === 'custom' && (
+        <div className="flex gap-2">
+          <input
+            type="time"
+            value={normalizado.horaInicio}
+            onChange={(e) =>
+              onChange({ tipo: 'custom', horaInicio: e.target.value, horaFim: normalizado.horaFim })
+            }
+            className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
+            aria-label="Hora início"
+          />
+          <span className="self-center text-xs text-slate-500">às</span>
+          <input
+            type="time"
+            value={normalizado.horaFim}
+            onChange={(e) =>
+              onChange({
+                tipo: 'custom',
+                horaInicio: normalizado.horaInicio,
+                horaFim: e.target.value,
+              })
+            }
+            className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
+            aria-label="Hora fim"
+          />
+        </div>
+      )}
     </div>
   );
 }

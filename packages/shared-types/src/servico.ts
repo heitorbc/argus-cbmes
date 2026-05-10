@@ -57,6 +57,25 @@ export const STATUS_CONFERENCIA_LABEL: Record<StatusConferencia, string> = {
   ausente: 'Ausente',
 };
 
+/**
+ * Status agregado de conferência de uma equipe inteira (S6h/2.1).
+ *
+ * Calculado a partir dos `statusConferencia` individuais dos militares que
+ * compõem a equipe (recurso). UI usa esse valor para colorir o card da equipe.
+ *
+ *   - `nao_conferida`: nenhum militar foi marcado ainda.
+ *   - `em_conferencia`: pelo menos 1 militar marcado, mas faltam outros.
+ *   - `conferida`: todos os militares marcados (presente/substituido/ausente).
+ */
+export const STATUS_CONFERENCIA_EQUIPE = ['nao_conferida', 'em_conferencia', 'conferida'] as const;
+export type StatusConferenciaEquipe = (typeof STATUS_CONFERENCIA_EQUIPE)[number];
+
+export const STATUS_CONFERENCIA_EQUIPE_LABEL: Record<StatusConferenciaEquipe, string> = {
+  nao_conferida: 'Não conferida',
+  em_conferencia: 'Em conferência',
+  conferida: 'Conferida',
+};
+
 export const conferenciaEquipeEntrySchema = z.object({
   recurso: z.string(), // ex.: "ABTS_01"
   funcao: z.string(), // ex.: "Ch", "Mot", "Op1"

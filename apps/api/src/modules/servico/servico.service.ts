@@ -93,6 +93,27 @@ export class ServicoService {
   }
 
   /**
+   * S6h/2.1 — Marca início do preenchimento do MF (mock; transição
+   * VIATURA_CONFERIDA → PREENCHENDO_MF). A escrita real do MF chega no S9.
+   * Idempotente — chamadas repetidas mantêm timestamp.
+   */
+  marcarPreenchimentoMfIniciado(dataIso: string): ServicoEstado {
+    const current = this.get(dataIso);
+    if (current.estado !== 'VIATURA_CONFERIDA' && current.estado !== 'PREENCHENDO_MF') {
+      throw new BadRequestException(
+        `Preencher MF exige Conferência de Equipe + Viatura completas. Estado atual: "${current.estado}".`,
+      );
+    }
+    const updated: ServicoEstado = {
+      ...current,
+      estado: 'PREENCHENDO_MF',
+      preenchendoMfEm: current.preenchendoMfEm ?? new Date().toISOString(),
+    };
+    this.byData.set(dataIso, updated);
+    return updated;
+  }
+
+  /**
    * Encerra o serviço. Em fluxo normal exige passar por VIATURA_CONFERIDA.
    * Override permitido apenas para admin/sargenteante (`force=true`).
    */

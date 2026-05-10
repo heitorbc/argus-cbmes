@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { Viatura } from '@argus/shared-types';
+import { ConferenciaEquipeService } from '../conferencia-equipe/conferencia-equipe.service';
 import { ServicoService } from '../servico/servico.service';
 import { ViaturasService } from '../viaturas/viaturas.service';
 import { ConferenciaViaturaService } from './conferencia-viatura.service';
@@ -57,7 +58,8 @@ describe('ConferenciaViaturaService', () => {
         },
       ),
     } as unknown as ViaturasService;
-    svc = new ConferenciaViaturaService(servico, viaturasMock);
+    const conferenciaEquipe = new ConferenciaEquipeService(servico);
+    svc = new ConferenciaViaturaService(servico, viaturasMock, conferenciaEquipe);
   });
 
   it('registrar persiste entry com timestamp + chama aplicarConferencia', async () => {
@@ -128,5 +130,52 @@ describe('ConferenciaViaturaService', () => {
       motoristaNf,
     );
     expect(servico.listAlteracoes(dataIso)).toHaveLength(0);
+  });
+
+  // S6h/2.1 — gate: Conferência da Viatura exige Conferência da Equipe primeiro
+  it('S6h — bloqueia (409) registrar viatura cuja equipe ainda NÃO foi conferida', async () => {
+    // Viatura associada ao recurso ABTS_01 via funcaoOperacional
+    viaturaAtual = { ...viatura('ABTS 011'), funcaoOperacional: 'ABTS_01' };
+    servico.iniciar(dataIso, motoristaNf);
+    // Equipe ABTS_01 ainda não foi conferida — gate deve bloquear
+    await expect(
+      svc.registrar(
+        dataIso,
+        'ABTS 011',
+        { vtrPrefixo: 'ABTS 011', estadoTanquePercent: 80 },
+        motoristaNf,
+      ),
+    ).rejects.toThrow(/ABTS_01.*não foi conferida/i);
+  });
+
+  it('S6h — permite registrar viatura quando equipe foi conferida', async () => {
+    viaturaAtual = { ...viatura('ABTS 011'), funcaoOperacional: 'ABTS_01' };
+    servico.iniciar(dataIso, motoristaNf);
+    // Confere a equipe ABTS_01 primeiro
+    const conferenciaEquipe = new ConferenciaEquipeService(servico);
+    conferenciaEquipe.bulkUpdate(
+      dataIso,
+      {
+        entries: [
+          {
+            recurso: 'ABTS_01',
+            funcao: 'Ch',
+            militarOriginalNf: '111',
+            statusConferencia: 'presente',
+          },
+        ],
+      },
+      motoristaNf,
+    );
+    // Recria svc com a mesma instância da conferenciaEquipe que tem a marcação
+    svc = new ConferenciaViaturaService(servico, viaturasMock, conferenciaEquipe);
+    // Agora deve passar
+    const r = await svc.registrar(
+      dataIso,
+      'ABTS 011',
+      { vtrPrefixo: 'ABTS 011', estadoTanquePercent: 80 },
+      motoristaNf,
+    );
+    expect(r.estadoTanquePercent).toBe(80);
   });
 });

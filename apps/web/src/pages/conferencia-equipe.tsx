@@ -2,14 +2,20 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   STATUS_CONFERENCIA,
+  STATUS_CONFERENCIA_EQUIPE_LABEL,
   STATUS_CONFERENCIA_LABEL,
   type ComposicaoMfMilitar,
   type ConferenciaEquipeEntry,
   type PreviaDoDia,
   type StatusConferencia,
+  type StatusConferenciaEquipe,
 } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
 import { MilitarSelect } from '@/components/militar-select';
+import {
+  STATUS_CONFERENCIA_EQUIPE_BADGE,
+  STATUS_CONFERENCIA_EQUIPE_CARD,
+} from '@/lib/status-conferencia-style';
 
 interface MarcacaoForm {
   recurso: string;
@@ -29,6 +35,12 @@ const STATUS_BADGE: Record<StatusConferencia, string> = {
   ausente: 'bg-feedback-error/15 text-feedback-error',
 };
 
+/**
+ * S6h/2.1 — Conferência da Equipe agora é por equipe (recurso), não mais
+ * por militar individual. Cada recurso vira um card com badge agregado
+ * (nao_conferida/em_conferencia/conferida). Click → modal com checklist
+ * dos militares e botão "Confirmar equipe".
+ */
 export function ConferenciaEquipePage() {
   const { data } = useParams<{ data: string }>();
   const navigate = useNavigate();
@@ -36,8 +48,8 @@ export function ConferenciaEquipePage() {
   const [previa, setPrevia] = useState<PreviaDoDia | null>(null);
   const [marcacoes, setMarcacoes] = useState<MarcacaoForm[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [equipeAberta, setEquipeAberta] = useState<string | null>(null);
 
   useEffect(() => {
     if (!data) return;
@@ -60,20 +72,40 @@ export function ConferenciaEquipePage() {
     };
   }, [data]);
 
-  const totais = useMemo(() => {
-    const t = { total: marcacoes.length, pendentes: 0, presentes: 0, substituidos: 0, ausentes: 0 };
+  /** Agrupa marcações por recurso (= equipe). */
+  const equipes = useMemo(() => {
+    const map = new Map<string, MarcacaoForm[]>();
     for (const m of marcacoes) {
-      if (m.statusConferencia === 'pendente') t.pendentes++;
-      else if (m.statusConferencia === 'presente') t.presentes++;
-      else if (m.statusConferencia === 'substituido') t.substituidos++;
-      else if (m.statusConferencia === 'ausente') t.ausentes++;
+      const list = map.get(m.recurso) ?? [];
+      list.push(m);
+      map.set(m.recurso, list);
     }
-    return t;
+    return Array.from(map.entries()).map(([recurso, militares]) => {
+      const status: StatusConferenciaEquipe = militares.every(
+        (mm) => mm.statusConferencia !== 'pendente',
+      )
+        ? 'conferida'
+        : militares.some((mm) => mm.statusConferencia !== 'pendente')
+          ? 'em_conferencia'
+          : 'nao_conferida';
+      return { recurso, militares, status };
+    });
   }, [marcacoes]);
 
-  const handleSalvar = async () => {
+  const totais = useMemo(() => {
+    const t = { equipes: equipes.length, conferidas: 0, em_conferencia: 0, nao_conferidas: 0 };
+    for (const e of equipes) {
+      if (e.status === 'conferida') t.conferidas++;
+      else if (e.status === 'em_conferencia') t.em_conferencia++;
+      else t.nao_conferidas++;
+    }
+    return t;
+  }, [equipes]);
+
+  if (!data) return <p>Data inválida.</p>;
+
+  const handleSalvarTudo = async () => {
     if (!data) return;
-    setSaving(true);
     setError(null);
     try {
       const entries = marcacoes.map((m) => ({
@@ -89,12 +121,8 @@ export function ConferenciaEquipePage() {
       navigate(`/previa?data=${data}`);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Erro ao salvar conferência');
-    } finally {
-      setSaving(false);
     }
   };
-
-  if (!data) return <p>Data inválida.</p>;
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -119,91 +147,54 @@ export function ConferenciaEquipePage() {
           </div>
         )}
 
-        {!loading && marcacoes.length === 0 && (
+        {!loading && equipes.length === 0 && (
           <p className="rounded border border-dashed border-slate-300 bg-white p-4 text-center text-sm text-slate-500">
-            Nenhuma composição rotativa encontrada para este dia.
+            Nenhuma composição encontrada para este dia. Importe a Escala XLSX da SOS primeiro.
           </p>
         )}
 
-        {marcacoes.length > 0 && (
+        {equipes.length > 0 && (
           <>
             <div className="rounded border border-slate-200 bg-white p-3 text-xs">
               <p>
-                <strong>{totais.total}</strong> militares · {totais.presentes} presentes ·{' '}
-                {totais.substituidos} substituídos · {totais.ausentes} ausentes ·{' '}
-                <span className="text-amber-700">{totais.pendentes} pendentes</span>
+                <strong>{totais.equipes}</strong> equipes · {totais.conferidas} conferidas ·{' '}
+                {totais.em_conferencia} em conferência ·{' '}
+                <span className="text-slate-700">{totais.nao_conferidas} não conferidas</span>
               </p>
             </div>
 
-            <ul className="mt-3 divide-y divide-slate-200 rounded border border-slate-200 bg-white">
-              {marcacoes.map((m, i) => (
-                <li key={`${m.recurso}|${m.funcao}|${m.militarOriginalNf}`} className="p-3 text-sm">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span>
-                      <strong>{m.militarLabel}</strong>{' '}
-                      <span className="text-xs text-slate-500">
-                        {m.recurso} · {m.funcao}
-                      </span>
-                    </span>
-                    <span
-                      className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[m.statusConferencia]}`}
-                    >
-                      {STATUS_CONFERENCIA_LABEL[m.statusConferencia]}
-                    </span>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {STATUS_CONFERENCIA.map((s) => (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => atualizar(i, { statusConferencia: s })}
-                        className={`rounded-button px-3 py-1.5 text-xs font-medium ${
-                          m.statusConferencia === s
-                            ? 'bg-cbmes-red text-white'
-                            : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-                        }`}
-                      >
-                        {STATUS_CONFERENCIA_LABEL[s]}
-                      </button>
-                    ))}
-                  </div>
-                  {m.statusConferencia === 'substituido' && (
-                    <div className="mt-2 space-y-2">
-                      <div>
-                        <p className="text-[10px] text-slate-500">Substituto</p>
-                        <MilitarSelect
-                          value={m.substitutoNf}
-                          valueRaw={m.substitutoRaw}
-                          onChange={(nf, militar) =>
-                            atualizar(i, {
-                              substitutoNf: nf ?? undefined,
-                              substitutoRaw: militar
-                                ? `${militar.posto} ${militar.nomeGuerra ?? militar.nome.split(' ')[0]}`
-                                : undefined,
-                            })
-                          }
-                          excluirNfs={[m.militarOriginalNf]}
-                          placeholder="Buscar substituto"
-                        />
-                      </div>
-                      <input
-                        type="text"
-                        value={m.motivo ?? ''}
-                        onChange={(e) => atualizar(i, { motivo: e.target.value })}
-                        placeholder="Motivo (opcional)"
-                        className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
-                      />
+            <ul className="mt-3 space-y-2">
+              {equipes.map((eq) => (
+                <li
+                  key={eq.recurso}
+                  className={`rounded border-2 p-3 ${STATUS_CONFERENCIA_EQUIPE_CARD[eq.status]}`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-cbmes-blue">{eq.recurso}</p>
+                      <p className="text-xs text-slate-500">
+                        {eq.militares.length} militares ·{' '}
+                        {eq.militares.filter((m) => m.statusConferencia === 'presente').length}{' '}
+                        presentes ·{' '}
+                        {eq.militares.filter((m) => m.statusConferencia === 'substituido').length}{' '}
+                        substituídos ·{' '}
+                        {eq.militares.filter((m) => m.statusConferencia === 'ausente').length}{' '}
+                        ausentes
+                      </p>
                     </div>
-                  )}
-                  {m.statusConferencia === 'ausente' && (
-                    <input
-                      type="text"
-                      value={m.motivo ?? ''}
-                      onChange={(e) => atualizar(i, { motivo: e.target.value })}
-                      placeholder="Motivo da ausência (opcional)"
-                      className="mt-2 w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
-                    />
-                  )}
+                    <span
+                      className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold uppercase ${STATUS_CONFERENCIA_EQUIPE_BADGE[eq.status]}`}
+                    >
+                      {STATUS_CONFERENCIA_EQUIPE_LABEL[eq.status]}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEquipeAberta(eq.recurso)}
+                    className="mt-2 w-full rounded-button border border-cbmes-blue bg-white py-2 text-sm font-medium text-cbmes-blue hover:bg-cbmes-blue/5"
+                  >
+                    {eq.status === 'conferida' ? 'Revisar equipe' : 'Conferir equipe'}
+                  </button>
                 </li>
               ))}
             </ul>
@@ -211,11 +202,10 @@ export function ConferenciaEquipePage() {
             <div className="mt-4 flex gap-2">
               <button
                 type="button"
-                onClick={handleSalvar}
-                disabled={saving}
-                className="flex-1 rounded-button bg-cbmes-red py-2 text-base font-semibold text-white disabled:opacity-60"
+                onClick={handleSalvarTudo}
+                className="flex-1 rounded-button bg-cbmes-red py-2 text-base font-semibold text-white"
               >
-                {saving ? 'Salvando…' : 'Salvar conferência'}
+                Salvar e voltar à Prévia
               </button>
               <Link
                 to={`/previa?data=${data}`}
@@ -226,17 +216,174 @@ export function ConferenciaEquipePage() {
             </div>
           </>
         )}
+
+        {equipeAberta && (
+          <EquipeModal
+            recurso={equipeAberta}
+            militares={marcacoes.filter((m) => m.recurso === equipeAberta)}
+            onChange={(idxNoSubset, patch) => {
+              const subset = marcacoes.filter((m) => m.recurso === equipeAberta);
+              const target = subset[idxNoSubset]!;
+              const idxGlobal = marcacoes.indexOf(target);
+              setMarcacoes((prev) => {
+                const next = [...prev];
+                next[idxGlobal] = { ...next[idxGlobal]!, ...patch };
+                return next;
+              });
+            }}
+            onConfirm={async () => {
+              if (!data) return;
+              const entries = marcacoes.map((m) => ({
+                recurso: m.recurso,
+                funcao: m.funcao,
+                militarOriginalNf: m.militarOriginalNf,
+                statusConferencia: m.statusConferencia,
+                substitutoNf: m.substitutoNf,
+                substitutoRaw: m.substitutoRaw,
+                motivo: m.motivo,
+              }));
+              try {
+                await api.conferenciaEquipeUpsert(data, { entries });
+                setEquipeAberta(null);
+              } catch (e) {
+                setError(e instanceof ApiError ? e.message : 'Erro ao salvar equipe');
+              }
+            }}
+            onClose={() => setEquipeAberta(null)}
+          />
+        )}
       </section>
     </main>
   );
+}
 
-  function atualizar(i: number, patch: Partial<MarcacaoForm>): void {
-    setMarcacoes((prev) => {
-      const next = [...prev];
-      next[i] = { ...next[i]!, ...patch };
-      return next;
-    });
-  }
+function EquipeModal({
+  recurso,
+  militares,
+  onChange,
+  onConfirm,
+  onClose,
+}: {
+  recurso: string;
+  militares: MarcacaoForm[];
+  onChange: (idx: number, patch: Partial<MarcacaoForm>) => void;
+  onConfirm: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const todasResolvidas = militares.every((m) => m.statusConferencia !== 'pendente');
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+    >
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white shadow-xl">
+        <div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
+          <h2 className="text-base font-bold text-cbmes-blue">Conferência: {recurso}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-slate-500 hover:bg-slate-100"
+            aria-label="Fechar"
+          >
+            ✕
+          </button>
+        </div>
+
+        <ul className="divide-y divide-slate-200">
+          {militares.map((m, i) => (
+            <li key={`${m.funcao}|${m.militarOriginalNf}`} className="p-3 text-sm">
+              <div className="flex items-baseline justify-between gap-2">
+                <span>
+                  <strong>{m.militarLabel}</strong>{' '}
+                  <span className="text-xs text-slate-500">{m.funcao}</span>
+                </span>
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[m.statusConferencia]}`}
+                >
+                  {STATUS_CONFERENCIA_LABEL[m.statusConferencia]}
+                </span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {STATUS_CONFERENCIA.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => onChange(i, { statusConferencia: s })}
+                    className={`rounded-button px-2.5 py-1 text-xs font-medium ${
+                      m.statusConferencia === s
+                        ? 'bg-cbmes-red text-white'
+                        : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    {STATUS_CONFERENCIA_LABEL[s]}
+                  </button>
+                ))}
+              </div>
+              {m.statusConferencia === 'substituido' && (
+                <div className="mt-2 space-y-2">
+                  <MilitarSelect
+                    value={m.substitutoNf}
+                    valueRaw={m.substitutoRaw}
+                    onChange={(nf, militar) =>
+                      onChange(i, {
+                        substitutoNf: nf ?? undefined,
+                        substitutoRaw: militar
+                          ? `${militar.posto} ${militar.nomeGuerra ?? militar.nome.split(' ')[0]}`
+                          : undefined,
+                      })
+                    }
+                    excluirNfs={[m.militarOriginalNf]}
+                    placeholder="Buscar substituto"
+                  />
+                  <input
+                    type="text"
+                    value={m.motivo ?? ''}
+                    onChange={(e) => onChange(i, { motivo: e.target.value })}
+                    placeholder="Motivo (opcional)"
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
+                  />
+                </div>
+              )}
+              {m.statusConferencia === 'ausente' && (
+                <input
+                  type="text"
+                  value={m.motivo ?? ''}
+                  onChange={(e) => onChange(i, { motivo: e.target.value })}
+                  placeholder="Motivo da ausência (opcional)"
+                  className="mt-2 w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
+                />
+              )}
+            </li>
+          ))}
+        </ul>
+
+        <div className="sticky bottom-0 flex gap-2 border-t border-slate-200 bg-white p-3">
+          <button
+            type="button"
+            disabled={!todasResolvidas || saving}
+            onClick={async () => {
+              setSaving(true);
+              await onConfirm();
+              setSaving(false);
+            }}
+            className="flex-1 rounded-button bg-emerald-600 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            title={todasResolvidas ? '' : 'Marque todos os militares antes de confirmar a equipe'}
+          >
+            {saving ? 'Salvando…' : 'Confirmar equipe'}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-button border border-slate-300 bg-white py-2 text-sm text-slate-700"
+          >
+            Fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function buildMarcacoesFromPrevia(

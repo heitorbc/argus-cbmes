@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import type { ConferenciaEquipeEntry, UpsertConferenciaEquipeInput } from '@argus/shared-types';
+import type {
+  ConferenciaEquipeEntry,
+  StatusConferenciaEquipe,
+  UpsertConferenciaEquipeInput,
+} from '@argus/shared-types';
 import { ServicoService } from '../servico/servico.service';
 
 /**
@@ -89,6 +93,36 @@ export class ConferenciaEquipeService {
         // Idempotente — ignora se já promovido.
       }
     }
+  }
+
+  /**
+   * S6h/2.1 — agrega status individuais por recurso para o card "por equipe".
+   *
+   * Regras:
+   *  - Se nenhum militar do recurso tem entry → `nao_conferida`
+   *  - Se todos != 'pendente' → `conferida`
+   *  - Caso contrário → `em_conferencia`
+   */
+  getStatusPorEquipe(dataIso: string): Map<string, StatusConferenciaEquipe> {
+    const m = this.byData.get(dataIso);
+    const out = new Map<string, StatusConferenciaEquipe>();
+    if (!m) return out;
+    const porRecurso = new Map<string, ConferenciaEquipeEntry[]>();
+    for (const e of m.values()) {
+      const list = porRecurso.get(e.recurso) ?? [];
+      list.push(e);
+      porRecurso.set(e.recurso, list);
+    }
+    for (const [recurso, entries] of porRecurso) {
+      const todasResolvidas = entries.every((e) => e.statusConferencia !== 'pendente');
+      out.set(recurso, todasResolvidas ? 'conferida' : 'em_conferencia');
+    }
+    return out;
+  }
+
+  /** Helper: retorna `true` se a equipe (recurso) está totalmente conferida. */
+  equipeConferida(dataIso: string, recurso: string): boolean {
+    return this.getStatusPorEquipe(dataIso).get(recurso) === 'conferida';
   }
 
   reset(dataIso?: string): void {

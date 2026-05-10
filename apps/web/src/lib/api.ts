@@ -282,6 +282,12 @@ export const api = {
       method: 'POST',
     }),
 
+  // S6h/2.1 — mock do Preencher Mapa Força
+  servicoPreencherMf: (data: string) =>
+    request<{ estado: ServicoEstado; mensagem: string }>(`/servico/${data}/preencher-mf`, {
+      method: 'POST',
+    }),
+
   // Alterações Diversas (S6b/F6)
   alteracoesDiversasList: (data: string) =>
     request<AlteracaoDiversa[]>(`/servico/${data}/alteracoes`),
