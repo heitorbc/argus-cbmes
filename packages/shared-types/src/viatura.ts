@@ -67,13 +67,34 @@ export const viaturaSchema = z.object({
   /** NF do militar responsável (referência ao efetivo da 1ª Cia). */
   militarResponsavelNf: z.string().optional(),
 
+  /**
+   * Histórico de observações datadas — adicionadas durante a Conferência da
+   * Viatura (S6b/F4). Append-only.
+   */
+  observacoesDataDas: z
+    .array(
+      z.object({
+        texto: z.string(),
+        data: z.string(),
+        registradoPorNf: z.string(),
+      }),
+    )
+    .default([]),
+
   criadoEm: z.string(),
   atualizadoEm: z.string(),
 });
 export type Viatura = z.infer<typeof viaturaSchema>;
 
 export const createViaturaSchema = viaturaSchema
-  .omit({ id: true, criadoEm: true, atualizadoEm: true, origem: true, estadoTanquePercent: true })
+  .omit({
+    id: true,
+    criadoEm: true,
+    atualizadoEm: true,
+    origem: true,
+    estadoTanquePercent: true,
+    observacoesDataDas: true,
+  })
   .extend({
     prefixo: z.string().regex(/^[A-Z]{2,4}[ _]\d{3}$/, 'Prefixo no formato "ABTS 011" ou "AM_002"'),
   });

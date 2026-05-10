@@ -3,6 +3,8 @@ import { LETRA_EQUIPE, type LetraEquipe } from './escala.js';
 import { TIPO_IDEO, type TipoIdeo } from './ideo.js';
 import { militarSchema, type Militar } from './militar.js';
 import { militarRefSchema, type MilitarRef } from './escala.js';
+import { alteracaoDiversaSchema, ESTADO_SERVICO, STATUS_CONFERENCIA } from './servico.js';
+import { STATUS_VIATURA } from './viatura.js';
 
 /** Tipos de inconsistência detectados na geração da Prévia. */
 export const TIPO_INCONSISTENCIA = [
@@ -24,9 +26,15 @@ export const previaInconsistenciaSchema = z.object({
 export type PreviaInconsistencia = z.infer<typeof previaInconsistenciaSchema>;
 
 /**
- * Linha da tripulação na Prévia. Combina dados da escala XLSX (raw, posto, nomeGuerra)
- * com a resolução pelo QDI (nf, ant, situacao). Quando não resolve, `militarResolvido`
- * fica `null` e uma inconsistência `NF_NAO_RESOLVIDO` é registrada.
+ * Linha da tripulação na Prévia (S4-S6a — DEPRECATED em S6b).
+ *
+ * Combina dados da escala XLSX (raw, posto, nomeGuerra) com a resolução pelo
+ * QDI (nf, ant, situacao). Quando não resolve, `militarResolvido` fica `null`
+ * e uma inconsistência `NF_NAO_RESOLVIDO` é registrada.
+ *
+ * **S6b:** substituído por `composicaoMfMilitarSchema` dentro de
+ * `composicaoMfEntrySchema` (1 entrada por recurso do MF, com chefe + motorista
+ * + operadores). Mantido aqui apenas para tipos legados.
  */
 export const previaTripulacaoEntrySchema = z.object({
   equipe: z.enum(LETRA_EQUIPE),
@@ -38,6 +46,41 @@ export const previaTripulacaoEntrySchema = z.object({
   isFiscal: z.boolean(),
 });
 export type PreviaTripulacaoEntry = z.infer<typeof previaTripulacaoEntrySchema>;
+
+/**
+ * Militar dentro da composição do MF (S6b/F2).
+ *
+ * Cada militar tem `statusConferencia` para ser marcado pelo Chefe da Equipe
+ * durante a Conferência (S6b/F3).
+ */
+export const composicaoMfMilitarSchema = z.object({
+  raw: z.string(),
+  postoAbreviado: z.string(),
+  nomeGuerra: z.string(),
+  militarResolvido: militarSchema.nullable(),
+  statusConferencia: z.enum(STATUS_CONFERENCIA).default('pendente'),
+  substitutoNf: z.string().optional(),
+  substitutoRaw: z.string().optional(),
+  isFiscal: z.boolean().default(false),
+});
+export type ComposicaoMfMilitar = z.infer<typeof composicaoMfMilitarSchema>;
+
+/**
+ * Linha da composição do Mapa Força — espelha 1:1 a estrutura do MF.
+ * Cada linha = 1 recurso (ex.: ABTS_01, MERGULHO 02) com chefe + motorista +
+ * operadores. Substitui `tripulacao` + `viaturasOperacionais` (S6b/F2/ADR-011).
+ */
+export const composicaoMfEntrySchema = z.object({
+  recurso: z.string(),
+  vtrPrefixo: z.string().optional(),
+  vtrStatus: z.enum(STATUS_VIATURA).nullable(),
+  semEquipe: z.boolean().default(false),
+  equipe: z.enum(LETRA_EQUIPE).nullable(),
+  chefe: composicaoMfMilitarSchema.optional(),
+  motorista: composicaoMfMilitarSchema.optional(),
+  operadores: z.array(composicaoMfMilitarSchema).default([]),
+});
+export type ComposicaoMfEntry = z.infer<typeof composicaoMfEntrySchema>;
 
 /** Fiscal de Serviço resolvido (cadastro override ou default por menor ANT). */
 export const previaFiscalSchema = z.object({
@@ -167,13 +210,28 @@ export const previaDoDiaSchema = z.object({
 
   fiscal: previaFiscalSchema.nullable(),
 
-  /** Composição (viatura × função × militar) da equipe escalada. */
+  /**
+   * S6b/F2 — Composição do MF (1 entrada por recurso, com chefe + motorista +
+   * operadores). Espelha o shape do MF para preparar a escrita (S9). Substitui
+   * `tripulacao` + `viaturasOperacionais` (mantidos como derivados pelo
+   * PreviaService durante a transição).
+   */
+  composicaoMf: z.array(composicaoMfEntrySchema).default([]),
+
+  /**
+   * @deprecated em S6b — use `composicaoMf` que tem `statusConferencia` e shape
+   * espelhado ao MF. `tripulacao` continua sendo derivado pelo PreviaService
+   * para retrocompat com WhatsApp e tests legados.
+   */
   tripulacao: z.array(previaTripulacaoEntrySchema),
 
   /** Itens IDEO do dia, agrupados por tipo de viatura. */
   ideo: z.array(previaIdeoEntrySchema),
 
-  /** Viaturas operacionais (ativas) da Companhia, com nome canônico. */
+  /**
+   * @deprecated em S6b — use `composicaoMf[i].vtrPrefixo` + `vtrStatus`.
+   * Derivado pelo PreviaService.
+   */
   viaturasOperacionais: z.array(
     z.object({
       id: z.string(),
@@ -197,6 +255,16 @@ export const previaDoDiaSchema = z.object({
 
   /** S6a-fix item 6 — Chefes de Operações escalados no dia (planilha ChOp externa). */
   chefesOperacoes: z.array(chefeOperacoesSchema).default([]),
+
+  /** S6b/F1 — Estado do Servico do dia (NAO_INICIADO → ENCERRADO). */
+  estadoServico: z.enum(ESTADO_SERVICO).default('NAO_INICIADO'),
+  iniciadoEm: z.string().optional(),
+  iniciadoPorNf: z.string().optional(),
+  encerradoEm: z.string().optional(),
+  encerradoPorNf: z.string().optional(),
+
+  /** S6b/F6 — Alterações registradas após o início do serviço (timestamp). */
+  alteracoesDiversas: z.array(alteracaoDiversaSchema).default([]),
 
   /** Nome do XLSX-fonte da escala, se houver. */
   origemEscala: z.string().nullable(),

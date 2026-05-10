@@ -1,6 +1,10 @@
 import type {
+  AddAlteracaoDiversaInput,
+  AlteracaoDiversa,
   ChangePasswordInput,
   ComposicaoEntry,
+  ConferenciaEquipeEntry,
+  ConferenciaViaturaEntry,
   CreateFiscalInput,
   CreateViaturaInput,
   EfetivoListResponse,
@@ -21,9 +25,12 @@ import type {
   PreviewEscalaEspecialResponse,
   PreviewEscalaResponse,
   RecursoMapaForca,
+  ServicoEstado,
   TipoIdeo,
   TrocaEscalaEspecial,
   UpdateViaturaInput,
+  UpsertConferenciaEquipeInput,
+  UpsertConferenciaViaturaInput,
   UpsertIdeoEntryInput,
   UserSession,
   Viatura,
@@ -257,6 +264,51 @@ export const api = {
     request<void>(`/previa/${data}/ajustes/escala-especial/trocas/${encodeURIComponent(atoKey)}`, {
       method: 'DELETE',
     }),
+
+  // Servico — estado do dia (S6b/F1)
+  servicoGet: (data: string) => request<ServicoEstado>(`/servico/${data}`),
+
+  servicoIniciar: (data: string) =>
+    request<ServicoEstado>(`/servico/${data}/iniciar`, { method: 'POST' }),
+
+  servicoEncerrar: (data: string, force?: boolean) =>
+    request<ServicoEstado>(`/servico/${data}/encerrar${force ? '?force=true' : ''}`, {
+      method: 'POST',
+    }),
+
+  // Alterações Diversas (S6b/F6)
+  alteracoesDiversasList: (data: string) =>
+    request<AlteracaoDiversa[]>(`/servico/${data}/alteracoes`),
+
+  alteracoesDiversasAdd: (data: string, input: AddAlteracaoDiversaInput) =>
+    request<AlteracaoDiversa>(`/servico/${data}/alteracoes`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  // Conferência da Equipe (S6b/F3)
+  conferenciaEquipeGet: (data: string) =>
+    request<ConferenciaEquipeEntry[]>(`/conferencia/equipe/${data}`),
+
+  conferenciaEquipeUpsert: (data: string, input: UpsertConferenciaEquipeInput) =>
+    request<ConferenciaEquipeEntry[]>(`/conferencia/equipe/${data}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+
+  // Conferência da Viatura (S6b/F4)
+  conferenciaViaturaGet: (data: string) =>
+    request<ConferenciaViaturaEntry[]>(`/conferencia/viatura/${data}`),
+
+  conferenciaViaturaRegistrar: (
+    data: string,
+    vtrPrefixo: string,
+    input: UpsertConferenciaViaturaInput,
+  ) =>
+    request<ConferenciaViaturaEntry>(
+      `/conferencia/viatura/${data}/${encodeURIComponent(vtrPrefixo)}`,
+      { method: 'PUT', body: JSON.stringify(input) },
+    ),
 
   // Mapa Força (S5)
   mapaForcaSnapshot: () => request<MapaForcaSnapshot>(`/mapa-forca/snapshot`),

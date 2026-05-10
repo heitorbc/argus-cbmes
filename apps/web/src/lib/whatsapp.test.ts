@@ -77,6 +77,9 @@ const previaCharlie: PreviaDoDia = {
   escalaEspecialAtos: [],
   trocasEscalaEspecial: [],
   chefesOperacoes: [],
+  composicaoMf: [],
+  estadoServico: 'NAO_INICIADO',
+  alteracoesDiversas: [],
   origemEscala: '04 ABRIL DE 2026.xlsx',
   geradoEm: '2026-05-09T00:00:00.000Z',
 };

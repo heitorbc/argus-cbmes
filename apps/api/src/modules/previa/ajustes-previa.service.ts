@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import type {
   AddTrocaEscalaEspecialInput,
   AjustesPrevia,
@@ -6,6 +6,7 @@ import type {
   TrocaEscalaEspecial,
   UpsertAjustesPreviaInput,
 } from '@argus/shared-types';
+import { ServicoService } from '../servico/servico.service';
 
 const VAZIO: AjustesPrevia = {
   trocas: [],
@@ -24,16 +25,31 @@ const VAZIO: AjustesPrevia = {
  * - Trocas de Escala Especial (S6a-fix) — granularidade por ato
  *
  * Mock in-memory keyed por data ISO. Em S5b migra para Prisma.
+ *
+ * S6b: edições rejeitadas se o Serviço do dia já foi iniciado (read-only após
+ * `Servico.iniciar()`). A menos que o usuário seja `admin` (que faz override).
  */
 @Injectable()
 export class AjustesPreviaService {
   private readonly byData: Map<string, AjustesPrevia> = new Map();
 
+  constructor(private readonly servico: ServicoService) {}
+
   get(dataIso: string): AjustesPrevia {
     return this.byData.get(dataIso) ?? VAZIO;
   }
 
-  upsert(dataIso: string, input: UpsertAjustesPreviaInput): AjustesPrevia {
+  private ensureEditable(dataIso: string, isAdmin: boolean): void {
+    if (isAdmin) return;
+    if (this.servico.isReadOnly(dataIso)) {
+      throw new ForbiddenException(
+        `Edição da Prévia de ${dataIso} bloqueada — serviço já iniciado. Use as Conferências e Alterações Diversas.`,
+      );
+    }
+  }
+
+  upsert(dataIso: string, input: UpsertAjustesPreviaInput, isAdmin = false): AjustesPrevia {
+    this.ensureEditable(dataIso, isAdmin);
     const ajustes: AjustesPrevia = {
       trocas: input.trocas,
       escalaEspecial: input.escalaEspecial,
@@ -55,7 +71,9 @@ export class AjustesPreviaService {
     dataIso: string,
     input: AddTrocaEscalaEspecialInput,
     registradoPorNf: string,
+    isAdmin = false,
   ): TrocaEscalaEspecial {
+    this.ensureEditable(dataIso, isAdmin);
     if (input.atoOriginal.data !== dataIso) {
       throw new BadRequestException(
         `Ato é do dia ${input.atoOriginal.data} mas troca está sendo registrada para ${dataIso}.`,
@@ -82,7 +100,8 @@ export class AjustesPreviaService {
   }
 
   /** Remove uma troca pelo identificador do ato original. */
-  removeTrocaEscalaEspecial(dataIso: string, atoKeyEncoded: string): boolean {
+  removeTrocaEscalaEspecial(dataIso: string, atoKeyEncoded: string, isAdmin = false): boolean {
+    this.ensureEditable(dataIso, isAdmin);
     const current = this.byData.get(dataIso);
     if (!current) return false;
     const before = current.trocasEscalaEspecial.length;

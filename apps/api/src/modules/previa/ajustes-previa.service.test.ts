@@ -1,8 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { ForbiddenException } from '@nestjs/common';
+import { ServicoService } from '../servico/servico.service';
 import { AjustesPreviaService, atoKey } from './ajustes-previa.service';
 
 describe('AjustesPreviaService — trocas de Escala Especial (S6a-fix)', () => {
   let service: AjustesPreviaService;
+  let servico: ServicoService;
   const dataIso = '2026-05-09';
   const ato = {
     data: dataIso,
@@ -12,7 +15,8 @@ describe('AjustesPreviaService — trocas de Escala Especial (S6a-fix)', () => {
   };
 
   beforeEach(() => {
-    service = new AjustesPreviaService();
+    servico = new ServicoService();
+    service = new AjustesPreviaService(servico);
   });
 
   it('add cria a primeira troca para um ato', () => {
@@ -110,5 +114,62 @@ describe('AjustesPreviaService — trocas de Escala Especial (S6a-fix)', () => {
       trocasEscalaEspecial: [],
     });
     expect(service.get(dataIso).trocasEscalaEspecial).toHaveLength(1);
+  });
+});
+
+describe('AjustesPreviaService — read-only após Servico iniciado (S6b)', () => {
+  let service: AjustesPreviaService;
+  let servico: ServicoService;
+  const dataIso = '2026-05-09';
+  const ato = {
+    data: dataIso,
+    militarRaw: 'SGT MARIANE',
+    horario: '07:10 ÀS 13:10',
+    funcao: 'APOIO',
+  };
+  const VAZIO_INPUT = {
+    trocas: [],
+    escalaEspecial: {},
+    notasServico: [],
+    dispensas: [],
+    trocasEscalaEspecial: [],
+  };
+
+  beforeEach(() => {
+    servico = new ServicoService();
+    service = new AjustesPreviaService(servico);
+  });
+
+  it('upsert rejeita após iniciar serviço (sem isAdmin)', () => {
+    servico.iniciar(dataIso, '3037509');
+    expect(() => service.upsert(dataIso, VAZIO_INPUT)).toThrow(ForbiddenException);
+  });
+
+  it('upsert permitido com isAdmin=true mesmo após iniciado', () => {
+    servico.iniciar(dataIso, '3037509');
+    expect(() => service.upsert(dataIso, VAZIO_INPUT, true)).not.toThrow();
+  });
+
+  it('addTrocaEscalaEspecial rejeita após iniciar serviço (sem isAdmin)', () => {
+    servico.iniciar(dataIso, '3037509');
+    expect(() =>
+      service.addTrocaEscalaEspecial(
+        dataIso,
+        { atoOriginal: ato, substituidoRaw: 'X', substitutoRaw: 'Y' },
+        '3037509',
+      ),
+    ).toThrow(ForbiddenException);
+  });
+
+  it('removeTrocaEscalaEspecial rejeita após iniciar serviço (sem isAdmin)', () => {
+    service.addTrocaEscalaEspecial(
+      dataIso,
+      { atoOriginal: ato, substituidoRaw: 'X', substitutoRaw: 'Y' },
+      '3037509',
+    );
+    servico.iniciar(dataIso, '3037509');
+    expect(() => service.removeTrocaEscalaEspecial(dataIso, atoKey(ato))).toThrow(
+      ForbiddenException,
+    );
   });
 });

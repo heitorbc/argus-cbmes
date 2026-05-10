@@ -17,6 +17,8 @@ import { EscalasEspeciaisPage } from '@/pages/escalas-especiais';
 import { FiscaisPage } from '@/pages/fiscais';
 import { IdeoPage } from '@/pages/ideo';
 import { PreviaPage } from '@/pages/previa';
+import { ConferenciaEquipePage } from '@/pages/conferencia-equipe';
+import { ConferenciaViaturaPage } from '@/pages/conferencia-viatura';
 
 function FullScreenLoader() {
   return (
@@ -82,6 +84,11 @@ export const router = createBrowserRouter([
           { path: '/cadastros/escalas', element: <EscalasPage /> },
           { path: '/cadastros/escalas-especiais', element: <EscalasEspeciaisPage /> },
           { path: '/previa', element: <PreviaPage /> },
+          { path: '/servico/:data/conferencia-equipe', element: <ConferenciaEquipePage /> },
+          {
+            path: '/servico/:data/conferencia-viatura/:vtrPrefixo',
+            element: <ConferenciaViaturaPage />,
+          },
         ],
       },
       { path: '*', element: <Navigate to="/" replace /> },

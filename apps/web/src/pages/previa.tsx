@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type {
-  AjustesPrevia,
-  EscalaEspecialAtoLight,
-  LetraEquipe,
-  PreviaDoDia,
-  TipoInconsistencia,
-  TrocaEscalaEspecial,
+import {
+  ESTADO_SERVICO_LABEL,
+  type AjustesPrevia,
+  type AlteracaoDiversa,
+  type EscalaEspecialAtoLight,
+  type LetraEquipe,
+  type PreviaDoDia,
+  type TipoInconsistencia,
+  type TrocaEscalaEspecial,
 } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 import { formatPreviaParaWhatsapp } from '@/lib/whatsapp';
 import { MilitarSelect } from '@/components/militar-select';
 
@@ -37,11 +40,55 @@ function todayIso(): string {
 }
 
 export function PreviaPage() {
+  const { user } = useAuth();
+  const podeIniciarServico =
+    user?.papeis.includes('admin') ||
+    user?.papeis.includes('fiscal') ||
+    user?.papeis.includes('sargenteante') ||
+    false;
+
   const [data, setData] = useState<string>(todayIso());
   const [previa, setPrevia] = useState<PreviaDoDia | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [servicoActionInflight, setServicoActionInflight] = useState(false);
+
+  const isReadOnly = (previa?.estadoServico ?? 'NAO_INICIADO') !== 'NAO_INICIADO';
+
+  const reload = () => {
+    api
+      .previaDoDia(data)
+      .then(setPrevia)
+      .catch((e) => setError(e instanceof ApiError ? e.message : 'Erro ao recarregar'));
+  };
+
+  const handleIniciarServico = async () => {
+    setServicoActionInflight(true);
+    setError(null);
+    try {
+      await api.servicoIniciar(data);
+      reload();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Erro ao iniciar serviço');
+    } finally {
+      setServicoActionInflight(false);
+    }
+  };
+
+  const handleEncerrarServico = async (force = false) => {
+    if (!confirm(`Encerrar serviço de ${data}?`)) return;
+    setServicoActionInflight(true);
+    setError(null);
+    try {
+      await api.servicoEncerrar(data, force);
+      reload();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Erro ao encerrar serviço');
+    } finally {
+      setServicoActionInflight(false);
+    }
+  };
 
   const handleCopyWhatsapp = async () => {
     if (!previa) return;
@@ -195,6 +242,15 @@ export function PreviaPage() {
               )}
             </section>
 
+            <ServicoCard
+              previa={previa}
+              podeIniciar={podeIniciarServico}
+              inflight={servicoActionInflight}
+              onIniciar={handleIniciarServico}
+              onEncerrar={handleEncerrarServico}
+              onSaved={reload}
+            />
+
             {previa.inconsistencias.length > 0 && (
               <details className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
                 <summary className="cursor-pointer font-semibold">
@@ -320,13 +376,8 @@ export function PreviaPage() {
               initial={extractAjustes(previa)}
               atosEspeciais={previa.escalaEspecialAtos}
               chefesOperacoes={previa.chefesOperacoes}
-              onSaved={() => {
-                // recarrega a Prévia após salvar ajustes
-                api
-                  .previaDoDia(data)
-                  .then(setPrevia)
-                  .catch(() => undefined);
-              }}
+              isReadOnly={isReadOnly}
+              onSaved={reload}
             />
 
             <p className="mt-4 text-center text-[10px] text-slate-400">
@@ -358,9 +409,11 @@ function AjustesPreTurno({
   initial,
   atosEspeciais,
   chefesOperacoes,
+  isReadOnly,
   onSaved,
 }: {
   data: string;
+  isReadOnly: boolean;
   initial: AjustesPrevia;
   atosEspeciais: EscalaEspecialAtoLight[];
   chefesOperacoes: PreviaDoDia['chefesOperacoes'];
@@ -439,9 +492,19 @@ function AjustesPreTurno({
         </section>
       )}
 
-      <details className="mt-4 rounded border border-cbmes-blue/30 bg-white p-3">
+      {isReadOnly && (
+        <p className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+          🔒 Ajustes pré-turno bloqueados — Serviço já iniciado. Para mudanças durante o serviço,
+          use as Conferências ou registre uma <strong>Alteração Diversa</strong> abaixo.
+        </p>
+      )}
+
+      <details
+        className={`mt-4 rounded border border-cbmes-blue/30 bg-white p-3 ${isReadOnly ? 'opacity-60' : ''}`}
+      >
         <summary className="cursor-pointer text-sm font-semibold text-cbmes-blue">
-          ✏️ Ajustes pré-turno (trocas, escala especial, NS, dispensas)
+          ✏️ Ajustes pré-turno (trocas, escala especial, NS, dispensas){' '}
+          {isReadOnly && <span className="text-xs text-amber-700">— Bloqueado</span>}
         </summary>
         <div className="mt-3 space-y-4 text-xs">
           {err && (
@@ -840,4 +903,417 @@ function formatDataExtenso(iso: string): string {
     year: 'numeric',
     timeZone: 'UTC',
   });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// S6b — ServicoCard: estado do dia + Conferências + Alterações Diversas
+// ════════════════════════════════════════════════════════════════════════════
+
+function ServicoCard({
+  previa,
+  podeIniciar,
+  inflight,
+  onIniciar,
+  onEncerrar,
+  onSaved,
+}: {
+  previa: PreviaDoDia;
+  podeIniciar: boolean;
+  inflight: boolean;
+  onIniciar: () => Promise<void>;
+  onEncerrar: (force?: boolean) => Promise<void>;
+  onSaved: () => void;
+}) {
+  const estado = previa.estadoServico;
+  const isEncerrado = estado === 'ENCERRADO';
+
+  if (estado === 'NAO_INICIADO') {
+    if (!podeIniciar) return null;
+    return (
+      <section className="mt-4 rounded border border-cbmes-blue/30 bg-cbmes-blue/5 p-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-cbmes-blue">Serviço do dia</h3>
+            <p className="text-xs text-slate-600">
+              Estado: <strong>{ESTADO_SERVICO_LABEL[estado]}</strong> — clique para iniciar e
+              começar as Conferências.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onIniciar}
+            disabled={inflight}
+            className="rounded-button bg-cbmes-red px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {inflight ? '…' : 'Iniciar Serviço'}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <>
+      <section className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-amber-900">
+        <div className="flex items-baseline justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold">⚠️ Serviço {ESTADO_SERVICO_LABEL[estado]}</h3>
+            <p className="text-xs">
+              {previa.iniciadoEm && (
+                <>
+                  Iniciado em <strong>{new Date(previa.iniciadoEm).toLocaleString('pt-BR')}</strong>
+                  {previa.iniciadoPorNf && <> por NF {previa.iniciadoPorNf}</>}.{' '}
+                </>
+              )}
+              {isEncerrado && previa.encerradoEm && (
+                <>
+                  Encerrado em{' '}
+                  <strong>{new Date(previa.encerradoEm).toLocaleString('pt-BR')}</strong>
+                  {previa.encerradoPorNf && <> por NF {previa.encerradoPorNf}</>}.{' '}
+                </>
+              )}
+              {!isEncerrado && (
+                <>Edição da Prévia bloqueada. Use Conferências e Alterações Diversas.</>
+              )}
+            </p>
+          </div>
+          {!isEncerrado && podeIniciar && (
+            <button
+              type="button"
+              onClick={() => onEncerrar(false)}
+              disabled={inflight}
+              className="rounded-button bg-cbmes-red px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+            >
+              Encerrar Serviço
+            </button>
+          )}
+        </div>
+      </section>
+
+      {!isEncerrado && (
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <Link
+            to={`/servico/${previa.data}/conferencia-equipe`}
+            className="block rounded border border-cbmes-blue/30 bg-white p-3 hover:bg-cbmes-blue/5"
+          >
+            <h4 className="text-sm font-semibold text-cbmes-blue">👥 Conferência da Equipe</h4>
+            <p className="mt-1 text-xs text-slate-600">
+              Marcar presença/substituição/ausência da equipe escalada.
+            </p>
+          </Link>
+          <ConferenciaViaturasMenu data={previa.data} composicaoMf={previa.composicaoMf} />
+        </div>
+      )}
+
+      <AlteracoesDiversasCard
+        data={previa.data}
+        alteracoes={previa.alteracoesDiversas}
+        composicaoMf={previa.composicaoMf}
+        canRegistrar={!isEncerrado && podeIniciar}
+        onSaved={onSaved}
+      />
+    </>
+  );
+}
+
+function ConferenciaViaturasMenu({
+  data,
+  composicaoMf,
+}: {
+  data: string;
+  composicaoMf: PreviaDoDia['composicaoMf'];
+}) {
+  const viaturas = composicaoMf
+    .filter((c) => c.vtrPrefixo && c.vtrStatus === 'DISPONIVEL')
+    .map((c) => c.vtrPrefixo!);
+
+  return (
+    <div className="rounded border border-cbmes-blue/30 bg-white p-3">
+      <h4 className="text-sm font-semibold text-cbmes-blue">🚒 Conferência das Viaturas</h4>
+      {viaturas.length === 0 ? (
+        <p className="mt-1 text-xs text-slate-500">Nenhuma viatura disponível para conferir.</p>
+      ) : (
+        <ul className="mt-2 flex flex-wrap gap-1">
+          {viaturas.map((v) => (
+            <li key={v}>
+              <Link
+                to={`/servico/${data}/conferencia-viatura/${encodeURIComponent(v)}`}
+                className="rounded-button border border-cbmes-blue px-2 py-1 text-xs text-cbmes-blue hover:bg-cbmes-blue/10"
+              >
+                {v}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function AlteracoesDiversasCard({
+  data,
+  alteracoes,
+  composicaoMf,
+  canRegistrar,
+  onSaved,
+}: {
+  data: string;
+  alteracoes: AlteracaoDiversa[];
+  composicaoMf: PreviaDoDia['composicaoMf'];
+  canRegistrar: boolean;
+  onSaved: () => void;
+}) {
+  const [modalAberto, setModalAberto] = useState(false);
+
+  return (
+    <>
+      <section className="mt-4 rounded border border-cbmes-blue/30 bg-white p-3">
+        <div className="flex items-baseline justify-between">
+          <h3 className="text-sm font-semibold text-cbmes-blue">📝 Alterações Diversas</h3>
+          {canRegistrar && (
+            <button
+              type="button"
+              onClick={() => setModalAberto(true)}
+              className="rounded-button border border-cbmes-blue px-2 py-1 text-xs text-cbmes-blue hover:bg-cbmes-blue/10"
+            >
+              + Registrar alteração
+            </button>
+          )}
+        </div>
+        {alteracoes.length === 0 ? (
+          <p className="mt-1 text-xs text-slate-500">Nenhuma alteração registrada.</p>
+        ) : (
+          <ul className="mt-2 divide-y divide-slate-100 text-xs">
+            {[...alteracoes].reverse().map((a) => (
+              <li key={a.id} className="py-1">
+                <span className="text-slate-500">
+                  [{new Date(a.registradoEm).toLocaleString('pt-BR')} · NF {a.registradoPorNf}]
+                </span>{' '}
+                <strong>{tipoLabel(a.tipo)}</strong>
+                {a.recurso && <> · {a.recurso}</>}
+                {a.funcao && <> ({a.funcao})</>}
+                {a.militarOriginalRaw && a.militarSubstitutoRaw && (
+                  <>
+                    {' '}
+                    — {a.militarOriginalRaw} → <strong>{a.militarSubstitutoRaw}</strong>
+                  </>
+                )}
+                {a.vtrPrefixo && a.statusViaturaNovo && (
+                  <>
+                    {' '}
+                    — {a.vtrPrefixo}: {a.statusViaturaAnterior} → {a.statusViaturaNovo}
+                  </>
+                )}
+                {a.observacao && <> — {a.observacao}</>}
+                {a.motivo && <em className="text-slate-500"> ({a.motivo})</em>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {modalAberto && (
+        <ModalAlteracaoDiversa
+          data={data}
+          composicaoMf={composicaoMf}
+          onSaved={() => {
+            setModalAberto(false);
+            onSaved();
+          }}
+          onCancel={() => setModalAberto(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function tipoLabel(tipo: AlteracaoDiversa['tipo']): string {
+  if (tipo === 'troca_militar') return 'Troca de militar';
+  if (tipo === 'mudanca_viatura') return 'Mudança de viatura';
+  return 'Observação';
+}
+
+function ModalAlteracaoDiversa({
+  data,
+  composicaoMf,
+  onSaved,
+  onCancel,
+}: {
+  data: string;
+  composicaoMf: PreviaDoDia['composicaoMf'];
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const [tipo, setTipo] = useState<AlteracaoDiversa['tipo']>('troca_militar');
+  const [recurso, setRecurso] = useState('');
+  const [funcao, setFuncao] = useState('');
+  const [militarOriginalNf, setMilitarOriginalNf] = useState<string | undefined>();
+  const [militarOriginalRaw, setMilitarOriginalRaw] = useState('');
+  const [militarSubstitutoNf, setMilitarSubstitutoNf] = useState<string | undefined>();
+  const [militarSubstitutoRaw, setMilitarSubstitutoRaw] = useState('');
+  const [motivo, setMotivo] = useState('');
+  const [observacao, setObservacao] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const recursos = composicaoMf.map((c) => c.recurso);
+
+  const submit = async () => {
+    setSaving(true);
+    setErr(null);
+    try {
+      await api.alteracoesDiversasAdd(data, {
+        tipo,
+        recurso: recurso || undefined,
+        funcao: funcao || undefined,
+        militarOriginalNf,
+        militarOriginalRaw: militarOriginalRaw || undefined,
+        militarSubstitutoNf,
+        militarSubstitutoRaw: militarSubstitutoRaw || undefined,
+        motivo: motivo || undefined,
+        observacao: observacao || undefined,
+      });
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Erro ao registrar');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="w-full max-w-lg rounded border border-slate-200 bg-white p-4 shadow-xl">
+        <h3 className="text-base font-bold text-cbmes-blue">Registrar Alteração Diversa</h3>
+
+        <div className="mt-3 space-y-3 text-sm">
+          <label className="block">
+            <span className="text-xs font-medium text-slate-700">Tipo</span>
+            <select
+              value={tipo}
+              onChange={(e) => setTipo(e.target.value as AlteracaoDiversa['tipo'])}
+              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
+            >
+              <option value="troca_militar">Troca de militar</option>
+              <option value="mudanca_viatura">Mudança de viatura</option>
+              <option value="observacao">Observação geral</option>
+            </select>
+          </label>
+
+          {(tipo === 'troca_militar' || tipo === 'mudanca_viatura') && (
+            <label className="block">
+              <span className="text-xs font-medium text-slate-700">Recurso afetado</span>
+              <select
+                value={recurso}
+                onChange={(e) => setRecurso(e.target.value)}
+                className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
+              >
+                <option value="">— Selecionar —</option>
+                {recursos.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {tipo === 'troca_militar' && (
+            <>
+              <label className="block">
+                <span className="text-xs font-medium text-slate-700">Função afetada</span>
+                <input
+                  type="text"
+                  value={funcao}
+                  onChange={(e) => setFuncao(e.target.value)}
+                  placeholder="Ex.: Op1, Mot, Ch"
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
+                />
+              </label>
+              <div>
+                <span className="text-xs font-medium text-slate-700">Militar original</span>
+                <MilitarSelect
+                  value={militarOriginalNf}
+                  valueRaw={militarOriginalRaw}
+                  onChange={(nf, m) => {
+                    setMilitarOriginalNf(nf ?? undefined);
+                    setMilitarOriginalRaw(
+                      m ? `${m.posto} ${m.nomeGuerra ?? m.nome.split(' ')[0]}` : '',
+                    );
+                  }}
+                  excluirNfs={militarSubstitutoNf ? [militarSubstitutoNf] : []}
+                />
+              </div>
+              <div>
+                <span className="text-xs font-medium text-slate-700">Substituto</span>
+                <MilitarSelect
+                  value={militarSubstitutoNf}
+                  valueRaw={militarSubstitutoRaw}
+                  onChange={(nf, m) => {
+                    setMilitarSubstitutoNf(nf ?? undefined);
+                    setMilitarSubstitutoRaw(
+                      m ? `${m.posto} ${m.nomeGuerra ?? m.nome.split(' ')[0]}` : '',
+                    );
+                  }}
+                  excluirNfs={militarOriginalNf ? [militarOriginalNf] : []}
+                />
+              </div>
+            </>
+          )}
+
+          <label className="block">
+            <span className="text-xs font-medium text-slate-700">Motivo (opcional)</span>
+            <input
+              type="text"
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-medium text-slate-700">Observação (opcional)</span>
+            <textarea
+              rows={2}
+              value={observacao}
+              onChange={(e) => setObservacao(e.target.value)}
+              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
+            />
+          </label>
+
+          {err && (
+            <p
+              role="alert"
+              className="rounded border border-feedback-error/30 bg-feedback-error/10 p-2 text-xs text-feedback-error"
+            >
+              {err}
+            </p>
+          )}
+        </div>
+
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={submit}
+            disabled={saving}
+            className="flex-1 rounded-button bg-cbmes-red py-2 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {saving ? 'Salvando…' : 'Salvar'}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={saving}
+            className="flex-1 rounded-button border border-slate-300 bg-white py-2 text-sm text-slate-700"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

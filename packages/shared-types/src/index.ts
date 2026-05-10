@@ -6,4 +6,5 @@ export * from './ideo.js';
 export * from './mapa-forca.js';
 export * from './militar.js';
 export * from './previa.js';
+export * from './servico.js';
 export * from './viatura.js';

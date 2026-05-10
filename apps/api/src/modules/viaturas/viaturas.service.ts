@@ -12,6 +12,7 @@ import type {
   StatusViatura,
   TipoViatura,
   UpdateViaturaInput,
+  UpsertConferenciaViaturaInput,
   Viatura,
 } from '@argus/shared-types';
 import { MapaForcaService } from '../mapa-forca/mapa-forca.service';
@@ -54,6 +55,7 @@ function viaturaFromRecurso(r: RecursoMapaForca): Viatura | null {
     origem: 'mapa_forca',
     composicaoFuncoes: [],
     funcaoOperacional: r.recurso,
+    observacoesDataDas: [],
     criadoEm: now,
     atualizadoEm: now,
   };
@@ -137,6 +139,7 @@ export class ViaturasService {
       id: randomUUID(),
       origem: 'override_admin',
       composicaoFuncoes: input.composicaoFuncoes ?? [],
+      observacoesDataDas: [],
       criadoEm: now,
       atualizadoEm: now,
     };
@@ -191,5 +194,46 @@ export class ViaturasService {
       );
     }
     return this.update(id, { status: 'BAIXADA' });
+  }
+
+  /**
+   * S6b/F4 — "porta autorizada" da Conferência da Viatura.
+   *
+   * Bypassa o bloqueio do ADR-009 (status de viatura MF) — registrar mudanças
+   * via Conferência é o caminho institucional correto. Adiciona observação
+   * datada ao histórico e atualiza KM, tanque, e opcionalmente status.
+   *
+   * Se `statusMudanca='BAIXADA'`, exige `motivoBaixa`.
+   */
+  async aplicarConferencia(
+    prefixo: string,
+    input: UpsertConferenciaViaturaInput,
+    registradoPorNf: string,
+  ): Promise<Viatura> {
+    const current = await this.findByPrefixo(prefixo);
+    if (!current) {
+      throw new NotFoundException(`Viatura com prefixo "${prefixo}" não encontrada`);
+    }
+    if (input.statusMudanca === 'BAIXADA' && !input.motivoBaixa) {
+      throw new BadRequestException('motivoBaixa é obrigatório quando statusMudanca=BAIXADA.');
+    }
+    const now = new Date().toISOString();
+    const novaObservacao = input.observacao
+      ? [
+          ...(current.observacoesDataDas ?? []),
+          { texto: input.observacao, data: now, registradoPorNf },
+        ]
+      : current.observacoesDataDas;
+
+    const updated: Viatura = {
+      ...current,
+      kmAtual: input.kmAtual ?? current.kmAtual,
+      estadoTanquePercent: input.estadoTanquePercent,
+      status: input.statusMudanca ?? current.status,
+      observacoesDataDas: novaObservacao,
+      atualizadoEm: now,
+    };
+    this.overrides.set(updated.prefixo, updated);
+    return updated;
   }
 }

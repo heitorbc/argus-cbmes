@@ -65,7 +65,11 @@ export class PreviaController {
   @Roles('admin', 'fiscal', 'sargenteante')
   @Put(':data/ajustes')
   @HttpCode(HttpStatus.OK)
-  upsertAjustes(@Param('data') data: string, @Body() body: unknown): AjustesPrevia {
+  upsertAjustes(
+    @Param('data') data: string,
+    @Body() body: unknown,
+    @CurrentUser() user: UserSession,
+  ): AjustesPrevia {
     if (!dataParamRegex.test(data)) {
       throw new BadRequestException('data inválida (esperado YYYY-MM-DD)');
     }
@@ -73,7 +77,7 @@ export class PreviaController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     }
-    return this.ajustes.upsert(data, parsed.data);
+    return this.ajustes.upsert(data, parsed.data, user.papeis.includes('admin'));
   }
 
   /** S6a-fix item 4 — registra uma troca de Escala Especial por ato. */
@@ -92,18 +96,31 @@ export class PreviaController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     }
-    return this.ajustes.addTrocaEscalaEspecial(data, parsed.data, user.nf);
+    return this.ajustes.addTrocaEscalaEspecial(
+      data,
+      parsed.data,
+      user.nf,
+      user.papeis.includes('admin'),
+    );
   }
 
   /** S6a-fix item 4 — remove uma troca de Escala Especial pelo identificador do ato. */
   @Roles('admin', 'fiscal', 'sargenteante')
   @Delete(':data/ajustes/escala-especial/trocas/:atoKey')
   @HttpCode(HttpStatus.NO_CONTENT)
-  removeTrocaEscalaEspecial(@Param('data') data: string, @Param('atoKey') atoKey: string): void {
+  removeTrocaEscalaEspecial(
+    @Param('data') data: string,
+    @Param('atoKey') atoKey: string,
+    @CurrentUser() user: UserSession,
+  ): void {
     if (!dataParamRegex.test(data)) {
       throw new BadRequestException('data inválida (esperado YYYY-MM-DD)');
     }
-    const removed = this.ajustes.removeTrocaEscalaEspecial(data, decodeURIComponent(atoKey));
+    const removed = this.ajustes.removeTrocaEscalaEspecial(
+      data,
+      decodeURIComponent(atoKey),
+      user.papeis.includes('admin'),
+    );
     if (!removed) {
       throw new NotFoundException('Troca de Escala Especial não encontrada para este ato.');
     }

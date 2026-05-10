@@ -3,6 +3,9 @@ import {
   LETRA_EQUIPE_LABEL,
   TIPO_IDEO,
   type ComposicaoEntry,
+  type ComposicaoMfEntry,
+  type ComposicaoMfMilitar,
+  type LetraEquipe,
   type LetraEquipeRotativa,
   type Militar,
   type PreviaDoDia,
@@ -11,6 +14,7 @@ import {
   type PreviaInconsistencia,
   type PreviaTripulacaoEntry,
   type RecursoMapaForca,
+  type StatusViatura,
   type TipoIdeo,
 } from '@argus/shared-types';
 import { ChefesOperacoesService } from '../chefes-operacoes/chefes-operacoes.service';
@@ -20,6 +24,7 @@ import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.
 import { FiscaisService } from '../fiscais/fiscais.service';
 import { IdeoService } from '../ideo/ideo.service';
 import { MapaForcaService } from '../mapa-forca/mapa-forca.service';
+import { ServicoService } from '../servico/servico.service';
 import { ViaturasService } from '../viaturas/viaturas.service';
 import { AjustesPreviaService } from './ajustes-previa.service';
 import { NomeMatcher } from './nome-matching';
@@ -51,6 +56,7 @@ export class PreviaService {
     private readonly ajustes: AjustesPreviaService,
     private readonly escalasEspeciais: EscalasEspeciaisService,
     private readonly chefesOperacoes: ChefesOperacoesService,
+    private readonly servico: ServicoService,
   ) {}
 
   async getPreviaDoDia(dataIso: string): Promise<PreviaDoDia> {
@@ -157,6 +163,13 @@ export class PreviaService {
     // S6a-fix item 6 — Chefes de Operações escalados no dia (planilha externa).
     const chefes = await this.chefesOperacoes.getEscaladosDoDia(ano, mes, dia).catch(() => []);
 
+    // S6b/F2 — composicaoMf espelhando o MF (1 entry por recurso)
+    const composicaoMf = buildComposicaoMf(tripulacao, allViaturas);
+
+    // S6b/F1 — Estado do Servico do dia
+    const estadoServico = this.servico.get(dataIso);
+    const alteracoesDiversas = this.servico.listAlteracoes(dataIso);
+
     return {
       data: dataIso,
       ano,
@@ -165,6 +178,7 @@ export class PreviaService {
       equipe,
       equipeNome: equipe ? LETRA_EQUIPE_LABEL[equipe] : null,
       fiscal,
+      composicaoMf,
       tripulacao,
       ideo: ideoEntries,
       viaturasOperacionais: viaturasOp,
@@ -176,6 +190,12 @@ export class PreviaService {
       escalaEspecialAtos: atosEspeciais,
       trocasEscalaEspecial: ajustes.trocasEscalaEspecial,
       chefesOperacoes: chefes,
+      estadoServico: estadoServico.estado,
+      iniciadoEm: estadoServico.iniciadoEm,
+      iniciadoPorNf: estadoServico.iniciadoPorNf,
+      encerradoEm: estadoServico.encerradoEm,
+      encerradoPorNf: estadoServico.encerradoPorNf,
+      alteracoesDiversas,
       origemEscala: escala?.origemArquivo ?? null,
       geradoEm: new Date().toISOString(),
     };
@@ -343,6 +363,71 @@ function parseDataIso(dataIso: string): [number, number, number] {
 
 function normalizeViaturaCode(s: string): string {
   return s.trim().toUpperCase();
+}
+
+/**
+ * Reagrupa `tripulacao` (1 entry por militar) em `composicaoMf` (1 entry por
+ * recurso/viatura) — espelhando o shape do MF (S6b/F2/ADR-011).
+ *
+ * Cada entry tem chefe + motorista + operadores resolvidos.
+ * Viaturas sem tripulação ainda aparecem no `composicaoMf` (com vtrStatus,
+ * sem militares).
+ */
+function buildComposicaoMf(
+  tripulacao: readonly PreviaTripulacaoEntry[],
+  viaturas: readonly { id: string; prefixo: string; status: StatusViatura }[],
+): ComposicaoMfEntry[] {
+  const byRecurso = new Map<string, ComposicaoMfEntry>();
+
+  for (const t of tripulacao) {
+    const recurso = t.viatura;
+    let entry = byRecurso.get(recurso);
+    if (!entry) {
+      const vtr = viaturas.find(
+        (v) => normalizeViaturaCode(v.prefixo) === normalizeViaturaCode(recurso),
+      );
+      entry = {
+        recurso,
+        vtrPrefixo: vtr?.prefixo,
+        vtrStatus: vtr?.status ?? null,
+        semEquipe: false,
+        equipe: t.equipe as LetraEquipe,
+        chefe: undefined,
+        motorista: undefined,
+        operadores: [],
+      };
+      byRecurso.set(recurso, entry);
+    }
+    const militar: ComposicaoMfMilitar = {
+      raw: t.militarRef.raw,
+      postoAbreviado: t.militarRef.postoAbreviado,
+      nomeGuerra: t.militarRef.nomeGuerra,
+      militarResolvido: t.militarResolvido,
+      statusConferencia: 'pendente',
+      isFiscal: t.isFiscal,
+    };
+    if (t.funcao === 'Ch') entry.chefe = militar;
+    else if (t.funcao === 'Mot') entry.motorista = militar;
+    else entry.operadores.push(militar);
+  }
+
+  // Viaturas sem tripulação (orfãs) também entram para visibilidade do status.
+  for (const v of viaturas) {
+    if (!byRecurso.has(v.prefixo)) {
+      byRecurso.set(v.prefixo, {
+        recurso: v.prefixo,
+        vtrPrefixo: v.prefixo,
+        vtrStatus: v.status,
+        semEquipe: true,
+        equipe: null,
+        chefe: undefined,
+        motorista: undefined,
+        operadores: [],
+      });
+    }
+  }
+
+  return Array.from(byRecurso.values());
 }
 
 /** Re-export para uso em tests/controller. */
