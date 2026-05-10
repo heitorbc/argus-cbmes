@@ -31,7 +31,9 @@ import { NomeMatcher } from './nome-matching';
 
 /** Recursos do MF que devem complementar a tripulação por bucketing. */
 const RECURSOS_AQUATICAS = ['MERGULHO 01', 'MERGULHO 02', 'SALVAMAR 01', 'SALVAMAR 02'];
-const RECURSOS_STAFF = ['CHEFE DE OPERAÇÕES', 'OFICIAL DE DIA', 'PERITOS'];
+// S6c/F2 — OFICIAL DE DIA suprimido (redundante com CHEFE DE OPERAÇÕES + AU 154);
+// PERITOS suprimido (não previsto nesta fase). Reativar em sprint futura se necessário.
+const RECURSOS_STAFF = ['CHEFE DE OPERAÇÕES'];
 
 /**
  * Orquestra a geração da Prévia do Mapa Força para uma data.
@@ -80,8 +82,15 @@ export class PreviaService {
       });
     }
 
-    // Resolução nome→NF cruzando com efetivo consolidado (apenas 1ª Cia).
-    const efetivoTotal = await this.efetivo.getAll({ somente1aCia: true });
+    // Resolução nome→NF cruzando com efetivo consolidado.
+    // S6c/F1: NomeMatcher precisa de TODOS os militares (DADOS+1ª1º+EFETIVO)
+    // para resolver militares que estão nas escalas mas ainda não foram
+    // lançados no QDI 1ª1º (DRH atrasado). A página /cadastros/efetivo continua
+    // filtrada (somente1aCia=true sem incluirEfetivoOrfao).
+    const efetivoTotal = await this.efetivo.getAll({
+      somente1aCia: false,
+      incluirEfetivoOrfao: true,
+    });
     const matcher = new NomeMatcher(efetivoTotal);
 
     const tripulacao: PreviaTripulacaoEntry[] = escalados.entries.map((entry) =>

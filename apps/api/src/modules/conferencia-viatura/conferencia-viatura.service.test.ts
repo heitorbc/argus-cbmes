@@ -35,29 +35,27 @@ describe('ConferenciaViaturaService', () => {
       findByPrefixo: vi.fn().mockImplementation(async (p: string) => {
         return p === viaturaAtual.prefixo ? viaturaAtual : undefined;
       }),
-      aplicarConferencia: vi
-        .fn()
-        .mockImplementation(
-          async (
-            _prefixo: string,
-            input: {
-              kmAtual?: number;
-              estadoTanquePercent: number;
-              statusMudanca?: 'DISPONIVEL' | 'BAIXADA';
-              observacao?: string;
-            },
-            _nf: string,
-          ) => {
-            viaturaAtual = {
-              ...viaturaAtual,
-              kmAtual: input.kmAtual ?? viaturaAtual.kmAtual,
-              estadoTanquePercent: input.estadoTanquePercent,
-              status: input.statusMudanca ?? viaturaAtual.status,
-              atualizadoEm: new Date().toISOString(),
-            };
-            return viaturaAtual;
+      aplicarConferencia: vi.fn().mockImplementation(
+        async (
+          _prefixo: string,
+          input: {
+            kmAtual?: number;
+            estadoTanquePercent: number;
+            statusMudanca?: 'DISPONIVEL' | 'BAIXADA';
+            observacao?: string;
           },
-        ),
+          _nf: string,
+        ) => {
+          viaturaAtual = {
+            ...viaturaAtual,
+            kmAtual: input.kmAtual ?? viaturaAtual.kmAtual,
+            estadoTanquePercent: input.estadoTanquePercent,
+            status: input.statusMudanca ?? viaturaAtual.status,
+            atualizadoEm: new Date().toISOString(),
+          };
+          return viaturaAtual;
+        },
+      ),
     } as unknown as ViaturasService;
     svc = new ConferenciaViaturaService(servico, viaturasMock);
   });

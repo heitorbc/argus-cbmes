@@ -14,6 +14,7 @@ import { ApiError, api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { formatPreviaParaWhatsapp } from '@/lib/whatsapp';
 import { MilitarSelect } from '@/components/militar-select';
+import { STATUS_VIATURA_BADGE, STATUS_VIATURA_CARD } from '@/lib/status-viatura-style';
 
 const EQUIPE_COLOR: Record<LetraEquipe, string> = {
   A: 'bg-emerald-100 text-emerald-900 border-emerald-300',
@@ -347,22 +348,25 @@ export function PreviaPage() {
                 </h3>
                 <ul className="grid grid-cols-2 gap-2 text-xs md:grid-cols-3">
                   {previa.viaturasOperacionais.map((v) => {
+                    // S6c/F3 — paleta única; status são DISPONIVEL/BAIXADA/EMPRESTADA (ADR-009)
                     const statusClass =
-                      v.vtrStatus === 'operacional'
-                        ? 'border-emerald-300 bg-emerald-50'
-                        : v.vtrStatus === 'baixada'
-                          ? 'border-rose-300 bg-rose-50'
-                          : v.vtrStatus === 'reserva'
-                            ? 'border-amber-300 bg-amber-50'
-                            : 'border-slate-200 bg-white';
+                      v.vtrStatus && v.vtrStatus in STATUS_VIATURA_CARD
+                        ? STATUS_VIATURA_CARD[v.vtrStatus as keyof typeof STATUS_VIATURA_CARD]
+                        : 'border-slate-200 bg-white text-slate-700';
+                    const badgeClass =
+                      v.vtrStatus && v.vtrStatus in STATUS_VIATURA_BADGE
+                        ? STATUS_VIATURA_BADGE[v.vtrStatus as keyof typeof STATUS_VIATURA_BADGE]
+                        : 'bg-slate-200 text-slate-700';
                     return (
-                      <li key={v.id} className={`rounded border p-2 text-center ${statusClass}`}>
-                        <p className="font-bold text-cbmes-blue">{v.codigo}</p>
-                        <p className="text-[10px] text-slate-500">{v.descricao}</p>
-                        {v.vtrStatus && v.vtrStatus !== 'operacional' && (
-                          <p className="mt-0.5 text-[10px] font-bold uppercase text-rose-700">
+                      <li key={v.id} className={`rounded border-2 p-2 text-center ${statusClass}`}>
+                        <p className="font-bold">{v.codigo}</p>
+                        <p className="text-[10px] opacity-70">{v.descricao}</p>
+                        {v.vtrStatus && v.vtrStatus !== 'DISPONIVEL' && (
+                          <span
+                            className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${badgeClass}`}
+                          >
                             {v.vtrStatus}
-                          </p>
+                          </span>
                         )}
                       </li>
                     );

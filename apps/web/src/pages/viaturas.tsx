@@ -14,6 +14,7 @@ import {
 import { ApiError, api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { MilitarSelect } from '@/components/militar-select';
+import { STATUS_VIATURA_BADGE } from '@/lib/status-viatura-style';
 
 interface FormState {
   prefixo: string;
@@ -47,11 +48,8 @@ const EMPTY_FORM: FormState = {
   militarResponsavelNome: '',
 };
 
-const STATUS_BADGE_CLASS: Record<StatusViatura, string> = {
-  DISPONIVEL: 'bg-feedback-success/15 text-feedback-success',
-  BAIXADA: 'bg-slate-200 text-slate-700',
-  EMPRESTADA: 'bg-cbmes-blue/15 text-cbmes-blue',
-};
+// S6c/F3 — paleta movida para `lib/status-viatura-style.ts`
+const STATUS_BADGE_CLASS = STATUS_VIATURA_BADGE;
 
 export function ViaturasPage() {
   const { user } = useAuth();

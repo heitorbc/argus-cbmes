@@ -483,3 +483,59 @@ describe('EfetivoService — regra "EFETIVO só enriquece, não adiciona NFs" (S
     expect(r?.subSecao).toBe('aquaticas');
   });
 });
+
+describe('EfetivoService — incluirEfetivoOrfao (S6c/F1) — NomeMatcher da Prévia', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('default (incluirEfetivoOrfao ausente): militar só em EFETIVO NÃO aparece (S6a-fix)', async () => {
+    // SAMPLE_CSV tem 3 militares no EFETIVO; nenhum em DADOS+1ª1º
+    stubFetch(SAMPLE_CSV);
+    const service = makeService();
+    const all = await service.getAll({ somente1aCia: false });
+    expect(all).toHaveLength(0);
+  });
+
+  it('incluirEfetivoOrfao=true: militar só em EFETIVO aparece (NomeMatcher consegue resolver)', async () => {
+    stubFetch(SAMPLE_CSV);
+    const service = makeService();
+    const all = await service.getAll({ somente1aCia: false, incluirEfetivoOrfao: true });
+    // SAMPLE_CSV tem 3 militares — todos aparecem
+    expect(all).toHaveLength(3);
+    expect(all.find((m) => m.nf === '3037509')).toBeDefined();
+    expect(all.find((m) => m.nf === '903209')).toBeDefined();
+  });
+
+  it('somente1aCia=true ignora incluirEfetivoOrfao (página /cadastros/efetivo continua filtrada)', async () => {
+    stubFetch(SAMPLE_CSV);
+    const service = makeService({
+      qdiByNf: new Map([
+        [
+          '3037509',
+          makeQdiEntry({
+            nf: '3037509',
+            ant: 418,
+            postoAtual: '2ºSGT',
+            nomeGuerra: 'BARCELLOS',
+            subSecao: 'sos',
+          }),
+        ],
+      ]),
+    });
+    // Mesmo com incluirEfetivoOrfao=true, somente1aCia filtra por subSecao definida
+    const r = await service.getAll({ somente1aCia: true, incluirEfetivoOrfao: true });
+    expect(r).toHaveLength(1);
+    expect(r[0]?.nf).toBe('3037509');
+    // 903209 e 2693119 (só em EFETIVO sem subSecao) ficam fora
+  });
+
+  it('findByNf inclui EFETIVO órfão (página de detalhe /cadastros/efetivo/:nf)', async () => {
+    stubFetch(SAMPLE_CSV);
+    const service = makeService(); // sem QDI nem DADOS
+    const r = await service.findByNf('3037509');
+    // S6c/F1: findByNf usa incluirEfetivoOrfao=true internamente
+    expect(r).toBeDefined();
+    expect(r?.nome).toBe('HEITOR BARCELLOS COELHO');
+  });
+});

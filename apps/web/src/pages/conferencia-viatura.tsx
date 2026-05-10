@@ -7,6 +7,7 @@ import {
   type Viatura,
 } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
+import { STATUS_VIATURA_BADGE } from '@/lib/status-viatura-style';
 
 export function ConferenciaViaturaPage() {
   const { data, vtrPrefixo } = useParams<{ data: string; vtrPrefixo: string }>();
@@ -107,7 +108,11 @@ export function ConferenciaViaturaPage() {
           <div className="space-y-4 rounded border border-cbmes-blue/30 bg-white p-4">
             <div>
               <p className="text-xs uppercase text-slate-500">Status atual</p>
-              <p className="text-base font-bold">{STATUS_VIATURA_LABEL[viatura.status]}</p>
+              <span
+                className={`mt-1 inline-block rounded-full px-3 py-1 text-sm font-bold uppercase ${STATUS_VIATURA_BADGE[viatura.status]}`}
+              >
+                {STATUS_VIATURA_LABEL[viatura.status]}
+              </span>
             </div>
 
             <label className="block">

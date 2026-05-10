@@ -40,6 +40,8 @@ export class EfetivoService {
   ) {}
 
   async list(query: EfetivoQuery): Promise<EfetivoListResponse> {
+    // Página /cadastros/efetivo NÃO inclui órfãos (S6a-fix item 2):
+    // só militares de DADOS (LOCAL=1ª1º) ou 1ª1º.
     const consolidated = await this.consolidate();
 
     let items = consolidated.items;
@@ -77,16 +79,28 @@ export class EfetivoService {
   }
 
   async findByNf(nf: string): Promise<Militar | null> {
-    const consolidated = await this.consolidate();
+    // findByNf inclui órfãos do EFETIVO (S6c/F1) — necessário para a página de
+    // detalhe `/cadastros/efetivo/:nf` resolver militares que estão em escalas
+    // mas ainda não foram lançados no QDI 1ª1º.
+    const consolidated = await this.consolidate({ incluirEfetivoOrfao: true });
     return consolidated.items.find((m) => m.nf === nf) ?? null;
   }
 
   /**
-   * Retorna a lista consolidada completa (sem paginação). Usada por consumidores que
-   * precisam do efetivo inteiro: NomeMatcher (S4 — Prévia), futura conferência (S6).
+   * Retorna a lista consolidada completa (sem paginação). Usada por consumidores
+   * que precisam do efetivo inteiro:
+   * - **NomeMatcher** (Prévia): chama com `incluirEfetivoOrfao: true` para
+   *   resolver militares de escalas que ainda não estão no QDI 1ª1º (S6c/F1).
+   * - **Conferência da Equipe** (S6b): também usa o dicionário completo.
+   * - **Página /cadastros/efetivo**: chama com `somente1aCia: true` (default
+   *   `incluirEfetivoOrfao: false`) — comportamento S6a-fix preservado.
    */
-  async getAll(options: { somente1aCia?: boolean } = {}): Promise<Militar[]> {
-    const consolidated = await this.consolidate();
+  async getAll(
+    options: { somente1aCia?: boolean; incluirEfetivoOrfao?: boolean } = {},
+  ): Promise<Militar[]> {
+    const consolidated = await this.consolidate({
+      incluirEfetivoOrfao: options.incluirEfetivoOrfao,
+    });
     if (options.somente1aCia) {
       return consolidated.items.filter((m) => m.subSecao !== undefined);
     }
@@ -143,8 +157,15 @@ export class EfetivoService {
    * - **EFETIVO**: fallback para campos não cobertos (idade, serviço).
    *
    * Se DADOS ou 1ª1º estiverem indisponíveis, segue com o que conseguiu (com `stale=true`).
+   *
+   * `incluirEfetivoOrfao` (S6c/F1): quando true, militares só presentes em
+   * EFETIVO geral (sem entrada em DADOS+1ª1º) também aparecem. Usado pelo
+   * NomeMatcher da Prévia para resolver nomes de escalas que ainda não foram
+   * lançados no QDI 1ª1º.
    */
-  private async consolidate(): Promise<{ items: Militar[]; syncedAt: number; stale: boolean }> {
+  private async consolidate(
+    options: { incluirEfetivoOrfao?: boolean } = {},
+  ): Promise<{ items: Militar[]; syncedAt: number; stale: boolean }> {
     const efetivo = await this.getEntry();
 
     let dadosByNf: Map<string, MilitarDados> = new Map();
@@ -175,7 +196,9 @@ export class EfetivoService {
       );
     }
 
-    const merged = mergeThreeSources(dadosByNf, qdiByNf, efetivo.entry.byNf);
+    const merged = mergeThreeSources(dadosByNf, qdiByNf, efetivo.entry.byNf, {
+      incluirEfetivoOrfao: options.incluirEfetivoOrfao ?? false,
+    });
 
     return {
       items: merged,
@@ -281,10 +304,15 @@ export class EfetivoService {
  *   pode sobrescrever situacao/posto se mais atualizado.
  * - **EFETIVO**: fallback — preenche idade/serviço/município se ausentes nas anteriores.
  *
- * **Inclusão de NFs:** apenas militares presentes em DADOS (com LOCAL=1ª1º) OU 1ª1º.
- * EFETIVO é exclusivamente fonte de **enriquecimento** — nunca adiciona novas NFs.
- * (Caso contrário, militares de outras unidades como CAP ALAN/TEN ALINE apareceriam
- *  na lista da 1ª Cia só por estarem no EFETIVO geral.)
+ * **Inclusão de NFs (default):** apenas militares presentes em DADOS
+ * (com LOCAL=1ª1º) OU 1ª1º. EFETIVO é exclusivamente fonte de
+ * **enriquecimento** — nunca adiciona novas NFs.
+ * (Caso contrário, militares de outras unidades como CAP ALAN/TEN ALINE
+ * apareceriam na lista da 1ª Cia só por estarem no EFETIVO geral.)
+ *
+ * **`incluirEfetivoOrfao=true` (S6c/F1):** NFs presentes apenas no EFETIVO
+ * também aparecem. Usado pelo NomeMatcher da Prévia para resolver militares
+ * de escalas que ainda não foram lançados no QDI 1ª1º.
  *
  * Cada militar carrega `origensFonte: string[]` indicando quais fontes contribuíram.
  */
@@ -292,8 +320,12 @@ function mergeThreeSources(
   dadosByNf: Map<string, MilitarDados>,
   qdiByNf: Map<string, MilitarQdi>,
   efetivoByNf: Map<string, Militar>,
+  options: { incluirEfetivoOrfao?: boolean } = {},
 ): Militar[] {
   const allNfs = new Set<string>([...dadosByNf.keys(), ...qdiByNf.keys()]);
+  if (options.incluirEfetivoOrfao) {
+    for (const nf of efetivoByNf.keys()) allNfs.add(nf);
+  }
   const result: Militar[] = [];
 
   for (const nf of allNfs) {

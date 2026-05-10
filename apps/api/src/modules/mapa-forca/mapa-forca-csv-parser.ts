@@ -26,7 +26,16 @@ function parseStatusVtr(raw: string | undefined): StatusVtr | null {
   return null;
 }
 
-/** Recursos institucionais válidos para a 1ª Cia (col A do bloco). */
+/**
+ * Recursos institucionais válidos para a 1ª Cia (col A do bloco).
+ *
+ * S6c/F2 — `OFICIAL DE DIA` e `PERITOS` removidos:
+ * - OFICIAL DE DIA é redundante com CHEFE DE OPERAÇÕES (AU 154 + MOT CH OP).
+ * - PERITOS não está previsto nesta fase.
+ *
+ * Linhas do CSV com esses recursos passam a ser ignoradas no parse.
+ * S6d (futuro) migra esta lista para entidade `Recurso` por unidade.
+ */
 const RECURSOS_VALIDOS = new Set([
   'ABTS_01',
   'ABTS_02',
@@ -47,8 +56,6 @@ const RECURSOS_VALIDOS = new Set([
   'REPDEC 02',
   'DRO / TELEFONISTA',
   'GUARDA',
-  'OFICIAL DE DIA',
-  'PERITOS',
 ]);
 
 function isRecursoValido(raw: string): boolean {

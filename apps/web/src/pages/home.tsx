@@ -65,90 +65,49 @@ export function HomePage() {
           </div>
         </div>
 
-        <nav className="mt-6">
-          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-            Operacional
-          </p>
-          <ul>
-            <li>
-              <Link
-                to="/previa"
-                className="block rounded border-2 border-cbmes-red bg-cbmes-red/5 p-4 text-center text-sm font-bold text-cbmes-red shadow-sm transition hover:bg-cbmes-red/10"
-              >
-                <span className="mb-1 block text-2xl">🗺️</span>
-                Prévia do Mapa Força
-              </Link>
-            </li>
-          </ul>
-        </nav>
+        {/* S6c/F4 — reorganização modular: Sargenteação, Prontidão, Logística */}
 
-        <nav className="mt-6">
-          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-            Cadastros Mestre
-          </p>
-          <ul className="grid grid-cols-2 gap-3">
-            <li>
-              <Link
-                to="/cadastros/efetivo"
-                className="block rounded border border-slate-200 bg-white p-4 text-center text-sm font-medium text-cbmes-blue shadow-sm transition hover:border-cbmes-blue hover:bg-cbmes-blue/5"
-              >
-                <span className="block text-2xl">👥</span>
-                Efetivo
-              </Link>
-            </li>
-            <li>
-              <Link
-                to="/cadastros/viaturas"
-                className="block rounded border border-slate-200 bg-white p-4 text-center text-sm font-medium text-cbmes-blue shadow-sm transition hover:border-cbmes-blue hover:bg-cbmes-blue/5"
-              >
-                <span className="block text-2xl">🚒</span>
-                Viaturas
-              </Link>
-            </li>
-            <li>
-              <Link
-                to="/cadastros/fiscais"
-                className="block rounded border border-slate-200 bg-white p-4 text-center text-sm font-medium text-cbmes-blue shadow-sm transition hover:border-cbmes-blue hover:bg-cbmes-blue/5"
-              >
-                <span className="block text-2xl">⭐</span>
-                Fiscais
-              </Link>
-            </li>
-            <li>
-              <Link
-                to="/cadastros/ideo"
-                className="block rounded border border-slate-200 bg-white p-4 text-center text-sm font-medium text-cbmes-blue shadow-sm transition hover:border-cbmes-blue hover:bg-cbmes-blue/5"
-              >
-                <span className="block text-2xl">📋</span>
-                IDEO
-              </Link>
-            </li>
-            <li>
-              <Link
-                to="/cadastros/escalas"
-                className="block rounded border border-slate-200 bg-white p-4 text-center text-sm font-medium text-cbmes-blue shadow-sm transition hover:border-cbmes-blue hover:bg-cbmes-blue/5"
-              >
-                <span className="block text-2xl">📅</span>
-                Escala Mensal (XLSX)
-              </Link>
-            </li>
-            <li>
-              <Link
-                to="/cadastros/escalas-especiais"
-                className="block rounded border border-slate-200 bg-white p-4 text-center text-sm font-medium text-cbmes-blue shadow-sm transition hover:border-cbmes-blue hover:bg-cbmes-blue/5"
-              >
-                <span className="block text-2xl">📆</span>
-                Escala Especial (XLSM)
-              </Link>
-            </li>
-          </ul>
-        </nav>
+        <ModuloSection
+          titulo="Prontidão"
+          descricao="Operação do dia: Prévia do MF, Conferências, Fiscais, IDEO."
+          accent="border-l-cbmes-red"
+          destaque
+        >
+          <CardLink to="/previa" icon="🗺️" label="Prévia do Mapa Força" destaque />
+          <CardLink to="/cadastros/fiscais" icon="⭐" label="Fiscais (override)" />
+          <CardLink to="/cadastros/ideo" icon="📋" label="IDEO" />
+          <CardInfo
+            icon="✅"
+            label="Conferências"
+            descricao="Acesse via Prévia do dia → Iniciar Serviço"
+          />
+        </ModuloSection>
+
+        <ModuloSection
+          titulo="Sargenteação"
+          descricao="Cadastros de pessoal e escalas (RH operacional)."
+          accent="border-l-cbmes-blue"
+        >
+          <CardLink to="/cadastros/efetivo" icon="👥" label="Efetivo" />
+          <CardLink to="/cadastros/escalas" icon="📅" label="Escala Mensal (XLSX)" />
+          <CardLink to="/cadastros/escalas-especiais" icon="📆" label="Escala Especial (XLSM)" />
+        </ModuloSection>
+
+        <ModuloSection
+          titulo="Logística"
+          descricao="Frota e equipamento: viaturas e seus dados operacionais."
+          accent="border-l-amber-500"
+        >
+          <CardLink to="/cadastros/viaturas" icon="🚒" label="Viaturas" />
+        </ModuloSection>
 
         <div className="mt-6 rounded border border-slate-200 bg-white p-4 text-xs text-slate-500">
-          <p className="font-medium text-slate-700">Sprint atual: S4 — Prévia do Mapa Força</p>
+          <p className="font-medium text-slate-700">
+            Sprint atual: S6c — Reorganização modular + correções
+          </p>
           <p className="mt-1">
-            Próximos sprints adicionam Serviço (S5 — persistência Supabase), Conferências (S6-S8),
-            Mapa Força (S9) e Parte Diária (S10-S11).
+            Próximo: S6d (entidade Unidade/Recurso configurável). Roadmap segue com S5b
+            (persistência Supabase), S9 (escrita MF), S10-S11 (Parte Diária).
           </p>
         </div>
 
@@ -162,5 +121,75 @@ export function HomePage() {
         </button>
       </section>
     </main>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// S6c/F4 — Componentes da reorganização modular
+// ────────────────────────────────────────────────────────────────────────────
+
+function ModuloSection({
+  titulo,
+  descricao,
+  accent,
+  destaque,
+  children,
+}: {
+  titulo: string;
+  descricao: string;
+  accent: string; // ex.: 'border-l-cbmes-red'
+  destaque?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <nav className="mt-6">
+      <div className={`border-l-4 pl-3 ${accent}`}>
+        <p className="text-xs font-bold uppercase tracking-wide text-slate-700">
+          {titulo}
+          {destaque && <span className="ml-2 text-[10px] text-cbmes-red">★ operacional</span>}
+        </p>
+        <p className="text-[11px] text-slate-500">{descricao}</p>
+      </div>
+      <ul className="mt-2 grid grid-cols-2 gap-3">{children}</ul>
+    </nav>
+  );
+}
+
+function CardLink({
+  to,
+  icon,
+  label,
+  destaque,
+}: {
+  to: string;
+  icon: string;
+  label: string;
+  destaque?: boolean;
+}) {
+  const baseClass = destaque
+    ? 'border-2 border-cbmes-red bg-cbmes-red/5 text-cbmes-red hover:bg-cbmes-red/10'
+    : 'border border-slate-200 bg-white text-cbmes-blue hover:border-cbmes-blue hover:bg-cbmes-blue/5';
+  return (
+    <li>
+      <Link
+        to={to}
+        className={`block rounded p-4 text-center text-sm font-medium shadow-sm transition ${baseClass}`}
+      >
+        <span className="block text-2xl">{icon}</span>
+        {label}
+      </Link>
+    </li>
+  );
+}
+
+function CardInfo({ icon, label, descricao }: { icon: string; label: string; descricao: string }) {
+  return (
+    <li>
+      <div className="block rounded border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-sm font-medium text-slate-500">
+        <span className="block text-2xl opacity-50">{icon}</span>
+        {label}
+        <p className="mt-1 text-[10px] text-slate-400">{descricao}</p>
+      </div>
+    </li>
   );
 }
