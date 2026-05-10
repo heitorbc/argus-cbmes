@@ -1,3 +1,4 @@
+export * from './atestado.js';
 export * from './auth.js';
 export * from './dispensa.js';
 export * from './escala.js';

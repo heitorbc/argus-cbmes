@@ -4,6 +4,7 @@ import {
   formatDisplayName,
   SUB_SECAO_LABEL,
   TIPO_DISPENSA_LABEL,
+  type Atestado,
   type DispensaSaldoMilitar,
   type Militar,
 } from '@argus/shared-types';
@@ -15,17 +16,23 @@ export function EfetivoDetalhePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saldo, setSaldo] = useState<DispensaSaldoMilitar | null>(null);
+  const [atestados, setAtestados] = useState<Atestado[]>([]);
   const anoAtual = new Date().getFullYear();
 
   useEffect(() => {
     if (!nf) return;
     let cancelled = false;
     setLoading(true);
-    Promise.all([api.efetivoFindByNf(nf), api.dispensasSaldoMilitar(nf, anoAtual)])
-      .then(([m, s]) => {
+    Promise.all([
+      api.efetivoFindByNf(nf),
+      api.dispensasSaldoMilitar(nf, anoAtual),
+      api.atestadosList({ militarNf: nf, ano: anoAtual }),
+    ])
+      .then(([m, s, ats]) => {
         if (cancelled) return;
         setMilitar(m);
         setSaldo(s);
+        setAtestados(ats);
       })
       .catch((e) => {
         if (!cancelled) setError(e instanceof ApiError ? e.message : 'Erro ao carregar militar');
@@ -190,6 +197,36 @@ export function EfetivoDetalhePage() {
                         </li>
                       );
                     })}
+                  </ul>
+                </div>
+              </Card>
+            )}
+
+            {atestados.length > 0 && (
+              <Card titulo={`Atestados médicos no ano ${anoAtual}`}>
+                <div className="col-span-2">
+                  <p className="text-xs text-slate-600">
+                    {atestados.length} atestado(s) ·{' '}
+                    <strong>{atestados.reduce((acc, a) => acc + a.dias, 0)}</strong> dia(s) totais.
+                  </p>
+                  <ul className="mt-2 space-y-1">
+                    {atestados.map((a) => (
+                      <li
+                        key={a.id}
+                        className="rounded border border-slate-200 bg-slate-50 p-2 text-xs"
+                      >
+                        <p>
+                          <span className="mr-1 rounded-full bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-700">
+                            {a.cid10}
+                          </span>
+                          <strong>{a.dias}</strong> dia(s) a partir de {a.dataInicio}
+                          {a.crmMedico ? ` · CRM ${a.crmMedico}` : ''}
+                        </p>
+                        {a.observacoes && (
+                          <p className="mt-0.5 italic text-slate-500">{a.observacoes}</p>
+                        )}
+                      </li>
+                    ))}
                   </ul>
                 </div>
               </Card>

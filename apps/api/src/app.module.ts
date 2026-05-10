@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './modules/auth/auth.module';
 import { ChefesOperacoesModule } from './modules/chefes-operacoes/chefes-operacoes.module';
 import { ConferenciaEquipeModule } from './modules/conferencia-equipe/conferencia-equipe.module';
+import { AtestadosModule } from './modules/atestados/atestados.module';
 import { ConferenciaViaturaModule } from './modules/conferencia-viatura/conferencia-viatura.module';
 import { DispensasModule } from './modules/dispensas/dispensas.module';
 import { EfetivoModule } from './modules/efetivo/efetivo.module';
@@ -23,6 +24,7 @@ import { ViaturasModule } from './modules/viaturas/viaturas.module';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    AtestadosModule,
     AuthModule,
     ChefesOperacoesModule,
     ConferenciaEquipeModule,

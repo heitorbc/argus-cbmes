@@ -169,6 +169,24 @@ export const previaNotaServicoSchema = z.object({
 export type PreviaNotaServico = z.infer<typeof previaNotaServicoSchema>;
 
 /**
+ * Atestado médico ativo no dia, exibido na Prévia (S6k).
+ *
+ * Derivado da entidade `Atestado` (`@argus/shared-types/atestado`). Inclui
+ * dados do militar (nome formatado) + período + CID-10 + CRM.
+ */
+export const previaAtestadoSchema = z.object({
+  atestadoId: z.string(),
+  militarNf: z.string(),
+  militarRaw: z.string(),
+  dataInicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  dias: z.number().int().min(1),
+  cid10: z.string(),
+  crmMedico: z.string(),
+  observacoes: z.string().optional(),
+});
+export type PreviaAtestado = z.infer<typeof previaAtestadoSchema>;
+
+/**
  * Dispensa do dia exibida na Prévia.
  *
  * S6j — agora derivado da entidade `Dispensa` (`@argus/shared-types/dispensa`).
@@ -318,6 +336,8 @@ export const previaDoDiaSchema = z.object({
   escalaEspecial: previaEscalaEspecialSchema,
   notasServico: z.array(previaNotaServicoSchema),
   dispensas: z.array(previaDispensaSchema),
+  /** S6k — atestados médicos ativos no dia (derivado de AtestadosService). */
+  atestados: z.array(previaAtestadoSchema).default([]),
 
   /** S6a-fix item 4 — atos da Escala Especial do dia (read-only) + trocas registradas. */
   escalaEspecialAtos: z.array(escalaEspecialAtoLightSchema).default([]),

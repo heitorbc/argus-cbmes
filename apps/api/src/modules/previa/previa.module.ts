@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AtestadosModule } from '../atestados/atestados.module';
 import { ChefesOperacoesModule } from '../chefes-operacoes/chefes-operacoes.module';
 import { DispensasModule } from '../dispensas/dispensas.module';
 import { EfetivoModule } from '../efetivo/efetivo.module';
@@ -17,6 +18,7 @@ import { PreviaService } from './previa.service';
 // (status de viatura vem indireto via ViaturasModule, que importa MapaForcaModule).
 @Module({
   imports: [
+    AtestadosModule,
     ChefesOperacoesModule,
     DispensasModule,
     EfetivoModule,

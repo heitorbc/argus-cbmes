@@ -99,6 +99,7 @@ export function HomePage() {
             <CardLink to="/cadastros/escalas" icon="📅" label="Escala Mensal (XLSX)" />
             <CardLink to="/cadastros/escalas-especiais" icon="📆" label="Escala Especial (XLSM)" />
             <CardLink to="/cadastros/dispensas" icon="🏖️" label="Dispensas" />
+            <CardLink to="/cadastros/atestados" icon="🏥" label="Atestados" />
           </ModuloSection>
         )}
 

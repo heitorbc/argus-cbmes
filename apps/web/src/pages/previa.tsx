@@ -10,6 +10,7 @@ import {
   type LetraEquipe,
   type PeriodoTroca,
   type PeriodoTrocaPredefinido,
+  type PreviaAtestado,
   type PreviaDispensa,
   type PreviaDoDia,
   type TipoDispensa,
@@ -391,6 +392,7 @@ export function PreviaPage() {
               initial={extractAjustes(previa)}
               atosEspeciais={previa.escalaEspecialAtos}
               chefesOperacoes={previa.chefesOperacoes}
+              atestadosAtivos={previa.atestados}
               isReadOnly={isReadOnly}
               onSaved={reload}
             />
@@ -424,6 +426,7 @@ function AjustesPreTurno({
   initial,
   atosEspeciais,
   chefesOperacoes,
+  atestadosAtivos,
   isReadOnly,
   onSaved,
 }: {
@@ -432,6 +435,7 @@ function AjustesPreTurno({
   initial: AjustesPrevia;
   atosEspeciais: EscalaEspecialAtoLight[];
   chefesOperacoes: PreviaDoDia['chefesOperacoes'];
+  atestadosAtivos: PreviaDoDia['atestados'];
   onSaved: () => void;
 }) {
   const [state, setState] = useState<AjustesPrevia>(initial);
@@ -720,8 +724,10 @@ function AjustesPreTurno({
           </fieldset>
 
           <DispensasFieldset dataIso={data} existentes={state.dispensas} onSaved={onSaved} />
-          {/* Aviso: o array `state.dispensas` agora vem read-only do backend
-              (DispensasService). UI de criação está em DispensasFieldset. */}
+          <AtestadosFieldset dataIso={data} existentes={atestadosAtivos} onSaved={onSaved} />
+          {/* `state.dispensas` e `atestadosAtivos` vêm read-only do backend
+              (DispensasService / AtestadosService). UI de criação está em
+              DispensasFieldset (S6j) e AtestadosFieldset (S6k). */}
 
           <button
             type="button"
@@ -1605,6 +1611,208 @@ function DispensasFieldset({
           className="mt-2 rounded border border-cbmes-blue px-3 py-1 text-cbmes-blue"
         >
           + Cadastrar dispensa
+        </button>
+      )}
+    </fieldset>
+  );
+}
+
+/**
+ * S6k — Fieldset de Atestados Médicos dentro do Ajustes Pré-turno.
+ *
+ * Lista atestados ativos no dia (vindos de `previa.atestados`, derivado de
+ * `AtestadosService.listAtivosNoDia`). Permite criar novo via
+ * `api.atestadosCreate()` direto.
+ */
+function AtestadosFieldset({
+  dataIso,
+  existentes,
+  onSaved,
+}: {
+  dataIso: string;
+  existentes: PreviaAtestado[];
+  onSaved: () => void;
+}) {
+  const [showForm, setShowForm] = useState(false);
+  const [militarNf, setMilitarNf] = useState<string | undefined>(undefined);
+  const [militarRaw, setMilitarRaw] = useState<string>('');
+  const [dataInicio, setDataInicio] = useState<string>(dataIso);
+  const [dias, setDias] = useState<number>(1);
+  const [cid10, setCid10] = useState<string>('');
+  const [crmMedico, setCrmMedico] = useState<string>('');
+  const [obs, setObs] = useState<string>('');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const cancelar = () => {
+    setShowForm(false);
+    setMilitarNf(undefined);
+    setMilitarRaw('');
+    setDataInicio(dataIso);
+    setDias(1);
+    setCid10('');
+    setCrmMedico('');
+    setObs('');
+    setErr(null);
+  };
+
+  const salvar = async () => {
+    if (!militarNf) {
+      setErr('Selecione o militar.');
+      return;
+    }
+    if (!cid10.trim() || !crmMedico.trim()) {
+      setErr('CID-10 e CRM são obrigatórios.');
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    try {
+      await api.atestadosCreate({
+        militarNf,
+        dataInicio,
+        dias,
+        cid10: cid10.trim(),
+        crmMedico: crmMedico.trim(),
+        observacoes: obs.trim() || undefined,
+      });
+      cancelar();
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Erro ao salvar atestado');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remover = async (a: PreviaAtestado) => {
+    if (!confirm(`Remover atestado de ${a.militarRaw} (${a.cid10})?`)) return;
+    try {
+      await api.atestadosRemove(a.atestadoId);
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Erro ao remover atestado');
+    }
+  };
+
+  return (
+    <fieldset className="rounded border border-slate-200 p-2">
+      <legend className="px-1 font-medium text-slate-700">Atestados ativos no dia</legend>
+      {err && (
+        <p className="mt-1 rounded border border-feedback-error/30 bg-feedback-error/10 p-2 text-xs text-feedback-error">
+          {err}
+        </p>
+      )}
+      {existentes.length === 0 && !showForm && (
+        <p className="mt-1 text-xs text-slate-500">Nenhum atestado ativo hoje.</p>
+      )}
+      {existentes.map((a) => (
+        <div
+          key={a.atestadoId}
+          className="mt-2 flex items-start justify-between gap-2 rounded border border-slate-200 bg-slate-50 p-2 text-xs"
+        >
+          <div>
+            <p className="font-medium text-cbmes-blue">{a.militarRaw}</p>
+            <p className="text-slate-700">
+              <span className="mr-1 rounded-full bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-700">
+                {a.cid10}
+              </span>
+              CRM {a.crmMedico}
+            </p>
+            <p className="text-slate-500">
+              {a.dataInicio} · {a.dias} dia(s)
+            </p>
+            {a.observacoes && <p className="italic text-slate-500">{a.observacoes}</p>}
+          </div>
+          <button
+            type="button"
+            onClick={() => void remover(a)}
+            className="rounded border border-feedback-error px-2 py-1 text-feedback-error"
+          >
+            Remover
+          </button>
+        </div>
+      ))}
+
+      {showForm ? (
+        <div className="mt-3 space-y-2 rounded border border-cbmes-blue/30 bg-white p-3">
+          <div>
+            <p className="text-[10px] uppercase text-slate-500">Militar</p>
+            <MilitarSelect
+              value={militarNf}
+              valueRaw={militarRaw}
+              onChange={(nf, m) => {
+                setMilitarNf(nf ?? undefined);
+                setMilitarRaw(m ? `${m.posto} ${m.nomeGuerra ?? m.nome.split(' ')[0]}` : '');
+              }}
+              placeholder="Buscar militar (NF ou nome)"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="date"
+              value={dataInicio}
+              onChange={(e) => setDataInicio(e.target.value)}
+              className="rounded border border-slate-300 px-2 py-2 text-sm"
+            />
+            <input
+              type="number"
+              min={1}
+              max={365}
+              value={dias}
+              onChange={(e) => setDias(Number(e.target.value))}
+              placeholder="Dias"
+              className="rounded border border-slate-300 px-2 py-2 text-sm"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="text"
+              value={cid10}
+              onChange={(e) => setCid10(e.target.value)}
+              placeholder="CID-10 (ex.: J11)"
+              className="rounded border border-slate-300 px-2 py-2 text-sm"
+            />
+            <input
+              type="text"
+              value={crmMedico}
+              onChange={(e) => setCrmMedico(e.target.value)}
+              placeholder="CRM médico (ex.: CRM-ES 12345)"
+              className="rounded border border-slate-300 px-2 py-2 text-sm"
+            />
+          </div>
+          <textarea
+            rows={2}
+            value={obs}
+            onChange={(e) => setObs(e.target.value)}
+            placeholder="Observações (opcional)"
+            className="w-full rounded border border-slate-300 px-2 py-2 text-sm"
+          />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => void salvar()}
+              disabled={saving}
+              className="flex-1 rounded-button bg-cbmes-red py-2 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {saving ? 'Salvando…' : 'Cadastrar atestado'}
+            </button>
+            <button
+              type="button"
+              onClick={cancelar}
+              className="flex-1 rounded-button border border-slate-300 bg-white py-2 text-sm text-slate-700"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowForm(true)}
+          className="mt-2 rounded border border-cbmes-blue px-3 py-1 text-cbmes-blue"
+        >
+          + Cadastrar atestado
         </button>
       )}
     </fieldset>

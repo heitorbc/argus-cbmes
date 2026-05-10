@@ -5,6 +5,8 @@ import type {
   ComposicaoEntry,
   ConferenciaEquipeEntry,
   ConferenciaViaturaEntry,
+  Atestado,
+  CreateAtestadoInput,
   CreateDispensaInput,
   CreateFiscalInput,
   CreateRecursoInput,
@@ -34,6 +36,7 @@ import type {
   RecursoMapaForca,
   ServicoEstado,
   Unidade,
+  UpdateAtestadoInput,
   UpdateDispensaInput,
   UpdateRecursoInput,
   UpdateUnidadeInput,
@@ -453,4 +456,21 @@ export const api = {
 
   dispensasSaldoMilitar: (militarNf: string, ano: number) =>
     request<DispensaSaldoMilitar>(`/dispensas/saldo/${militarNf}/${ano}`),
+
+  // Atestados (S6k)
+  atestadosList: (filter: { militarNf?: string; ano?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (filter.militarNf) params.set('militarNf', filter.militarNf);
+    if (filter.ano !== undefined) params.set('ano', String(filter.ano));
+    const qs = params.toString();
+    return request<Atestado[]>(`/atestados${qs ? `?${qs}` : ''}`);
+  },
+
+  atestadosCreate: (input: CreateAtestadoInput) =>
+    request<Atestado>('/atestados', { method: 'POST', body: JSON.stringify(input) }),
+
+  atestadosUpdate: (id: string, input: UpdateAtestadoInput) =>
+    request<Atestado>(`/atestados/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
+
+  atestadosRemove: (id: string) => request<void>(`/atestados/${id}`, { method: 'DELETE' }),
 };

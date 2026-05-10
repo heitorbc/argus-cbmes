@@ -17,7 +17,8 @@ import {
   type StatusViatura,
   type TipoIdeo,
 } from '@argus/shared-types';
-import { TIPO_DISPENSA_LABEL, type PreviaDispensa } from '@argus/shared-types';
+import { TIPO_DISPENSA_LABEL, type PreviaAtestado, type PreviaDispensa } from '@argus/shared-types';
+import { AtestadosService } from '../atestados/atestados.service';
 import { ChefesOperacoesService } from '../chefes-operacoes/chefes-operacoes.service';
 import { DispensasService } from '../dispensas/dispensas.service';
 import { EfetivoService } from '../efetivo/efetivo.service';
@@ -59,6 +60,7 @@ export class PreviaService {
     private readonly servico: ServicoService,
     private readonly ideoStatus: IdeoStatusService,
     private readonly dispensasSvc: DispensasService,
+    private readonly atestadosSvc: AtestadosService,
   ) {}
 
   async getPreviaDoDia(dataIso: string): Promise<PreviaDoDia> {
@@ -196,6 +198,22 @@ export class PreviaService {
       };
     });
 
+    // S6k — Atestados médicos ativos no dia (alterações de efetivo da PD).
+    const atestadosAtivos = this.atestadosSvc.listAtivosNoDia(dataIso);
+    const atestadosPrevia: PreviaAtestado[] = atestadosAtivos.map((a) => {
+      const m = efetivoByNf.get(a.militarNf);
+      return {
+        atestadoId: a.id,
+        militarNf: a.militarNf,
+        militarRaw: m ? `${m.posto} ${m.nomeGuerra ?? m.nome.split(' ')[0]}` : `NF ${a.militarNf}`,
+        dataInicio: a.dataInicio,
+        dias: a.dias,
+        cid10: a.cid10,
+        crmMedico: a.crmMedico,
+        observacoes: a.observacoes,
+      };
+    });
+
     // S6i — IDEO realizado/não-realizado + texto institucional do Fiscal
     const ideoStatus = this.ideoStatus.getByData(dataIso);
     const fiscalParaTexto = fiscal?.militarResolvido
@@ -226,6 +244,7 @@ export class PreviaService {
       escalaEspecial: ajustes.escalaEspecial,
       notasServico: ajustes.notasServico,
       dispensas: dispensasPrevia,
+      atestados: atestadosPrevia,
       escalaEspecialAtos: atosEspeciais,
       trocasEscalaEspecial: ajustes.trocasEscalaEspecial,
       chefesOperacoes: chefes,
