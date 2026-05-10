@@ -1,6 +1,8 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { MapaForcaSnapshot, RecursoMapaForca } from '@argus/shared-types';
+import { RecursosService } from '../recursos/recursos.service';
+import { UNIDADE_1CIA_1BBM_ID } from '../unidades/unidades.service';
 import { parseMapaForcaCsv } from './mapa-forca-csv-parser';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -33,7 +35,10 @@ export class MapaForcaService {
   private cache: CacheEntry | null = null;
   private inflight: Promise<CacheEntry> | null = null;
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly recursos: RecursosService,
+  ) {}
 
   /** Devolve o snapshot mais recente. Pode estar stale se a última sync falhou. */
   async getSnapshot(): Promise<MapaForcaSnapshot> {
@@ -138,7 +143,9 @@ export class MapaForcaService {
       clearTimeout(timeoutId);
     }
 
-    const { recursos, fiscalDoDia, avisos } = parseMapaForcaCsv(csv);
+    // S6d/F3 — whitelist vem da entidade Recurso (1ª Cia/1º BBM).
+    const recursosValidos = this.recursos.nomesValidos(UNIDADE_1CIA_1BBM_ID);
+    const { recursos, fiscalDoDia, avisos } = parseMapaForcaCsv(csv, { recursosValidos });
     if (recursos.length === 0) {
       throw new Error('CSV do Mapa Força retornou 0 recursos — formato provavelmente mudou');
     }

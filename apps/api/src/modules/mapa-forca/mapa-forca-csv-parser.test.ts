@@ -82,4 +82,14 @@ describe('parseMapaForcaCsv', () => {
     expect(r.recursos).toEqual([]);
     expect(r.fiscalDoDia).toBeUndefined();
   });
+
+  // S6d/F3 — whitelist agora pode vir do RecursosService via parâmetro
+  it('respeita recursosValidos passado via opções (whitelist reduzida)', () => {
+    const csv = loadFixture();
+    const r = parseMapaForcaCsv(csv, { recursosValidos: new Set(['ABTS_01', 'GUARDA']) });
+    const nomes = r.recursos.map((x) => x.recurso);
+    expect(nomes).toEqual(expect.arrayContaining(['ABTS_01', 'GUARDA']));
+    // MERGULHO 02 não deve entrar quando excluído da whitelist
+    expect(nomes).not.toContain('MERGULHO 02');
+  });
 });

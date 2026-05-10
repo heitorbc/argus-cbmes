@@ -11,9 +11,17 @@ import { EscalasService } from '../escalas/escalas.service';
 import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.service';
 import { FiscaisService } from '../fiscais/fiscais.service';
 import { IdeoService } from '../ideo/ideo.service';
+import { RecursosService } from '../recursos/recursos.service';
 import { ServicoService } from '../servico/servico.service';
 import { AjustesPreviaService } from './ajustes-previa.service';
 import { PreviaService } from './previa.service';
+
+/** Helper: cria RecursosService já com seed da 1ª1º (espelha o boot do Nest). */
+function makeRecursosService(): RecursosService {
+  const r = new RecursosService();
+  r.onModuleInit();
+  return r;
+}
 
 function militar(p: Partial<Militar> & { nf: string; nome: string }): Militar {
   return {
@@ -168,6 +176,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
       new EscalasEspeciaisService(),
       new FakeChefesOperacoesService() as unknown as never,
       new ServicoService(),
+      makeRecursosService(),
     );
 
     escalas.save(escalaAbril2026);
@@ -248,6 +257,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
       new EscalasEspeciaisService(),
       new FakeChefesOperacoesService() as unknown as never,
       new ServicoService(),
+      makeRecursosService(),
     );
     const r = await previa.getPreviaDoDia('2026-04-23');
     const ar044 = r.viaturasOperacionais.find((v) => v.codigo === 'AR 044');
@@ -281,6 +291,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
       new EscalasEspeciaisService(),
       new FakeChefesOperacoesService() as unknown as never,
       new ServicoService(),
+      makeRecursosService(),
     );
     const r = await previa.getPreviaDoDia('2026-04-23');
     const mergulho = r.tripulacao.filter((t) => t.equipe === 'AQUATICAS');
@@ -317,6 +328,7 @@ describe('PreviaService — inconsistências', () => {
       new EscalasEspeciaisService(),
       new FakeChefesOperacoesService() as unknown as never,
       new ServicoService(),
+      makeRecursosService(),
     );
   });
 

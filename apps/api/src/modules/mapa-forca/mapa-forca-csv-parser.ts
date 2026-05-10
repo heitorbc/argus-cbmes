@@ -27,16 +27,15 @@ function parseStatusVtr(raw: string | undefined): StatusVtr | null {
 }
 
 /**
- * Recursos institucionais válidos para a 1ª Cia (col A do bloco).
+ * Fallback hardcoded da whitelist de recursos da 1ª Cia. Usado SOMENTE quando
+ * o caller não fornece `recursosValidos` explicitamente (testes legados,
+ * smoke checks). Em produção (S6d+), a whitelist vem de `RecursosService`.
  *
- * S6c/F2 — `OFICIAL DE DIA` e `PERITOS` removidos:
- * - OFICIAL DE DIA é redundante com CHEFE DE OPERAÇÕES (AU 154 + MOT CH OP).
- * - PERITOS não está previsto nesta fase.
- *
- * Linhas do CSV com esses recursos passam a ser ignoradas no parse.
- * S6d (futuro) migra esta lista para entidade `Recurso` por unidade.
+ * S6c/F2 — `OFICIAL DE DIA` e `PERITOS` removidos.
+ * S6d/F3 — esta constante migrou para entidade `Recurso` por unidade
+ * (ver `RecursosService.nomesValidos(unidadeId)`).
  */
-const RECURSOS_VALIDOS = new Set([
+const RECURSOS_VALIDOS_FALLBACK = new Set([
   'ABTS_01',
   'ABTS_02',
   'ATB',
@@ -58,11 +57,6 @@ const RECURSOS_VALIDOS = new Set([
   'GUARDA',
 ]);
 
-function isRecursoValido(raw: string): boolean {
-  const norm = raw.trim();
-  return RECURSOS_VALIDOS.has(norm);
-}
-
 function isFimDoBloco(raw: string): boolean {
   const norm = raw.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
   // EQUIPAMENTOS marca o fim do bloco da 1ª Cia. SOMA DE RECURSO aparece NO MEIO
@@ -82,12 +76,26 @@ export interface ParseMapaForcaResult {
   avisos: string[];
 }
 
+export interface ParseMapaForcaOptions {
+  /**
+   * Whitelist de recursos válidos (col A). Quando ausente, usa fallback hardcoded
+   * (compat com tests legados). S6d/F3 — em produção, MapaForcaService injeta
+   * o set vindo de `RecursosService.nomesValidos(unidadeId)`.
+   */
+  recursosValidos?: ReadonlySet<string>;
+}
+
 /**
  * Faz o parse de um CSV inteiro do Mapa Força e retorna a lista de Recursos da 1ª Cia.
  *
  * NÃO lança em layout inesperado — emite avisos. Erros fatais (CSV malformado) propagam.
  */
-export function parseMapaForcaCsv(csv: string): ParseMapaForcaResult {
+export function parseMapaForcaCsv(
+  csv: string,
+  options: ParseMapaForcaOptions = {},
+): ParseMapaForcaResult {
+  const recursosValidos = options.recursosValidos ?? RECURSOS_VALIDOS_FALLBACK;
+  const isRecursoValido = (raw: string): boolean => recursosValidos.has(raw.trim());
   const rows = parse(csv, {
     columns: false,
     skip_empty_lines: false,

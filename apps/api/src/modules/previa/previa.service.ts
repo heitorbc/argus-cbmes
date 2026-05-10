@@ -24,16 +24,12 @@ import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.
 import { FiscaisService } from '../fiscais/fiscais.service';
 import { IdeoService } from '../ideo/ideo.service';
 import { MapaForcaService } from '../mapa-forca/mapa-forca.service';
+import { RecursosService } from '../recursos/recursos.service';
 import { ServicoService } from '../servico/servico.service';
+import { UNIDADE_1CIA_1BBM_ID } from '../unidades/unidades.service';
 import { ViaturasService } from '../viaturas/viaturas.service';
 import { AjustesPreviaService } from './ajustes-previa.service';
 import { NomeMatcher } from './nome-matching';
-
-/** Recursos do MF que devem complementar a tripulação por bucketing. */
-const RECURSOS_AQUATICAS = ['MERGULHO 01', 'MERGULHO 02', 'SALVAMAR 01', 'SALVAMAR 02'];
-// S6c/F2 — OFICIAL DE DIA suprimido (redundante com CHEFE DE OPERAÇÕES + AU 154);
-// PERITOS suprimido (não previsto nesta fase). Reativar em sprint futura se necessário.
-const RECURSOS_STAFF = ['CHEFE DE OPERAÇÕES'];
 
 /**
  * Orquestra a geração da Prévia do Mapa Força para uma data.
@@ -59,6 +55,7 @@ export class PreviaService {
     private readonly escalasEspeciais: EscalasEspeciaisService,
     private readonly chefesOperacoes: ChefesOperacoesService,
     private readonly servico: ServicoService,
+    private readonly recursos: RecursosService,
   ) {}
 
   async getPreviaDoDia(dataIso: string): Promise<PreviaDoDia> {
@@ -98,8 +95,16 @@ export class PreviaService {
     );
 
     // F3b — Complemento via Mapa Força: mergulho + staff fixo que não está no XLSX da SOS.
+    // S6d/F4 — categorias vêm da entidade Recurso (RecursosService), não mais hardcoded.
     const recursosMf = await this.mapaForca.getRecursos().catch(() => [] as RecursoMapaForca[]);
-    const complementos = buildComplementosFromMapaForca(recursosMf, tripulacao);
+    const recursosAquaticas = this.recursos.nomesPorCategoria(UNIDADE_1CIA_1BBM_ID, 'AQUATICA');
+    const recursosStaff = this.recursos.nomesPorCategoria(UNIDADE_1CIA_1BBM_ID, 'STAFF');
+    const complementos = buildComplementosFromMapaForca(
+      recursosMf,
+      tripulacao,
+      recursosAquaticas,
+      recursosStaff,
+    );
     for (const entry of complementos) {
       tripulacao.push(this.buildTripulacaoEntry(entry, matcher, inconsistencias));
     }
@@ -288,12 +293,16 @@ export class PreviaService {
 
 /**
  * Constrói entries de tripulação para recursos do Mapa Força que não estão no XLSX da SOS.
- * Cobre essencialmente o Pelotão de Atividades Aquáticas (Mergulho/Salvamar) e o staff fixo
- * (CHEFE DE OPERAÇÕES, OFICIAL DE DIA). Funções para mergulho usam `M1`/`M2`/... ao invés de `Op N`.
+ * Cobre o Pelotão de Atividades Aquáticas e o staff fixo (CHEFE DE OPERAÇÕES).
+ * Funções para mergulho usam `M1`/`M2`/... ao invés de `Op N`.
+ *
+ * S6d/F4 — listas de aquáticas/staff vêm da entidade Recurso (categoria), não mais hardcoded.
  */
 function buildComplementosFromMapaForca(
   recursos: readonly RecursoMapaForca[],
   tripulacaoExistente: readonly PreviaTripulacaoEntry[],
+  recursosAquaticas: readonly string[],
+  recursosStaff: readonly string[],
 ): ComposicaoEntry[] {
   const ja = new Set(
     tripulacaoExistente.map((t) => normalizeViaturaCode(t.viatura)).filter((s) => s.length > 0),
@@ -301,8 +310,8 @@ function buildComplementosFromMapaForca(
   const out: ComposicaoEntry[] = [];
 
   for (const r of recursos) {
-    const isAquatica = RECURSOS_AQUATICAS.includes(r.recurso);
-    const isStaff = RECURSOS_STAFF.includes(r.recurso);
+    const isAquatica = recursosAquaticas.includes(r.recurso);
+    const isStaff = recursosStaff.includes(r.recurso);
     if (!isAquatica && !isStaff) continue;
 
     const equipeBucket = isAquatica ? 'AQUATICAS' : 'STAFF';
