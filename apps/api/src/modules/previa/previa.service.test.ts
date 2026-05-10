@@ -13,12 +13,15 @@ import { FiscaisService } from '../fiscais/fiscais.service';
 import { IdeoService } from '../ideo/ideo.service';
 import { RecursosService } from '../recursos/recursos.service';
 import { ServicoService } from '../servico/servico.service';
+import { UnidadesService } from '../unidades/unidades.service';
 import { AjustesPreviaService } from './ajustes-previa.service';
 import { PreviaService } from './previa.service';
 
 /** Helper: cria RecursosService já com seed da 1ª1º (espelha o boot do Nest). */
 function makeRecursosService(): RecursosService {
-  const r = new RecursosService();
+  const u = new UnidadesService();
+  u.onModuleInit();
+  const r = new RecursosService(u);
   r.onModuleInit();
   return r;
 }

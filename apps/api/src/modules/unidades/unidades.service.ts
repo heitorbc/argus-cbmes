@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
-import type { Unidade } from '@argus/shared-types';
+import { ConflictException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import type { CreateUnidadeInput, Unidade, UpdateUnidadeInput } from '@argus/shared-types';
 
 /** Slug fixo da única unidade da Fase 1 (1ª Cia / 1º BBM). */
 export const UNIDADE_1CIA_1BBM_ID = 'unid:1cia-1bbm';
@@ -32,6 +33,58 @@ export class UnidadesService implements OnModuleInit {
 
   findByCodigo(codigo: string): Unidade | undefined {
     return this.list().find((u) => u.codigo === codigo);
+  }
+
+  /**
+   * S6e — cria nova Unidade. `codigo` deve ser único.
+   * `ativo` default true.
+   */
+  create(input: CreateUnidadeInput): Unidade {
+    if (this.findByCodigo(input.codigo)) {
+      throw new ConflictException(`Unidade com código "${input.codigo}" já existe`);
+    }
+    const now = new Date().toISOString();
+    const unidade: Unidade = {
+      id: `unid:${randomUUID()}`,
+      codigo: input.codigo,
+      nome: input.nome,
+      ativo: input.ativo ?? true,
+      criadoEm: now,
+      atualizadoEm: now,
+    };
+    this.unidades.set(unidade.id, unidade);
+    return unidade;
+  }
+
+  /**
+   * S6e — atualiza Unidade. Se `codigo` mudar, garante unicidade.
+   * Não muda `id` nem `criadoEm`.
+   */
+  update(id: string, input: UpdateUnidadeInput): Unidade {
+    const current = this.findById(id);
+    if (input.codigo && input.codigo !== current.codigo) {
+      const conflict = this.findByCodigo(input.codigo);
+      if (conflict && conflict.id !== id) {
+        throw new ConflictException(`Unidade com código "${input.codigo}" já existe`);
+      }
+    }
+    const updated: Unidade = {
+      ...current,
+      codigo: input.codigo ?? current.codigo,
+      nome: input.nome ?? current.nome,
+      ativo: input.ativo ?? current.ativo,
+      atualizadoEm: new Date().toISOString(),
+    };
+    this.unidades.set(updated.id, updated);
+    return updated;
+  }
+
+  /**
+   * S6e — soft delete: marca `ativo=false`. Não remove a Unidade do storage
+   * (preserva histórico e relação com Recursos).
+   */
+  softDelete(id: string): Unidade {
+    return this.update(id, { ativo: false });
   }
 
   private seed(): void {

@@ -22,6 +22,7 @@ export function HomePage() {
   const [logging, setLogging] = useState(false);
 
   if (!user) return null;
+  const isAdmin = user.papeis.includes('admin');
 
   const handleLogout = async () => {
     setLogging(true);
@@ -101,13 +102,23 @@ export function HomePage() {
           <CardLink to="/cadastros/viaturas" icon="🚒" label="Viaturas" />
         </ModuloSection>
 
+        {isAdmin && (
+          <ModuloSection
+            titulo="Configurações"
+            descricao="Admin · Unidades e Recursos do sistema (whitelist do MF)."
+            accent="border-l-slate-600"
+          >
+            <CardLink to="/configuracoes/unidades" icon="🏛️" label="Unidades" />
+            <CardLink to="/configuracoes/recursos" icon="📦" label="Recursos" />
+          </ModuloSection>
+        )}
+
         <div className="mt-6 rounded border border-slate-200 bg-white p-4 text-xs text-slate-500">
           <p className="font-medium text-slate-700">
-            Sprint atual: S6c — Reorganização modular + correções
+            Sprint atual: S6e — CRUD admin Unidades + Recursos
           </p>
           <p className="mt-1">
-            Próximo: S6d (entidade Unidade/Recurso configurável). Roadmap segue com S5b
-            (persistência Supabase), S9 (escrita MF), S10-S11 (Parte Diária).
+            Próximo: S5b (persistência Supabase), S9 (escrita MF), S10-S11 (Parte Diária).
           </p>
         </div>
 

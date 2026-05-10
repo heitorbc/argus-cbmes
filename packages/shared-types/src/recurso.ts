@@ -41,3 +41,24 @@ export const recursoSchema = z.object({
   atualizadoEm: z.string(),
 });
 export type Recurso = z.infer<typeof recursoSchema>;
+
+export const createRecursoInputSchema = z.object({
+  unidadeId: z.string().min(1, 'Unidade obrigatória'),
+  nome: z.string().min(1, 'Nome obrigatório'),
+  categoria: z.enum(CATEGORIA_RECURSO),
+  ativo: z.boolean().optional(),
+  comportaViatura: z.boolean(),
+  comportaEfetivo: z.boolean(),
+  ordem: z.number().int().nonnegative(),
+});
+export type CreateRecursoInput = z.infer<typeof createRecursoInputSchema>;
+
+export const updateRecursoInputSchema = z.object({
+  nome: z.string().min(1).optional(),
+  categoria: z.enum(CATEGORIA_RECURSO).optional(),
+  ativo: z.boolean().optional(),
+  comportaViatura: z.boolean().optional(),
+  comportaEfetivo: z.boolean().optional(),
+  ordem: z.number().int().nonnegative().optional(),
+});
+export type UpdateRecursoInput = z.infer<typeof updateRecursoInputSchema>;

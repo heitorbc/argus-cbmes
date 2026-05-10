@@ -20,3 +20,17 @@ export const unidadeSchema = z.object({
   atualizadoEm: z.string(),
 });
 export type Unidade = z.infer<typeof unidadeSchema>;
+
+export const createUnidadeInputSchema = z.object({
+  codigo: z.string().min(1, 'Código obrigatório'),
+  nome: z.string().min(1, 'Nome obrigatório'),
+  ativo: z.boolean().optional(),
+});
+export type CreateUnidadeInput = z.infer<typeof createUnidadeInputSchema>;
+
+export const updateUnidadeInputSchema = z.object({
+  codigo: z.string().min(1).optional(),
+  nome: z.string().min(1).optional(),
+  ativo: z.boolean().optional(),
+});
+export type UpdateUnidadeInput = z.infer<typeof updateUnidadeInputSchema>;

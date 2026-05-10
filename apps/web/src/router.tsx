@@ -17,6 +17,8 @@ import { EscalasEspeciaisPage } from '@/pages/escalas-especiais';
 import { FiscaisPage } from '@/pages/fiscais';
 import { IdeoPage } from '@/pages/ideo';
 import { PreviaPage } from '@/pages/previa';
+import { RecursosPage } from '@/pages/recursos';
+import { UnidadesPage } from '@/pages/unidades';
 import { ConferenciaEquipePage } from '@/pages/conferencia-equipe';
 import { ConferenciaViaturaPage } from '@/pages/conferencia-viatura';
 
@@ -83,6 +85,8 @@ export const router = createBrowserRouter([
           { path: '/cadastros/ideo', element: <IdeoPage /> },
           { path: '/cadastros/escalas', element: <EscalasPage /> },
           { path: '/cadastros/escalas-especiais', element: <EscalasEspeciaisPage /> },
+          { path: '/configuracoes/unidades', element: <UnidadesPage /> },
+          { path: '/configuracoes/recursos', element: <RecursosPage /> },
           { path: '/previa', element: <PreviaPage /> },
           { path: '/servico/:data/conferencia-equipe', element: <ConferenciaEquipePage /> },
           {

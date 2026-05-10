@@ -1,6 +1,17 @@
-import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
-import type { CategoriaRecurso, Recurso } from '@argus/shared-types';
-import { UNIDADE_1CIA_1BBM_ID } from '../unidades/unidades.service';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
+import type {
+  CategoriaRecurso,
+  CreateRecursoInput,
+  Recurso,
+  UpdateRecursoInput,
+} from '@argus/shared-types';
+import { UnidadesService, UNIDADE_1CIA_1BBM_ID } from '../unidades/unidades.service';
 
 /**
  * Cadastro de Recursos por Unidade.
@@ -14,6 +25,8 @@ import { UNIDADE_1CIA_1BBM_ID } from '../unidades/unidades.service';
 @Injectable()
 export class RecursosService implements OnModuleInit {
   private readonly recursos: Map<string, Recurso> = new Map();
+
+  constructor(private readonly unidades: UnidadesService) {}
 
   onModuleInit(): void {
     this.seed1aCia1Bbm();
@@ -52,6 +65,84 @@ export class RecursosService implements OnModuleInit {
     return this.list({ unidadeId, ativoSomente: true })
       .filter((r) => r.categoria === categoria)
       .map((r) => r.nome);
+  }
+
+  /**
+   * S6e — cria novo Recurso. Valida:
+   *  - Unidade existe
+   *  - Não existe outro recurso com mesmo `nome` na mesma unidade
+   *  - `ordem` é >= 0
+   *
+   * `ativo` default true. Geração de id usa slug do nome (igual ao seed).
+   */
+  create(input: CreateRecursoInput): Recurso {
+    this.unidades.findById(input.unidadeId); // 404 se inexistente
+    const existing = this.findByNome(input.unidadeId, input.nome);
+    if (existing) {
+      throw new ConflictException(
+        `Já existe recurso com nome "${input.nome}" na unidade ${input.unidadeId}`,
+      );
+    }
+    const now = new Date().toISOString();
+    const recurso: Recurso = {
+      id: `recurso:${input.unidadeId}:${slugify(input.nome)}`,
+      unidadeId: input.unidadeId,
+      nome: input.nome,
+      categoria: input.categoria,
+      ativo: input.ativo ?? true,
+      comportaViatura: input.comportaViatura,
+      comportaEfetivo: input.comportaEfetivo,
+      ordem: input.ordem,
+      criadoEm: now,
+      atualizadoEm: now,
+    };
+    if (this.recursos.has(recurso.id)) {
+      // colisão de slug (nomes diferentes que normalizam pro mesmo slug)
+      throw new ConflictException(
+        `Recurso com slug "${recurso.id}" já existe — escolha um nome distinto`,
+      );
+    }
+    this.recursos.set(recurso.id, recurso);
+    return recurso;
+  }
+
+  /**
+   * S6e — atualiza Recurso (não muda unidadeId nem id).
+   * Se `nome` mudar, valida que não conflita com outro recurso da mesma unidade.
+   */
+  update(id: string, input: UpdateRecursoInput): Recurso {
+    const current = this.findById(id);
+    if (input.nome && input.nome !== current.nome) {
+      const conflict = this.findByNome(current.unidadeId, input.nome);
+      if (conflict && conflict.id !== id) {
+        throw new ConflictException(
+          `Já existe recurso com nome "${input.nome}" na unidade ${current.unidadeId}`,
+        );
+      }
+    }
+    if (input.ordem !== undefined && input.ordem < 0) {
+      throw new BadRequestException('Ordem deve ser >= 0');
+    }
+    const updated: Recurso = {
+      ...current,
+      nome: input.nome ?? current.nome,
+      categoria: input.categoria ?? current.categoria,
+      ativo: input.ativo ?? current.ativo,
+      comportaViatura: input.comportaViatura ?? current.comportaViatura,
+      comportaEfetivo: input.comportaEfetivo ?? current.comportaEfetivo,
+      ordem: input.ordem ?? current.ordem,
+      atualizadoEm: new Date().toISOString(),
+    };
+    this.recursos.set(updated.id, updated);
+    return updated;
+  }
+
+  /**
+   * S6e — soft delete: marca `ativo=false`. Recurso permanece no storage para
+   * preservar histórico de Prévias antigas. Para reativar, basta `update({ ativo: true })`.
+   */
+  softDelete(id: string): Recurso {
+    return this.update(id, { ativo: false });
   }
 
   /**

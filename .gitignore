@@ -24,6 +24,7 @@ build/
 *.swo
 .DS_Store
 Thumbs.db
+.claude/
 
 # Logs
 logs/

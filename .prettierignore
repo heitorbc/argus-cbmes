@@ -7,3 +7,4 @@ data
 coverage
 pnpm-lock.yaml
 *.tsbuildinfo
+.claude

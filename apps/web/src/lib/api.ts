@@ -6,6 +6,8 @@ import type {
   ConferenciaEquipeEntry,
   ConferenciaViaturaEntry,
   CreateFiscalInput,
+  CreateRecursoInput,
+  CreateUnidadeInput,
   CreateViaturaInput,
   EfetivoListResponse,
   EfetivoQuery,
@@ -24,8 +26,12 @@ import type {
   PreviaDoDia,
   PreviewEscalaEspecialResponse,
   PreviewEscalaResponse,
+  Recurso,
   RecursoMapaForca,
   ServicoEstado,
+  Unidade,
+  UpdateRecursoInput,
+  UpdateUnidadeInput,
   TipoIdeo,
   TrocaEscalaEspecial,
   UpdateViaturaInput,
@@ -354,6 +360,56 @@ export const api = {
 
   escalasEspeciaisDelete: (ano: number, mes: number) =>
     request<void>(`/escalas-especiais/${ano}/${mes}`, {
+      method: 'DELETE',
+    }),
+
+  // Unidades (S6d/S6e)
+  unidadesList: () => request<Unidade[]>('/unidades'),
+
+  unidadesFindById: (id: string) => request<Unidade>(`/unidades/${id}`),
+
+  unidadesCreate: (input: CreateUnidadeInput) =>
+    request<Unidade>('/unidades', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  unidadesUpdate: (id: string, input: UpdateUnidadeInput) =>
+    request<Unidade>(`/unidades/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+
+  unidadesSoftDelete: (id: string) =>
+    request<Unidade>(`/unidades/${id}`, {
+      method: 'DELETE',
+    }),
+
+  // Recursos (S6d/S6e)
+  recursosList: (filter: { unidadeId?: string; ativoSomente?: boolean } = {}) => {
+    const params = new URLSearchParams();
+    if (filter.unidadeId) params.set('unidadeId', filter.unidadeId);
+    if (filter.ativoSomente) params.set('ativoSomente', 'true');
+    const qs = params.toString();
+    return request<Recurso[]>(`/recursos${qs ? `?${qs}` : ''}`);
+  },
+
+  recursosFindById: (id: string) => request<Recurso>(`/recursos/${id}`),
+
+  recursosCreate: (input: CreateRecursoInput) =>
+    request<Recurso>('/recursos', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  recursosUpdate: (id: string, input: UpdateRecursoInput) =>
+    request<Recurso>(`/recursos/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+
+  recursosSoftDelete: (id: string) =>
+    request<Recurso>(`/recursos/${id}`, {
       method: 'DELETE',
     }),
 };

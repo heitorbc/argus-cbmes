@@ -1,12 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { UNIDADE_1CIA_1BBM_ID } from '../unidades/unidades.service';
+import { UnidadesService, UNIDADE_1CIA_1BBM_ID } from '../unidades/unidades.service';
 import { RecursosService } from './recursos.service';
 
 describe('RecursosService — seed 1ª1º', () => {
   let svc: RecursosService;
 
   beforeEach(() => {
-    svc = new RecursosService();
+    const unidades = new UnidadesService();
+    unidades.onModuleInit();
+    svc = new RecursosService(unidades);
     svc.onModuleInit();
   });
 
@@ -91,9 +93,96 @@ describe('RecursosService — seed 1ª1º', () => {
   });
 });
 
+describe('RecursosService — CRUD admin (S6e)', () => {
+  let svc: RecursosService;
+  let unidades: UnidadesService;
+
+  beforeEach(() => {
+    unidades = new UnidadesService();
+    unidades.onModuleInit();
+    svc = new RecursosService(unidades);
+    svc.onModuleInit();
+  });
+
+  it('create adiciona novo recurso com id slug e ativo=true por padrão', () => {
+    const r = svc.create({
+      unidadeId: UNIDADE_1CIA_1BBM_ID,
+      nome: 'NOVO RECURSO',
+      categoria: 'OPERACIONAL',
+      comportaViatura: true,
+      comportaEfetivo: true,
+      ordem: 99,
+    });
+    expect(r.nome).toBe('NOVO RECURSO');
+    expect(r.ativo).toBe(true);
+    expect(r.id).toContain('novo-recurso');
+    expect(svc.list({ unidadeId: UNIDADE_1CIA_1BBM_ID })).toHaveLength(20);
+  });
+
+  it('create rejeita unidadeId inexistente com NotFound', () => {
+    expect(() =>
+      svc.create({
+        unidadeId: 'unid:fake',
+        nome: 'X',
+        categoria: 'OPERACIONAL',
+        comportaViatura: false,
+        comportaEfetivo: false,
+        ordem: 0,
+      }),
+    ).toThrow();
+  });
+
+  it('create rejeita nome duplicado na mesma unidade', () => {
+    expect(() =>
+      svc.create({
+        unidadeId: UNIDADE_1CIA_1BBM_ID,
+        nome: 'ABTS_01', // já existe no seed
+        categoria: 'OPERACIONAL',
+        comportaViatura: true,
+        comportaEfetivo: true,
+        ordem: 100,
+      }),
+    ).toThrow();
+  });
+
+  it('update muda categoria sem alterar id ou unidadeId', () => {
+    const abts1 = svc.findByNome(UNIDADE_1CIA_1BBM_ID, 'ABTS_01')!;
+    const updated = svc.update(abts1.id, { categoria: 'STAFF' });
+    expect(updated.categoria).toBe('STAFF');
+    expect(updated.id).toBe(abts1.id);
+    expect(updated.unidadeId).toBe(abts1.unidadeId);
+  });
+
+  it('update rejeita mudança de nome para outro recurso já existente', () => {
+    const abts1 = svc.findByNome(UNIDADE_1CIA_1BBM_ID, 'ABTS_01')!;
+    expect(() => svc.update(abts1.id, { nome: 'GUARDA' })).toThrow();
+  });
+
+  it('softDelete marca ativo=false e some de nomesValidos (sem ser removido)', () => {
+    const guarda = svc.findByNome(UNIDADE_1CIA_1BBM_ID, 'GUARDA')!;
+    svc.softDelete(guarda.id);
+    expect(svc.findById(guarda.id).ativo).toBe(false);
+    expect(svc.nomesValidos(UNIDADE_1CIA_1BBM_ID).has('GUARDA')).toBe(false);
+    // continua no storage
+    expect(svc.list({ unidadeId: UNIDADE_1CIA_1BBM_ID }).length).toBe(19);
+    // mas filtra com ativoSomente
+    expect(svc.list({ unidadeId: UNIDADE_1CIA_1BBM_ID, ativoSomente: true }).length).toBe(18);
+  });
+
+  it('reativação via update({ ativo: true }) funciona', () => {
+    const guarda = svc.findByNome(UNIDADE_1CIA_1BBM_ID, 'GUARDA')!;
+    svc.softDelete(guarda.id);
+    const r = svc.update(guarda.id, { ativo: true });
+    expect(r.ativo).toBe(true);
+    expect(svc.nomesValidos(UNIDADE_1CIA_1BBM_ID).has('GUARDA')).toBe(true);
+  });
+});
+
 describe('RecursosService — uso pelo parser MF', () => {
   it('whitelist do parser bate com o set retornado por nomesValidos', () => {
-    const svc = new RecursosService();
+    const unidades = new UnidadesService();
+    unidades.onModuleInit();
+    const svc = new RecursosService(unidades);
     svc.onModuleInit();
     const set = svc.nomesValidos(UNIDADE_1CIA_1BBM_ID);
     // Espelha a expectativa do parser: linhas com esses nomes na col A passam.
