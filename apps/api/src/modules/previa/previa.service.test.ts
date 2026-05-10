@@ -9,6 +9,7 @@ import type {
 import { EscalasService } from '../escalas/escalas.service';
 import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.service';
 import { FiscaisService } from '../fiscais/fiscais.service';
+import { DispensasService } from '../dispensas/dispensas.service';
 import { IdeoStatusService } from '../ideo/ideo-status.service';
 import { IdeoService } from '../ideo/ideo.service';
 import { ServicoService } from '../servico/servico.service';
@@ -161,6 +162,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
       new FakeChefesOperacoesService() as unknown as never,
       new ServicoService(),
       new IdeoStatusService(),
+      new DispensasService(),
     );
 
     escalas.save(escalaAbril2026);
@@ -241,6 +243,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
       new FakeChefesOperacoesService() as unknown as never,
       new ServicoService(),
       new IdeoStatusService(),
+      new DispensasService(),
     );
     const r = await previa.getPreviaDoDia('2026-04-23');
     const ar044 = r.viaturasOperacionais.find((v) => v.codigo === 'AR 044');
@@ -290,6 +293,7 @@ describe('PreviaService — inconsistências', () => {
       new FakeChefesOperacoesService() as unknown as never,
       new ServicoService(),
       new IdeoStatusService(),
+      new DispensasService(),
     );
   });
 

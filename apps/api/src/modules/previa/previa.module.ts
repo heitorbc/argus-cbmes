@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ChefesOperacoesModule } from '../chefes-operacoes/chefes-operacoes.module';
+import { DispensasModule } from '../dispensas/dispensas.module';
 import { EfetivoModule } from '../efetivo/efetivo.module';
 import { EscalasModule } from '../escalas/escalas.module';
 import { EscalasEspeciaisModule } from '../escalas-especiais/escalas-especiais.module';
@@ -17,6 +18,7 @@ import { PreviaService } from './previa.service';
 @Module({
   imports: [
     ChefesOperacoesModule,
+    DispensasModule,
     EfetivoModule,
     EscalasModule,
     EscalasEspeciaisModule,

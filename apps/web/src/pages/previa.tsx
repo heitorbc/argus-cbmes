@@ -2,13 +2,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ESTADO_SERVICO_LABEL,
+  TIPO_DISPENSA,
+  TIPO_DISPENSA_LABEL,
   type AjustesPrevia,
   type AlteracaoDiversa,
   type EscalaEspecialAtoLight,
   type LetraEquipe,
   type PeriodoTroca,
   type PeriodoTrocaPredefinido,
+  type PreviaDispensa,
   type PreviaDoDia,
+  type TipoDispensa,
   type TipoInconsistencia,
   type TrocaEscalaEspecial,
 } from '@argus/shared-types';
@@ -715,61 +719,9 @@ function AjustesPreTurno({
             </button>
           </fieldset>
 
-          <fieldset className="rounded border border-slate-200 p-2">
-            <legend className="px-1 font-medium text-slate-700">Dispensas</legend>
-            {state.dispensas.map((d, i) => (
-              <div
-                key={i}
-                className="mt-2 grid grid-cols-1 items-end gap-2 md:grid-cols-[1fr,1fr,auto]"
-              >
-                <div>
-                  <p className="text-[10px] text-slate-500">Militar</p>
-                  <MilitarSelect
-                    value={d.militarNf}
-                    valueRaw={d.militarRaw}
-                    onChange={(nf, m) => {
-                      const ds = [...state.dispensas];
-                      ds[i] = {
-                        ...ds[i]!,
-                        militarNf: nf ?? undefined,
-                        militarRaw: m ? `${m.posto} ${m.nomeGuerra ?? m.nome.split(' ')[0]}` : '',
-                      };
-                      setState({ ...state, dispensas: ds });
-                    }}
-                    placeholder="Selecione o militar"
-                  />
-                </div>
-                <input
-                  placeholder="Motivo (opcional)"
-                  value={d.motivo ?? ''}
-                  onChange={(e) => {
-                    const ds = [...state.dispensas];
-                    ds[i] = { ...ds[i]!, motivo: e.target.value };
-                    setState({ ...state, dispensas: ds });
-                  }}
-                  className="rounded border border-slate-300 px-2 py-2"
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    setState({ ...state, dispensas: state.dispensas.filter((_, j) => j !== i) })
-                  }
-                  className="self-end rounded border border-feedback-error px-2 py-2 text-feedback-error"
-                >
-                  Remover
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={() =>
-                setState({ ...state, dispensas: [...state.dispensas, { militarRaw: '' }] })
-              }
-              className="mt-2 rounded border border-cbmes-blue px-3 py-1 text-cbmes-blue"
-            >
-              + Adicionar dispensa
-            </button>
-          </fieldset>
+          <DispensasFieldset dataIso={data} existentes={state.dispensas} onSaved={onSaved} />
+          {/* Aviso: o array `state.dispensas` agora vem read-only do backend
+              (DispensasService). UI de criação está em DispensasFieldset. */}
 
           <button
             type="button"
@@ -1453,5 +1405,208 @@ function PeriodoTrocaPicker({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * S6j — Fieldset de Dispensas dentro do Ajustes Pré-turno.
+ *
+ * Lista as dispensas ativas no dia (vindas de `previa.dispensas`, que o
+ * backend deriva de `DispensasService.listAtivasNoDia`). Permite criar nova
+ * dispensa via `api.dispensasCreate()` direto (não passa pelo upsert dos
+ * ajustes — a entidade é canônica e gerenciada em /cadastros/dispensas).
+ */
+function DispensasFieldset({
+  dataIso,
+  existentes,
+  onSaved,
+}: {
+  dataIso: string;
+  existentes: PreviaDispensa[];
+  onSaved: () => void;
+}) {
+  const [showForm, setShowForm] = useState(false);
+  const [militarNf, setMilitarNf] = useState<string | undefined>(undefined);
+  const [militarRaw, setMilitarRaw] = useState<string>('');
+  const [tipo, setTipo] = useState<TipoDispensa>('I_TAF');
+  const [dataInicio, setDataInicio] = useState<string>(dataIso);
+  const [dias, setDias] = useState<number>(1);
+  const [edocs, setEdocs] = useState<string>('');
+  const [obs, setObs] = useState<string>('');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const cancelar = () => {
+    setShowForm(false);
+    setMilitarNf(undefined);
+    setMilitarRaw('');
+    setTipo('I_TAF');
+    setDataInicio(dataIso);
+    setDias(1);
+    setEdocs('');
+    setObs('');
+    setErr(null);
+  };
+
+  const salvar = async () => {
+    if (!militarNf) {
+      setErr('Selecione o militar.');
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    try {
+      await api.dispensasCreate({
+        militarNf,
+        tipo,
+        dataInicio,
+        dias,
+        numeroEdocs: edocs.trim() || undefined,
+        observacoes: obs.trim() || undefined,
+      });
+      cancelar();
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Erro ao salvar dispensa');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remover = async (d: PreviaDispensa) => {
+    if (!d.dispensaId) return;
+    if (!confirm(`Remover dispensa de ${d.militarRaw}?`)) return;
+    try {
+      await api.dispensasRemove(d.dispensaId);
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Erro ao remover dispensa');
+    }
+  };
+
+  return (
+    <fieldset className="rounded border border-slate-200 p-2">
+      <legend className="px-1 font-medium text-slate-700">Dispensas ativas no dia</legend>
+      {err && (
+        <p className="mt-1 rounded border border-feedback-error/30 bg-feedback-error/10 p-2 text-xs text-feedback-error">
+          {err}
+        </p>
+      )}
+      {existentes.length === 0 && !showForm && (
+        <p className="mt-1 text-xs text-slate-500">Nenhuma dispensa ativa hoje.</p>
+      )}
+      {existentes.map((d) => (
+        <div
+          key={d.dispensaId ?? `${d.militarNf}-${d.dataInicio}`}
+          className="mt-2 flex items-start justify-between gap-2 rounded border border-slate-200 bg-slate-50 p-2 text-xs"
+        >
+          <div>
+            <p className="font-medium text-cbmes-blue">{d.militarRaw}</p>
+            <p className="text-slate-700">
+              {d.tipo
+                ? `${d.tipo} — ${d.tipoLabel ?? TIPO_DISPENSA_LABEL[d.tipo]}`
+                : 'Tipo não informado'}
+            </p>
+            <p className="text-slate-500">
+              {d.dataInicio ?? '?'} · {d.dias ?? '?'} dia(s)
+              {d.numeroEdocs && <> · E-Docs {d.numeroEdocs}</>}
+            </p>
+          </div>
+          {d.dispensaId && (
+            <button
+              type="button"
+              onClick={() => void remover(d)}
+              className="rounded border border-feedback-error px-2 py-1 text-feedback-error"
+            >
+              Remover
+            </button>
+          )}
+        </div>
+      ))}
+
+      {showForm ? (
+        <div className="mt-3 space-y-2 rounded border border-cbmes-blue/30 bg-white p-3">
+          <div>
+            <p className="text-[10px] uppercase text-slate-500">Militar</p>
+            <MilitarSelect
+              value={militarNf}
+              valueRaw={militarRaw}
+              onChange={(nf, m) => {
+                setMilitarNf(nf ?? undefined);
+                setMilitarRaw(m ? `${m.posto} ${m.nomeGuerra ?? m.nome.split(' ')[0]}` : '');
+              }}
+              placeholder="Buscar militar (NF ou nome)"
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[2fr_1fr_1fr]">
+            <select
+              value={tipo}
+              onChange={(e) => setTipo(e.target.value as TipoDispensa)}
+              className="rounded border border-slate-300 px-2 py-2 text-sm"
+            >
+              {TIPO_DISPENSA.map((t) => (
+                <option key={t} value={t}>
+                  {TIPO_DISPENSA_LABEL[t]}
+                </option>
+              ))}
+            </select>
+            <input
+              type="date"
+              value={dataInicio}
+              onChange={(e) => setDataInicio(e.target.value)}
+              className="rounded border border-slate-300 px-2 py-2 text-sm"
+            />
+            <input
+              type="number"
+              min={1}
+              max={365}
+              value={dias}
+              onChange={(e) => setDias(Number(e.target.value))}
+              placeholder="Dias"
+              className="rounded border border-slate-300 px-2 py-2 text-sm"
+            />
+          </div>
+          <input
+            type="text"
+            value={edocs}
+            onChange={(e) => setEdocs(e.target.value)}
+            placeholder="Nº E-Docs (opcional)"
+            className="w-full rounded border border-slate-300 px-2 py-2 text-sm"
+          />
+          <textarea
+            rows={2}
+            value={obs}
+            onChange={(e) => setObs(e.target.value)}
+            placeholder="Observações (opcional)"
+            className="w-full rounded border border-slate-300 px-2 py-2 text-sm"
+          />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => void salvar()}
+              disabled={saving}
+              className="flex-1 rounded-button bg-cbmes-red py-2 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {saving ? 'Salvando…' : 'Cadastrar dispensa'}
+            </button>
+            <button
+              type="button"
+              onClick={cancelar}
+              className="flex-1 rounded-button border border-slate-300 bg-white py-2 text-sm text-slate-700"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowForm(true)}
+          className="mt-2 rounded border border-cbmes-blue px-3 py-1 text-cbmes-blue"
+        >
+          + Cadastrar dispensa
+        </button>
+      )}
+    </fieldset>
   );
 }

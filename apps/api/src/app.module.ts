@@ -4,6 +4,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { ChefesOperacoesModule } from './modules/chefes-operacoes/chefes-operacoes.module';
 import { ConferenciaEquipeModule } from './modules/conferencia-equipe/conferencia-equipe.module';
 import { ConferenciaViaturaModule } from './modules/conferencia-viatura/conferencia-viatura.module';
+import { DispensasModule } from './modules/dispensas/dispensas.module';
 import { EfetivoModule } from './modules/efetivo/efetivo.module';
 import { EscalasModule } from './modules/escalas/escalas.module';
 import { EscalasEspeciaisModule } from './modules/escalas-especiais/escalas-especiais.module';
@@ -26,6 +27,7 @@ import { ViaturasModule } from './modules/viaturas/viaturas.module';
     ChefesOperacoesModule,
     ConferenciaEquipeModule,
     ConferenciaViaturaModule,
+    DispensasModule,
     EfetivoModule,
     EscalasModule,
     EscalasEspeciaisModule,

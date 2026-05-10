@@ -5,10 +5,13 @@ import type {
   ComposicaoEntry,
   ConferenciaEquipeEntry,
   ConferenciaViaturaEntry,
+  CreateDispensaInput,
   CreateFiscalInput,
   CreateRecursoInput,
   CreateUnidadeInput,
   CreateViaturaInput,
+  Dispensa,
+  DispensaSaldoMilitar,
   EfetivoListResponse,
   EfetivoQuery,
   EscalaEspecialMensal,
@@ -31,6 +34,7 @@ import type {
   RecursoMapaForca,
   ServicoEstado,
   Unidade,
+  UpdateDispensaInput,
   UpdateRecursoInput,
   UpdateUnidadeInput,
   TipoIdeo,
@@ -429,4 +433,24 @@ export const api = {
     request<Recurso>(`/recursos/${id}`, {
       method: 'DELETE',
     }),
+
+  // Dispensas (S6j)
+  dispensasList: (filter: { militarNf?: string; ano?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (filter.militarNf) params.set('militarNf', filter.militarNf);
+    if (filter.ano !== undefined) params.set('ano', String(filter.ano));
+    const qs = params.toString();
+    return request<Dispensa[]>(`/dispensas${qs ? `?${qs}` : ''}`);
+  },
+
+  dispensasCreate: (input: CreateDispensaInput) =>
+    request<Dispensa>('/dispensas', { method: 'POST', body: JSON.stringify(input) }),
+
+  dispensasUpdate: (id: string, input: UpdateDispensaInput) =>
+    request<Dispensa>(`/dispensas/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
+
+  dispensasRemove: (id: string) => request<void>(`/dispensas/${id}`, { method: 'DELETE' }),
+
+  dispensasSaldoMilitar: (militarNf: string, ano: number) =>
+    request<DispensaSaldoMilitar>(`/dispensas/saldo/${militarNf}/${ano}`),
 };

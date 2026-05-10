@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { LETRA_EQUIPE, type LetraEquipe } from './escala.js';
+import { TIPO_DISPENSA } from './dispensa.js';
 import { ideoStatusDoDiaSchema, TIPO_IDEO, type TipoIdeo } from './ideo.js';
 import { militarSchema, type Militar } from './militar.js';
 import { militarRefSchema, type MilitarRef } from './escala.js';
@@ -167,10 +168,28 @@ export const previaNotaServicoSchema = z.object({
 });
 export type PreviaNotaServico = z.infer<typeof previaNotaServicoSchema>;
 
-/** Dispensa do dia (S5/F7a). */
+/**
+ * Dispensa do dia exibida na Prévia.
+ *
+ * S6j — agora derivado da entidade `Dispensa` (`@argus/shared-types/dispensa`).
+ * Inclui tipo canônico, período e referência ao registro persistido. Campos
+ * `motivo` (string livre, S5) preservados como deprecated p/ compat.
+ */
 export const previaDispensaSchema = z.object({
   militarRaw: z.string(),
   militarNf: z.string().optional(),
+  /** S6j — tipo canônico (I_TAF..VIII_DIVERSAS). */
+  tipo: z.enum(TIPO_DISPENSA).optional(),
+  tipoLabel: z.string().optional(),
+  dataInicio: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  dias: z.number().int().min(1).optional(),
+  numeroEdocs: z.string().optional(),
+  /** ID da entidade Dispensa (S6j). Quando preenchido, vem do `DispensasService`. */
+  dispensaId: z.string().optional(),
+  /** @deprecated S5 — usar `tipo` + `numeroEdocs` + `observacoes`. */
   motivo: z.string().optional(),
 });
 export type PreviaDispensa = z.infer<typeof previaDispensaSchema>;

@@ -1,4 +1,5 @@
 export * from './auth.js';
+export * from './dispensa.js';
 export * from './escala.js';
 export * from './escala-especial.js';
 export * from './fiscal.js';

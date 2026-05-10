@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { formatDisplayName, SUB_SECAO_LABEL, type Militar } from '@argus/shared-types';
+import {
+  formatDisplayName,
+  SUB_SECAO_LABEL,
+  TIPO_DISPENSA_LABEL,
+  type DispensaSaldoMilitar,
+  type Militar,
+} from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
 
 export function EfetivoDetalhePage() {
@@ -8,15 +14,18 @@ export function EfetivoDetalhePage() {
   const [militar, setMilitar] = useState<Militar | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [saldo, setSaldo] = useState<DispensaSaldoMilitar | null>(null);
+  const anoAtual = new Date().getFullYear();
 
   useEffect(() => {
     if (!nf) return;
     let cancelled = false;
     setLoading(true);
-    api
-      .efetivoFindByNf(nf)
-      .then((m) => {
-        if (!cancelled) setMilitar(m);
+    Promise.all([api.efetivoFindByNf(nf), api.dispensasSaldoMilitar(nf, anoAtual)])
+      .then(([m, s]) => {
+        if (cancelled) return;
+        setMilitar(m);
+        setSaldo(s);
       })
       .catch((e) => {
         if (!cancelled) setError(e instanceof ApiError ? e.message : 'Erro ao carregar militar');
@@ -27,7 +36,7 @@ export function EfetivoDetalhePage() {
     return () => {
       cancelled = true;
     };
-  }, [nf]);
+  }, [nf, anoAtual]);
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -127,6 +136,64 @@ export function EfetivoDetalhePage() {
                 valor={militar.servico !== undefined ? `${militar.servico} anos` : undefined}
               />
             </Card>
+
+            {saldo && (
+              <Card titulo={`Dispensas gozadas no ano ${saldo.ano}`}>
+                <div className="col-span-2">
+                  <p className="text-xs text-slate-600">
+                    Total: <strong>{saldo.totalGozado}</strong> dia(s) gozado(s) no ano.
+                  </p>
+                  <ul className="mt-2 grid grid-cols-1 gap-1 sm:grid-cols-2">
+                    {saldo.saldosPorTipo.map((s) => {
+                      const sentinela = s.limite >= 999;
+                      const usadoPercent = sentinela
+                        ? 0
+                        : Math.min(100, Math.round((s.diasGozados / Math.max(1, s.limite)) * 100));
+                      const cor =
+                        s.diasGozados === 0
+                          ? 'text-slate-500'
+                          : s.diasRestantes === 0
+                            ? 'text-feedback-error'
+                            : 'text-cbmes-blue';
+                      return (
+                        <li
+                          key={s.tipo}
+                          className="rounded border border-slate-200 bg-slate-50 p-2 text-xs"
+                        >
+                          <p className="font-medium text-slate-700">
+                            {TIPO_DISPENSA_LABEL[s.tipo]}
+                          </p>
+                          <p className={`mt-0.5 ${cor}`}>
+                            <strong>{s.diasGozados}</strong>
+                            {sentinela ? (
+                              <> dia(s) (sem limite — ato específico)</>
+                            ) : (
+                              <>
+                                {' '}
+                                de <strong>{s.limite}</strong> dia(s) ·{' '}
+                                <span className={s.diasRestantes === 0 ? 'font-bold' : ''}>
+                                  {s.diasRestantes} restante(s)
+                                </span>
+                              </>
+                            )}
+                          </p>
+                          {!sentinela && (
+                            <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-200">
+                              <div
+                                className={`h-full ${
+                                  usadoPercent >= 100 ? 'bg-feedback-error' : 'bg-cbmes-blue'
+                                }`}
+                                style={{ width: `${usadoPercent}%` }}
+                              />
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              </Card>
+            )}
 
             {militar.origensFonte && militar.origensFonte.length > 0 && (
               <div className="rounded border border-slate-200 bg-white p-3 text-xs text-slate-600">
