@@ -7,6 +7,7 @@ export * from './fiscal.js';
 export * from './ideo.js';
 export * from './mapa-forca.js';
 export * from './militar.js';
+export * from './nota-servico.js';
 export * from './previa.js';
 export * from './recurso.js';
 export * from './servico.js';

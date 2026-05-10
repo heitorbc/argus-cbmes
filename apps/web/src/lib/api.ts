@@ -9,6 +9,7 @@ import type {
   CreateAtestadoInput,
   CreateDispensaInput,
   CreateFiscalInput,
+  CreateNotaServicoInput,
   CreateRecursoInput,
   CreateUnidadeInput,
   CreateViaturaInput,
@@ -29,6 +30,7 @@ import type {
   MapaForcaSnapshot,
   Militar,
   MilitarRef,
+  NotaServico,
   PreviaDoDia,
   PreviewEscalaEspecialResponse,
   PreviewEscalaResponse,
@@ -38,6 +40,7 @@ import type {
   Unidade,
   UpdateAtestadoInput,
   UpdateDispensaInput,
+  UpdateNotaServicoInput,
   UpdateRecursoInput,
   UpdateUnidadeInput,
   TipoIdeo,
@@ -473,4 +476,27 @@ export const api = {
     request<Atestado>(`/atestados/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
 
   atestadosRemove: (id: string) => request<void>(`/atestados/${id}`, { method: 'DELETE' }),
+
+  // Notas de Serviço (S6l)
+  notasServicoList: (filter: { data?: string; militarNf?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (filter.data) params.set('data', filter.data);
+    if (filter.militarNf) params.set('militarNf', filter.militarNf);
+    const qs = params.toString();
+    return request<NotaServico[]>(`/notas-servico${qs ? `?${qs}` : ''}`);
+  },
+
+  notasServicoCreate: (input: CreateNotaServicoInput) =>
+    request<NotaServico>('/notas-servico', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  notasServicoUpdate: (id: string, input: UpdateNotaServicoInput) =>
+    request<NotaServico>(`/notas-servico/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+
+  notasServicoRemove: (id: string) => request<void>(`/notas-servico/${id}`, { method: 'DELETE' }),
 };

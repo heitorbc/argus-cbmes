@@ -161,10 +161,32 @@ export const previaEscalaEspecialSchema = z.object({
 });
 export type PreviaEscalaEspecial = z.infer<typeof previaEscalaEspecialSchema>;
 
-/** Item de Nota de Serviço aplicada ao dia (ex.: NS072) (S5/F7a). */
+/**
+ * Item de Nota de Serviço aplicada ao dia (S5/F7a + S6l).
+ *
+ * S6l: agora derivado da entidade `NotaServico`. Inclui hora início/fim,
+ * viatura, militares escalados (com nome formatado), observações.
+ * Campos `notaServicoId` e novos opcionais para retrocompat com o schema
+ * mínimo do S5 (`{codigo, descricao}` apenas).
+ */
 export const previaNotaServicoSchema = z.object({
   codigo: z.string(),
   descricao: z.string().optional(),
+  /** S6l — ID da entidade NotaServico (preenchido quando vem do CRUD). */
+  notaServicoId: z.string().optional(),
+  horaInicio: z.string().optional(),
+  horaFim: z.string().optional(),
+  viaturaPrefixo: z.string().optional(),
+  /** Lista enriquecida (NF + raw "POSTO NOMEGUERRA"). */
+  militares: z
+    .array(
+      z.object({
+        nf: z.string(),
+        raw: z.string(),
+      }),
+    )
+    .optional(),
+  observacoes: z.string().optional(),
 });
 export type PreviaNotaServico = z.infer<typeof previaNotaServicoSchema>;
 

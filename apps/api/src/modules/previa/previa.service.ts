@@ -17,10 +17,16 @@ import {
   type StatusViatura,
   type TipoIdeo,
 } from '@argus/shared-types';
-import { TIPO_DISPENSA_LABEL, type PreviaAtestado, type PreviaDispensa } from '@argus/shared-types';
+import {
+  TIPO_DISPENSA_LABEL,
+  type PreviaAtestado,
+  type PreviaDispensa,
+  type PreviaNotaServico,
+} from '@argus/shared-types';
 import { AtestadosService } from '../atestados/atestados.service';
 import { ChefesOperacoesService } from '../chefes-operacoes/chefes-operacoes.service';
 import { DispensasService } from '../dispensas/dispensas.service';
+import { NotasServicoService } from '../notas-servico/notas-servico.service';
 import { EfetivoService } from '../efetivo/efetivo.service';
 import { EscalasService } from '../escalas/escalas.service';
 import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.service';
@@ -61,6 +67,7 @@ export class PreviaService {
     private readonly ideoStatus: IdeoStatusService,
     private readonly dispensasSvc: DispensasService,
     private readonly atestadosSvc: AtestadosService,
+    private readonly notasServicoSvc: NotasServicoService,
   ) {}
 
   async getPreviaDoDia(dataIso: string): Promise<PreviaDoDia> {
@@ -198,6 +205,25 @@ export class PreviaService {
       };
     });
 
+    // S6l — Notas de Serviço do dia, enriquecidas com militares (nome formatado).
+    const nsDoDia = this.notasServicoSvc.listDoDia(dataIso);
+    const notasServicoEnriched: PreviaNotaServico[] = nsDoDia.map((n) => ({
+      codigo: n.codigo,
+      descricao: n.descricao,
+      notaServicoId: n.id,
+      horaInicio: n.horaInicio,
+      horaFim: n.horaFim,
+      viaturaPrefixo: n.viaturaPrefixo,
+      militares: n.militaresNfs.map((nf) => {
+        const m = efetivoByNf.get(nf);
+        return {
+          nf,
+          raw: m ? `${m.posto} ${m.nomeGuerra ?? m.nome.split(' ')[0]}` : `NF ${nf}`,
+        };
+      }),
+      observacoes: n.observacoes,
+    }));
+
     // S6k — Atestados médicos ativos no dia (alterações de efetivo da PD).
     const atestadosAtivos = this.atestadosSvc.listAtivosNoDia(dataIso);
     const atestadosPrevia: PreviaAtestado[] = atestadosAtivos.map((a) => {
@@ -242,7 +268,7 @@ export class PreviaService {
       inconsistencias,
       trocas: ajustes.trocas,
       escalaEspecial: ajustes.escalaEspecial,
-      notasServico: ajustes.notasServico,
+      notasServico: notasServicoEnriched,
       dispensas: dispensasPrevia,
       atestados: atestadosPrevia,
       escalaEspecialAtos: atosEspeciais,

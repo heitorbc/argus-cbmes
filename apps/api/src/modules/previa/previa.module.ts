@@ -7,6 +7,7 @@ import { EscalasModule } from '../escalas/escalas.module';
 import { EscalasEspeciaisModule } from '../escalas-especiais/escalas-especiais.module';
 import { FiscaisModule } from '../fiscais/fiscais.module';
 import { IdeoModule } from '../ideo/ideo.module';
+import { NotasServicoModule } from '../notas-servico/notas-servico.module';
 import { ServicoModule } from '../servico/servico.module';
 import { ViaturasModule } from '../viaturas/viaturas.module';
 import { AjustesPreviaService } from './ajustes-previa.service';
@@ -26,6 +27,7 @@ import { PreviaService } from './previa.service';
     EscalasEspeciaisModule,
     FiscaisModule,
     IdeoModule,
+    NotasServicoModule,
     ServicoModule,
     ViaturasModule,
   ],

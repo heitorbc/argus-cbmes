@@ -13,6 +13,8 @@ import {
   type PreviaAtestado,
   type PreviaDispensa,
   type PreviaDoDia,
+  type PreviaNotaServico,
+  type Viatura,
   type TipoDispensa,
   type TipoInconsistencia,
   type TrocaEscalaEspecial,
@@ -674,54 +676,7 @@ function AjustesPreTurno({
             )}
           </fieldset>
 
-          <fieldset className="rounded border border-slate-200 p-2">
-            <legend className="px-1 font-medium text-slate-700">Notas de Serviço</legend>
-            {state.notasServico.map((n, i) => (
-              <div key={i} className="mt-2 grid grid-cols-1 gap-1 md:grid-cols-3">
-                <input
-                  placeholder="Código (NS072)"
-                  value={n.codigo}
-                  onChange={(e) => {
-                    const ns = [...state.notasServico];
-                    ns[i] = { ...ns[i]!, codigo: e.target.value };
-                    setState({ ...state, notasServico: ns });
-                  }}
-                  className="rounded border border-slate-300 px-2 py-1"
-                />
-                <input
-                  placeholder="Descrição (opcional)"
-                  value={n.descricao ?? ''}
-                  onChange={(e) => {
-                    const ns = [...state.notasServico];
-                    ns[i] = { ...ns[i]!, descricao: e.target.value };
-                    setState({ ...state, notasServico: ns });
-                  }}
-                  className="rounded border border-slate-300 px-2 py-1"
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    setState({
-                      ...state,
-                      notasServico: state.notasServico.filter((_, j) => j !== i),
-                    })
-                  }
-                  className="rounded border border-feedback-error px-2 py-1 text-feedback-error"
-                >
-                  Remover
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={() =>
-                setState({ ...state, notasServico: [...state.notasServico, { codigo: '' }] })
-              }
-              className="mt-2 rounded border border-cbmes-blue px-3 py-1 text-cbmes-blue"
-            >
-              + Adicionar NS
-            </button>
-          </fieldset>
+          <NotasServicoFieldset dataIso={data} existentes={state.notasServico} onSaved={onSaved} />
 
           <DispensasFieldset dataIso={data} existentes={state.dispensas} onSaved={onSaved} />
           <AtestadosFieldset dataIso={data} existentes={atestadosAtivos} onSaved={onSaved} />
@@ -1813,6 +1768,267 @@ function AtestadosFieldset({
           className="mt-2 rounded border border-cbmes-blue px-3 py-1 text-cbmes-blue"
         >
           + Cadastrar atestado
+        </button>
+      )}
+    </fieldset>
+  );
+}
+
+/**
+ * S6l — Fieldset de Notas de Serviço dentro do Ajustes Pré-turno.
+ *
+ * Lista NS do dia (vindas de previa.notasServico, derivadas de
+ * NotasServicoService.listDoDia). Cadastra nova via api.notasServicoCreate.
+ */
+function NotasServicoFieldset({
+  dataIso,
+  existentes,
+  onSaved,
+}: {
+  dataIso: string;
+  existentes: PreviaNotaServico[];
+  onSaved: () => void;
+}) {
+  const [showForm, setShowForm] = useState(false);
+  const [codigo, setCodigo] = useState('');
+  const [descricao, setDescricao] = useState('');
+  const [horaInicio, setHoraInicio] = useState('08:00');
+  const [horaFim, setHoraFim] = useState('18:00');
+  const [viaturaPrefixo, setViaturaPrefixo] = useState('');
+  const [militares, setMilitares] = useState<{ nf: string; raw: string }[]>([]);
+  const [obs, setObs] = useState('');
+  const [viaturas, setViaturas] = useState<Viatura[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!showForm) return;
+    let cancelled = false;
+    api
+      .viaturasList()
+      .then((vs) => {
+        if (!cancelled) setViaturas(vs);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [showForm]);
+
+  const cancelar = () => {
+    setShowForm(false);
+    setCodigo('');
+    setDescricao('');
+    setHoraInicio('08:00');
+    setHoraFim('18:00');
+    setViaturaPrefixo('');
+    setMilitares([]);
+    setObs('');
+    setErr(null);
+  };
+
+  const salvar = async () => {
+    if (!codigo.trim() || !descricao.trim()) {
+      setErr('Código e descrição são obrigatórios.');
+      return;
+    }
+    if (militares.length === 0) {
+      setErr('Adicione pelo menos 1 militar.');
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    try {
+      await api.notasServicoCreate({
+        codigo: codigo.trim(),
+        descricao: descricao.trim(),
+        data: dataIso,
+        horaInicio,
+        horaFim,
+        viaturaPrefixo: viaturaPrefixo.trim() || undefined,
+        militaresNfs: militares.map((m) => m.nf),
+        observacoes: obs.trim() || undefined,
+      });
+      cancelar();
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Erro ao salvar NS');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remover = async (n: PreviaNotaServico) => {
+    if (!n.notaServicoId) return;
+    if (!confirm(`Remover ${n.codigo} - ${n.descricao}?`)) return;
+    try {
+      await api.notasServicoRemove(n.notaServicoId);
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Erro ao remover NS');
+    }
+  };
+
+  const viaturasDisponiveis = viaturas.filter((v) => v.status !== 'BAIXADA');
+
+  return (
+    <fieldset className="rounded border border-slate-200 p-2">
+      <legend className="px-1 font-medium text-slate-700">Notas de Serviço do dia</legend>
+      {err && (
+        <p className="mt-1 rounded border border-feedback-error/30 bg-feedback-error/10 p-2 text-xs text-feedback-error">
+          {err}
+        </p>
+      )}
+      {existentes.length === 0 && !showForm && (
+        <p className="mt-1 text-xs text-slate-500">Nenhuma NS cadastrada para hoje.</p>
+      )}
+      {existentes.map((n) => (
+        <div
+          key={n.notaServicoId ?? n.codigo}
+          className="mt-2 flex items-start justify-between gap-2 rounded border border-slate-200 bg-slate-50 p-2 text-xs"
+        >
+          <div>
+            <p className="font-medium text-cbmes-blue">
+              <span className="rounded-full bg-cbmes-blue/15 px-1.5 py-0.5 text-[10px]">
+                {n.codigo}
+              </span>{' '}
+              {n.descricao}
+            </p>
+            {(n.horaInicio || n.horaFim) && (
+              <p className="text-slate-700">
+                {n.horaInicio}–{n.horaFim}
+                {n.viaturaPrefixo && <> · 🚒 {n.viaturaPrefixo}</>}
+              </p>
+            )}
+            {n.militares && n.militares.length > 0 && (
+              <p className="text-slate-600">👥 {n.militares.map((m) => m.raw).join(', ')}</p>
+            )}
+            {n.observacoes && <p className="italic text-slate-500">{n.observacoes}</p>}
+          </div>
+          {n.notaServicoId && (
+            <button
+              type="button"
+              onClick={() => void remover(n)}
+              className="rounded border border-feedback-error px-2 py-1 text-feedback-error"
+            >
+              Remover
+            </button>
+          )}
+        </div>
+      ))}
+
+      {showForm ? (
+        <div className="mt-3 space-y-2 rounded border border-cbmes-blue/30 bg-white p-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_2fr]">
+            <input
+              type="text"
+              value={codigo}
+              onChange={(e) => setCodigo(e.target.value)}
+              placeholder="Código (ex.: NS077)"
+              className="rounded border border-slate-300 px-2 py-2 text-sm"
+            />
+            <input
+              type="text"
+              value={descricao}
+              onChange={(e) => setDescricao(e.target.value)}
+              placeholder="Descrição"
+              className="rounded border border-slate-300 px-2 py-2 text-sm"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="time"
+              value={horaInicio}
+              onChange={(e) => setHoraInicio(e.target.value)}
+              className="rounded border border-slate-300 px-2 py-2 text-sm"
+            />
+            <input
+              type="time"
+              value={horaFim}
+              onChange={(e) => setHoraFim(e.target.value)}
+              className="rounded border border-slate-300 px-2 py-2 text-sm"
+            />
+          </div>
+          <select
+            value={viaturaPrefixo}
+            onChange={(e) => setViaturaPrefixo(e.target.value)}
+            className="w-full rounded border border-slate-300 px-2 py-2 text-sm"
+          >
+            <option value="">— Nenhuma viatura</option>
+            {viaturasDisponiveis.map((v) => (
+              <option key={v.id} value={v.prefixo}>
+                {v.prefixo} {v.funcaoOperacional ? `(${v.funcaoOperacional})` : ''}
+              </option>
+            ))}
+          </select>
+          <div>
+            <p className="text-[10px] uppercase text-slate-500">Militares ({militares.length})</p>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {militares.map((m) => (
+                <span
+                  key={m.nf}
+                  className="rounded-full bg-cbmes-blue/10 px-2 py-0.5 text-xs text-cbmes-blue"
+                >
+                  {m.raw}
+                  <button
+                    type="button"
+                    onClick={() => setMilitares(militares.filter((x) => x.nf !== m.nf))}
+                    className="ml-1 text-feedback-error"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div className="mt-1">
+              <MilitarSelect
+                value={undefined}
+                valueRaw={undefined}
+                onChange={(nf, m) => {
+                  if (!nf || !m) return;
+                  if (militares.some((x) => x.nf === nf)) return;
+                  setMilitares([
+                    ...militares,
+                    { nf, raw: `${m.posto} ${m.nomeGuerra ?? m.nome.split(' ')[0]}` },
+                  ]);
+                }}
+                placeholder="+ Adicionar militar"
+                excluirNfs={militares.map((m) => m.nf)}
+              />
+            </div>
+          </div>
+          <textarea
+            rows={2}
+            value={obs}
+            onChange={(e) => setObs(e.target.value)}
+            placeholder="Observações (opcional)"
+            className="w-full rounded border border-slate-300 px-2 py-2 text-sm"
+          />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => void salvar()}
+              disabled={saving}
+              className="flex-1 rounded-button bg-cbmes-red py-2 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {saving ? 'Salvando…' : 'Cadastrar NS'}
+            </button>
+            <button
+              type="button"
+              onClick={cancelar}
+              className="flex-1 rounded-button border border-slate-300 bg-white py-2 text-sm text-slate-700"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowForm(true)}
+          className="mt-2 rounded border border-cbmes-blue px-3 py-1 text-cbmes-blue"
+        >
+          + Cadastrar NS
         </button>
       )}
     </fieldset>
