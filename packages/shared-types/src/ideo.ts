@@ -65,3 +65,36 @@ export const markIdeoChecklistInputSchema = z.object({
   realizado: z.boolean(),
 });
 export type MarkIdeoChecklistInput = z.infer<typeof markIdeoChecklistInputSchema>;
+
+/**
+ * S6i — Status de realização da IDEO de cada tipo (ABTS/RESGATE) num dia.
+ *
+ * Persistido por (`data` + `tipo`). Quando `realizada=false`, exige
+ * `motivoNaoRealizacao`. Atestado pelo Fiscal de Serviço (`fiscalNf`).
+ *
+ * Consumido por:
+ *  - Tela `/servico/:data/ideo` (S6i): toggle + textarea de motivo.
+ *  - PreviaService.getPreviaDoDia: campo `ideoStatus[]` no payload.
+ *  - Helper `gerarTextoFiscalAtestadoIdeo()`: gera texto institucional para a PD.
+ */
+export const ideoStatusDoDiaSchema = z.object({
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  tipo: z.enum(TIPO_IDEO),
+  realizada: z.boolean(),
+  motivoNaoRealizacao: z.string().optional(),
+  fiscalNf: z.string(),
+  geradoEm: z.string(),
+});
+export type IdeoStatusDoDia = z.infer<typeof ideoStatusDoDiaSchema>;
+
+export const upsertIdeoStatusInputSchema = z
+  .object({
+    tipo: z.enum(TIPO_IDEO),
+    realizada: z.boolean(),
+    motivoNaoRealizacao: z.string().trim().optional(),
+  })
+  .refine((d) => d.realizada || (d.motivoNaoRealizacao && d.motivoNaoRealizacao.length > 0), {
+    message: 'Motivo é obrigatório quando IDEO não foi realizada',
+    path: ['motivoNaoRealizacao'],
+  });
+export type UpsertIdeoStatusInput = z.infer<typeof upsertIdeoStatusInputSchema>;

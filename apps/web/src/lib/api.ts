@@ -16,6 +16,7 @@ import type {
   FiscalCadastrado,
   IdeoEntry,
   IdeoMatrix,
+  IdeoStatusDoDia,
   LetraEquipe,
   LetraEquipeRotativa,
   LoginInput,
@@ -38,6 +39,7 @@ import type {
   UpsertConferenciaEquipeInput,
   UpsertConferenciaViaturaInput,
   UpsertIdeoEntryInput,
+  UpsertIdeoStatusInput,
   UserSession,
   Viatura,
 } from '@argus/shared-types';
@@ -181,6 +183,15 @@ export const api = {
   ideoDelete: (dia: number, tipo: TipoIdeo) =>
     request<void>(`/ideo/${dia}/${tipo}`, {
       method: 'DELETE',
+    }),
+
+  // S6i — IDEO Status (realizada/não-realizada por dia/tipo)
+  ideoStatusGet: (data: string) => request<IdeoStatusDoDia[]>(`/ideo-status/${data}`),
+
+  ideoStatusUpsert: (data: string, input: UpsertIdeoStatusInput) =>
+    request<IdeoStatusDoDia>(`/ideo-status/${data}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
     }),
 
   // Escalas (S3b)

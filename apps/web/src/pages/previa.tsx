@@ -1029,6 +1029,21 @@ function ServicoCard({
             </p>
           </Link>
           <ConferenciaViaturasMenu data={previa.data} composicaoMf={previa.composicaoMf} />
+          <Link
+            to={`/servico/${previa.data}/ideo`}
+            className="block rounded border border-cbmes-blue/30 bg-white p-3 hover:bg-cbmes-blue/5 md:col-span-2"
+          >
+            <h4 className="text-sm font-semibold text-cbmes-blue">✅ IDEO (atestar Fiscal)</h4>
+            <p className="mt-1 text-xs text-slate-600">
+              Marcar IDEO ABTS / RESGATE como realizada/não realizada e gerar texto institucional do
+              Fiscal para a Parte Diária.
+            </p>
+            {previa.textoAtestadoIdeoFiscal && (
+              <p className="mt-1 text-[10px] uppercase tracking-wide text-emerald-700">
+                ✓ texto do Fiscal pronto
+              </p>
+            )}
+          </Link>
         </div>
       )}
 

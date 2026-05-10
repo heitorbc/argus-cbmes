@@ -22,6 +22,7 @@ import { RecursosPage } from '@/pages/recursos';
 import { UnidadesPage } from '@/pages/unidades';
 import { ConferenciaEquipePage } from '@/pages/conferencia-equipe';
 import { ConferenciaViaturaPage } from '@/pages/conferencia-viatura';
+import { ServicoIdeoPage } from '@/pages/servico-ideo';
 
 function FullScreenLoader() {
   return (
@@ -99,6 +100,7 @@ export const router = createBrowserRouter([
             path: '/servico/:data/conferencia-viatura/:vtrPrefixo',
             element: <ConferenciaViaturaPage />,
           },
+          { path: '/servico/:data/ideo', element: <ServicoIdeoPage /> },
         ],
       },
       { path: '*', element: <Navigate to="/" replace /> },

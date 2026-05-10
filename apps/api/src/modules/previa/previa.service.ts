@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
+  gerarTextoFiscalAtestadoIdeo,
   LETRA_EQUIPE_LABEL,
   TIPO_IDEO,
   type ComposicaoEntry,
@@ -21,6 +22,7 @@ import { EfetivoService } from '../efetivo/efetivo.service';
 import { EscalasService } from '../escalas/escalas.service';
 import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.service';
 import { FiscaisService } from '../fiscais/fiscais.service';
+import { IdeoStatusService } from '../ideo/ideo-status.service';
 import { IdeoService } from '../ideo/ideo.service';
 import { ServicoService } from '../servico/servico.service';
 import { ViaturasService } from '../viaturas/viaturas.service';
@@ -53,6 +55,7 @@ export class PreviaService {
     private readonly escalasEspeciais: EscalasEspeciaisService,
     private readonly chefesOperacoes: ChefesOperacoesService,
     private readonly servico: ServicoService,
+    private readonly ideoStatus: IdeoStatusService,
   ) {}
 
   async getPreviaDoDia(dataIso: string): Promise<PreviaDoDia> {
@@ -171,6 +174,17 @@ export class PreviaService {
     const estadoServico = this.servico.get(dataIso);
     const alteracoesDiversas = this.servico.listAlteracoes(dataIso);
 
+    // S6i — IDEO realizado/não-realizado + texto institucional do Fiscal
+    const ideoStatus = this.ideoStatus.getByData(dataIso);
+    const fiscalParaTexto = fiscal?.militarResolvido
+      ? {
+          posto: fiscal.militarResolvido.posto,
+          nomeGuerra: fiscal.militarResolvido.nomeGuerra ?? fiscal.militarResolvido.nome,
+          nf: fiscal.militarResolvido.nf,
+        }
+      : null;
+    const textoAtestadoIdeoFiscal = gerarTextoFiscalAtestadoIdeo(ideoStatus, fiscalParaTexto);
+
     return {
       data: dataIso,
       ano,
@@ -182,6 +196,8 @@ export class PreviaService {
       composicaoMf,
       tripulacao,
       ideo: ideoEntries,
+      ideoStatus,
+      textoAtestadoIdeoFiscal,
       viaturasOperacionais: viaturasOp,
       inconsistencias,
       trocas: ajustes.trocas,

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { LETRA_EQUIPE, type LetraEquipe } from './escala.js';
-import { TIPO_IDEO, type TipoIdeo } from './ideo.js';
+import { ideoStatusDoDiaSchema, TIPO_IDEO, type TipoIdeo } from './ideo.js';
 import { militarSchema, type Militar } from './militar.js';
 import { militarRefSchema, type MilitarRef } from './escala.js';
 import { alteracaoDiversaSchema, ESTADO_SERVICO, STATUS_CONFERENCIA } from './servico.js';
@@ -272,6 +272,14 @@ export const previaDoDiaSchema = z.object({
   ideo: z.array(previaIdeoEntrySchema),
 
   /**
+   * S6i — Status de realização da IDEO por tipo (ABTS/RESGATE) no dia. Vazio
+   * antes do Fiscal atestar. Quando completo (todos os tipos marcados),
+   * `textoAtestadoIdeoFiscal` é gerado para a Parte Diária (S10/S11).
+   */
+  ideoStatus: z.array(ideoStatusDoDiaSchema).default([]),
+  textoAtestadoIdeoFiscal: z.string().nullable().default(null),
+
+  /**
    * @deprecated em S6b — use `composicaoMf[i].vtrPrefixo` + `vtrStatus`.
    * Derivado pelo PreviaService.
    */
@@ -329,6 +337,38 @@ export function previaMatchKey(postoAbreviado: string, nomeGuerra: string): stri
     .replace(/\s+/g, ' ')
     .trim();
   return `${postoNorm}|${nomeNorm}`;
+}
+
+/**
+ * S6i — Gera texto institucional do Fiscal atestando IDEO.
+ *
+ * Caso A (todos realizados, sem alterações nos materiais):
+ *   "Eu, <posto> <nome>, NF <nf>, atesto que todos os equipamentos
+ *    inspecionados estão em ESTADO DE PRONTIDÃO (condições de pronto emprego)"
+ *
+ * Caso B (algum não realizado): texto descritivo listando os tipos não
+ * realizados e seus motivos. Caller decide se inclui no payload da PD.
+ *
+ * Retorna `null` se faltar marcação de algum tipo (incompleto).
+ */
+export function gerarTextoFiscalAtestadoIdeo(
+  ideoStatus: readonly { tipo: TipoIdeo; realizada: boolean; motivoNaoRealizacao?: string }[],
+  fiscal: { posto: string; nomeGuerra: string; nf: string } | null,
+): string | null {
+  if (!fiscal) return null;
+  const tiposEsperados: readonly TipoIdeo[] = ['ABTS', 'RESGATE'];
+  const tiposMarcados = new Set(ideoStatus.map((s) => s.tipo));
+  const completo = tiposEsperados.every((t) => tiposMarcados.has(t));
+  if (!completo) return null;
+
+  const naoRealizadas = ideoStatus.filter((s) => !s.realizada);
+  if (naoRealizadas.length === 0) {
+    return `Eu, ${fiscal.posto} ${fiscal.nomeGuerra}, NF ${fiscal.nf}, atesto que todos os equipamentos inspecionados estão em ESTADO DE PRONTIDÃO (condições de pronto emprego)`;
+  }
+  const detalhes = naoRealizadas
+    .map((s) => `IDEO ${s.tipo} NÃO REALIZADA — ${s.motivoNaoRealizacao ?? 'sem motivo informado'}`)
+    .join('; ');
+  return `Eu, ${fiscal.posto} ${fiscal.nomeGuerra}, NF ${fiscal.nf}, registro: ${detalhes}.`;
 }
 
 /** Re-exports tipados para conveniência. */
