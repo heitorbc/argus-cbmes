@@ -136,3 +136,36 @@ describe('AuthService.getCurrentUser', () => {
     expect(() => service.getCurrentUser('9999999')).toThrow(UnauthorizedException);
   });
 });
+
+describe('AuthService.loginAsPersona (persona-picker homologação)', () => {
+  it('emite JWT válido + primeiroAcesso=false para persona existente', async () => {
+    const service = makeService();
+    const result = await service.loginAsPersona(HEITOR.nf);
+    expect(result.user.nf).toBe(HEITOR.nf);
+    expect(result.user.papeis).toContain('admin');
+    expect(result.user.primeiroAcesso).toBe(false); // bypass sempre força false
+    expect(result.token.split('.').length).toBe(3);
+  });
+
+  it('lança 401 para persona inexistente', async () => {
+    const service = makeService();
+    await expect(service.loginAsPersona('9999999')).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+});
+
+describe('AuthService.listPersonas (persona-picker homologação)', () => {
+  it('lista todos os mocks sem expor senhaHash', () => {
+    const service = makeService();
+    const list = service.listPersonas();
+    expect(list.length).toBe(MOCK_USERS.length);
+    expect(list[0]).toEqual({
+      nf: MOCK_USERS[0]!.nf,
+      nome: MOCK_USERS[0]!.nome,
+      posto: MOCK_USERS[0]!.posto,
+      papeis: MOCK_USERS[0]!.papeis,
+    });
+    // Tipagem garante; checagem extra em runtime:
+    expect(list[0]).not.toHaveProperty('senhaHash');
+    expect(list[0]).not.toHaveProperty('cpfFake');
+  });
+});

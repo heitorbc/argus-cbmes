@@ -70,6 +70,41 @@ export class AuthService {
     return this.toSession(user);
   }
 
+  /**
+   * Login sem senha — usado pelo persona-picker de homologação.
+   *
+   * **Gated por env flag `ARGUS_PERSONA_PICKER=true`** no controller.
+   * Não chamar em produção. Emite JWT com `primeiroAcesso=false` sempre
+   * (não há senha pra trocar nesse modo).
+   */
+  async loginAsPersona(nf: string): Promise<{ user: UserSession; token: string }> {
+    const user = this.users.get(nf);
+    if (!user) {
+      throw new UnauthorizedException('Persona não encontrada');
+    }
+    const session: UserSession = { ...this.toSession(user), primeiroAcesso: false };
+    const token = await this.signToken(session);
+    return { user: session, token };
+  }
+
+  /**
+   * Lista personas disponíveis para o picker (apenas campos públicos —
+   * NUNCA expõe `senhaHash`/`cpfFake`).
+   */
+  listPersonas(): Array<{
+    nf: string;
+    nome: string;
+    posto: string;
+    papeis: UserSession['papeis'];
+  }> {
+    return Array.from(this.users.values()).map((u) => ({
+      nf: u.nf,
+      nome: u.nome,
+      posto: u.posto,
+      papeis: u.papeis,
+    }));
+  }
+
   getCurrentUser(nf: string): UserSession {
     const user = this.users.get(nf);
     if (!user) {

@@ -8,6 +8,7 @@ import {
 import { AuthProvider, useAuth } from '@/lib/auth-context';
 import { canAccessRoute } from '@/lib/permissions';
 import { LoginPage } from '@/pages/login';
+import { PersonaPickerPage } from '@/pages/persona-picker';
 import { TrocarSenhaPage } from '@/pages/trocar-senha';
 import { HomePage } from '@/pages/home';
 import { EfetivoPage } from '@/pages/efetivo';
@@ -76,13 +77,22 @@ function RootLayout() {
   );
 }
 
+/**
+ * Persona picker (homologação) — quando `VITE_USE_PERSONA_PICKER=true`, a
+ * rota `/login` mostra o seletor de personas em vez do form NF+senha.
+ * Backend precisa estar com `ARGUS_PERSONA_PICKER=true` para o endpoint
+ * `/auth/dev/personas` responder; caso contrário o picker mostra erro.
+ */
+const LoginEntryPoint =
+  import.meta.env.VITE_USE_PERSONA_PICKER === 'true' ? PersonaPickerPage : LoginPage;
+
 export const router = createBrowserRouter([
   {
     element: <RootLayout />,
     children: [
       {
         element: <PublicOnlyRoute />,
-        children: [{ path: '/login', element: <LoginPage /> }],
+        children: [{ path: '/login', element: <LoginEntryPoint /> }],
       },
       {
         element: <ProtectedRoute />,
