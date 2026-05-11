@@ -28,6 +28,15 @@ const DEBOUNCE_MS = 300;
 const PAGE_SIZE = 10;
 
 /**
+ * Constante hoisted para o default de `excluirNfs`. Destructuring com
+ * default `= []` aloca um array novo a cada render, e quando esse array
+ * entra como dependência do `useEffect` da busca, dispara loop infinito
+ * (`Maximum update depth exceeded`). Apontar para a mesma referência
+ * estável quando o prop chega `undefined` resolve.
+ */
+const EMPTY_EXCLUIR_NFS: string[] = [];
+
+/**
  * Combobox de seleção de militar com debounce + busca por NF/nome/posto.
  *
  * Usa `api.efetivoList({q, somente1aCia, page, pageSize})` que após o S6a-fix retorna
@@ -40,7 +49,7 @@ export function MilitarSelect({
   placeholder = 'Buscar por NF ou nome…',
   disabled = false,
   somente1aCia = true,
-  excluirNfs = [],
+  excluirNfs = EMPTY_EXCLUIR_NFS,
   id,
 }: MilitarSelectProps) {
   const reactId = useId();
@@ -79,12 +88,19 @@ export function MilitarSelect({
     };
   }, [value, valueRaw]);
 
-  // Debounced search
+  // Debounced search.
+  // `excluirNfsKey` deriva uma chave primitiva do conteúdo de `excluirNfs`
+  // para evitar que o effect re-rode quando o consumer passa um array
+  // inline (`excluirNfs={items.map(...)}`) com referência nova a cada render.
+  const excluirNfsKey = excluirNfs.join('|');
   useEffect(() => {
     const q = search.trim();
     if (q.length < MIN_QUERY_LEN) {
-      setResults([]);
-      setLoading(false);
+      // Guards defensivos — só dispara setState se houver mudança real.
+      // Object.is([], []) === false, então setResults([]) sem guard
+      // sempre força re-render mesmo com results já vazio.
+      setResults((prev) => (prev.length === 0 ? prev : []));
+      setLoading((prev) => (prev ? false : prev));
       return;
     }
     setLoading(true);
@@ -110,7 +126,7 @@ export function MilitarSelect({
       };
     }, DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [search, somente1aCia, excluirNfs]);
+  }, [search, somente1aCia, excluirNfsKey]);
 
   // Click outside fecha
   useEffect(() => {
