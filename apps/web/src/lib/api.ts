@@ -31,6 +31,8 @@ import type {
   Militar,
   MilitarRef,
   NotaServico,
+  ParteDiaria,
+  UpsertParteDiariaInput,
   PreviaDoDia,
   PreviewEscalaEspecialResponse,
   PreviewEscalaResponse,
@@ -517,6 +519,15 @@ export const api = {
     }
     return json as NotaServicoPreviewPdfResponse;
   },
+
+  // Parte Diária (S10)
+  parteDiariaGet: (data: string) => request<ParteDiaria>(`/parte-diaria/${data}`),
+
+  parteDiariaUpsert: (data: string, input: UpsertParteDiariaInput) =>
+    request<ParteDiaria>(`/parte-diaria/${data}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
 };
 
 /** Shape devolvido por POST /notas-servico/preview-pdf (S6m). */

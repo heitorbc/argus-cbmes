@@ -25,6 +25,7 @@ import { ConferenciaEquipePage } from '@/pages/conferencia-equipe';
 import { ConferenciaViaturaPage } from '@/pages/conferencia-viatura';
 import { DispensasPage } from '@/pages/dispensas';
 import { NotasServicoPage } from '@/pages/notas-servico';
+import { ParteDiariaPage } from '@/pages/parte-diaria';
 import { ServicoIdeoPage } from '@/pages/servico-ideo';
 
 function FullScreenLoader() {
@@ -101,6 +102,7 @@ export const router = createBrowserRouter([
           { path: '/configuracoes/unidades', element: <UnidadesPage /> },
           { path: '/configuracoes/recursos', element: <RecursosPage /> },
           { path: '/previa', element: <PreviaPage /> },
+          { path: '/parte-diaria', element: <ParteDiariaPage /> },
           { path: '/servico/:data/conferencia-equipe', element: <ConferenciaEquipePage /> },
           {
             path: '/servico/:data/conferencia-viatura/:vtrPrefixo',

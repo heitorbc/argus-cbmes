@@ -1,0 +1,728 @@
+import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import type {
+  ParteDiaria,
+  ParteDiariaFaxina,
+  ParteDiariaLinhaHorario,
+  ParteDiariaMilitarRef,
+  ParteDiariaOcorrencia,
+  UpsertParteDiariaInput,
+} from '@argus/shared-types';
+import { useAuth } from '@/lib/auth-context';
+import { api, ApiError } from '@/lib/api';
+
+/**
+ * S10 — Parte Diária.
+ *
+ * Carrega o documento composto pela API (rascunho ⊕ override), permite
+ * edição inline em todas as seções editáveis e oferece "Imprimir/Salvar PDF"
+ * usando o diálogo nativo do navegador. O export server-side (Puppeteer +
+ * DOCX) fica para S11.
+ */
+export function ParteDiariaPage() {
+  const { user } = useAuth();
+  const podeEditar = user?.papeis.some((p) => p === 'admin' || p === 'fiscal');
+
+  const today = new Date().toISOString().slice(0, 10);
+  const [data, setData] = useState(today);
+  const [pd, setPd] = useState<ParteDiaria | null>(null);
+  const [draft, setDraft] = useState<UpsertParteDiariaInput>({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+
+  const carregar = useCallback(async (d: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await api.parteDiariaGet(d);
+      setPd(r);
+      setDraft({});
+      setSavedAt(r.ultimaEdicaoEm);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Erro ao carregar PD');
+      setPd(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void carregar(data);
+  }, [data, carregar]);
+
+  const salvar = async () => {
+    if (!pd) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await api.parteDiariaUpsert(data, draft);
+      setPd(r);
+      setDraft({});
+      setSavedAt(r.ultimaEdicaoEm);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Erro ao salvar PD');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateDraft = <K extends keyof UpsertParteDiariaInput>(
+    key: K,
+    value: UpsertParteDiariaInput[K],
+  ) => {
+    setDraft((d) => ({ ...d, [key]: value }));
+  };
+
+  // helpers para campos texto (mostra draft se houver, senão usa pd[campo])
+  const getText = (key: keyof ParteDiaria & keyof UpsertParteDiariaInput): string => {
+    if (key in draft && typeof draft[key] === 'string') return draft[key] as string;
+    const v = pd?.[key];
+    return typeof v === 'string' ? v : '';
+  };
+
+  return (
+    <main className="min-h-screen bg-slate-50 print:bg-white">
+      {/* Toolbar — escondida na impressão */}
+      <header className="sticky top-0 z-10 border-b bg-white px-4 py-3 shadow-sm print:hidden">
+        <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-3">
+          <Link to="/" className="text-sm text-cbmes-blue hover:underline">
+            ← Home
+          </Link>
+          <h1 className="text-lg font-semibold text-cbmes-blue">Parte Diária</h1>
+          <input
+            type="date"
+            value={data}
+            onChange={(e) => setData(e.target.value)}
+            className="rounded border border-slate-300 px-2 py-1 text-sm"
+          />
+          <span className="text-xs text-slate-500">
+            {savedAt ? `Última edição: ${new Date(savedAt).toLocaleString('pt-BR')}` : 'Rascunho'}
+          </span>
+          <div className="ml-auto flex gap-2">
+            {podeEditar && (
+              <button
+                type="button"
+                onClick={salvar}
+                disabled={loading || Object.keys(draft).length === 0}
+                className="rounded bg-cbmes-blue px-3 py-1 text-sm text-white disabled:opacity-50"
+              >
+                {loading ? 'Salvando…' : 'Salvar'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => window.print()}
+              disabled={!pd}
+              className="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 disabled:opacity-50"
+            >
+              Imprimir / Salvar PDF
+            </button>
+          </div>
+        </div>
+        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      </header>
+
+      {!pd ? (
+        <p className="p-8 text-center text-sm text-slate-500">
+          {loading ? 'Carregando…' : error ? '' : 'Selecione uma data.'}
+        </p>
+      ) : (
+        <article className="mx-auto max-w-4xl bg-white p-8 print:max-w-none print:p-0 print:shadow-none">
+          <Cabecalho pd={pd} />
+
+          <Secao titulo="ASSUNÇÃO DE SERVIÇO">
+            <Texto
+              valor={getText('textoAssuncao')}
+              editavel={podeEditar}
+              onChange={(v) => updateDraft('textoAssuncao', v)}
+            />
+          </Secao>
+
+          <Secao titulo="ESCALAS DE SERVIÇO OPERACIONAL">
+            <EscalasOperacionaisTabela
+              entries={pd.escalasOperacionais}
+              kmOverrides={draft.kmInicialPorRecurso ?? {}}
+              editavel={podeEditar}
+              onKmChange={(recurso, km) =>
+                updateDraft('kmInicialPorRecurso', {
+                  ...(draft.kmInicialPorRecurso ?? {}),
+                  [recurso]: km,
+                })
+              }
+            />
+          </Secao>
+
+          <Secao titulo="TROCAS DE SERVIÇO">
+            <Texto
+              valor={getText('textoTrocas')}
+              editavel={podeEditar}
+              onChange={(v) => updateDraft('textoTrocas', v)}
+            />
+          </Secao>
+
+          <Secao titulo="ESCALAS — ESPECIAL | EXTRAORDINÁRIA | ISEO">
+            <SubSecao titulo="ESPECIAL">
+              <Texto
+                valor={getText('textoEscalaEspecial')}
+                editavel={podeEditar}
+                onChange={(v) => updateDraft('textoEscalaEspecial', v)}
+              />
+            </SubSecao>
+            <SubSecao titulo="EXTRAORDINÁRIA">
+              <Texto
+                valor={getText('textoEscalaExtraordinaria')}
+                editavel={podeEditar}
+                onChange={(v) => updateDraft('textoEscalaExtraordinaria', v)}
+              />
+            </SubSecao>
+            <SubSecao titulo="ISEO">
+              <Texto
+                valor={getText('textoIseo')}
+                editavel={podeEditar}
+                onChange={(v) => updateDraft('textoIseo', v)}
+              />
+            </SubSecao>
+          </Secao>
+
+          <Secao titulo="ESCALA DE GUARDA">
+            <TabelaHorario
+              linhas={draft.escalaGuarda ?? pd.escalaGuarda}
+              editavel={podeEditar}
+              onChange={(v) => updateDraft('escalaGuarda', v)}
+              colunas={['Horário', 'Militar', 'Setor ou Área Responsável']}
+            />
+          </Secao>
+
+          <Secao titulo="ESCALA DE FAXINA">
+            <TabelaFaxina
+              linhas={draft.escalaFaxina ?? pd.escalaFaxina}
+              editavel={podeEditar}
+              onChange={(v) => updateDraft('escalaFaxina', v)}
+            />
+          </Secao>
+
+          <Secao titulo="RONDA NOTURNA">
+            <TabelaHorario
+              linhas={draft.rondaNoturna ?? pd.rondaNoturna}
+              editavel={podeEditar}
+              onChange={(v) => updateDraft('rondaNoturna', v)}
+              colunas={['Horário', 'Militar', 'Área']}
+            />
+          </Secao>
+
+          <Secao titulo="PASSAGEM DE SERVIÇO (MANHÃ)">
+            <TabelaHorario
+              linhas={draft.passagemServicoManha ?? pd.passagemServicoManha}
+              editavel={podeEditar}
+              onChange={(v) => updateDraft('passagemServicoManha', v)}
+              colunas={['Horário', 'Militar', 'Área']}
+            />
+          </Secao>
+
+          <Secao titulo="ATIVIDADE DE INSTRUÇÃO">
+            <Texto
+              valor={getText('textoInstrucao')}
+              editavel={podeEditar}
+              onChange={(v) => updateDraft('textoInstrucao', v)}
+            />
+          </Secao>
+
+          <Secao titulo="INSPEÇÃO DIÁRIA DE EQUIPAMENTOS OPERACIONAIS (IDEO)">
+            <Texto valor={pd.textoIdeoFiscal} editavel={false} onChange={() => {}} />
+            <p className="mt-1 text-xs italic text-slate-500 print:hidden">
+              Texto gerado automaticamente pelo módulo IDEO (S6i). Edite na tela
+              /servico/:data/ideo.
+            </p>
+          </Secao>
+
+          <Secao titulo="CUMPRIMENTO DE OS / NS / NI / PALESTRA / ORDEM VERBAL">
+            <Texto
+              valor={getText('textoCumprimentoNs')}
+              editavel={podeEditar}
+              onChange={(v) => updateDraft('textoCumprimentoNs', v)}
+            />
+          </Secao>
+
+          <Secao titulo="ALTERAÇÃO DE ALMOXARIFADO">
+            <Texto
+              valor={getText('textoAlteracaoAlmoxarifado')}
+              editavel={podeEditar}
+              onChange={(v) => updateDraft('textoAlteracaoAlmoxarifado', v)}
+            />
+          </Secao>
+
+          <Secao titulo="ALTERAÇÃO DE VIATURAS">
+            <Texto
+              valor={getText('textoAlteracaoViaturas')}
+              editavel={podeEditar}
+              onChange={(v) => updateDraft('textoAlteracaoViaturas', v)}
+            />
+          </Secao>
+
+          <Secao titulo="ALTERAÇÕES DIVERSAS">
+            <Texto
+              valor={getText('textoAlteracoesDiversas')}
+              editavel={podeEditar}
+              onChange={(v) => updateDraft('textoAlteracoesDiversas', v)}
+            />
+          </Secao>
+
+          <Secao titulo="OCORRÊNCIAS CONFECCIONADAS">
+            <TabelaOcorrencias
+              linhas={draft.ocorrenciasConfeccionadas ?? pd.ocorrenciasConfeccionadas}
+              editavel={podeEditar}
+              onChange={(v) => updateDraft('ocorrenciasConfeccionadas', v)}
+            />
+          </Secao>
+
+          <Secao titulo="PASSAGEM DE SERVIÇO">
+            <Texto
+              valor={getText('textoPassagemServico')}
+              editavel={podeEditar}
+              onChange={(v) => updateDraft('textoPassagemServico', v)}
+            />
+            <FiscaisRodape pd={pd} />
+          </Secao>
+        </article>
+      )}
+    </main>
+  );
+}
+
+function Cabecalho({ pd }: { pd: ParteDiaria }) {
+  return (
+    <header className="mb-6 text-center">
+      <p className="text-xs uppercase tracking-wide text-slate-700">
+        Estado do Espírito Santo · Corpo de Bombeiros Militar
+      </p>
+      <p className="text-xs uppercase tracking-wide text-slate-700">
+        Primeira Companhia · 1ª Cia/1º BBM
+      </p>
+      <h2 className="mt-3 text-base font-bold uppercase">
+        Parte Diária da Equipe {pd.equipeNome ?? '?'}
+        {pd.equipe ? ` - ${pd.equipe}` : ''}, do dia {formatBr(pd.data)} para o dia{' '}
+        {formatBr(pd.proximoDia)}
+      </h2>
+    </header>
+  );
+}
+
+function Secao({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+  return (
+    <section className="mb-5">
+      <h3 className="border-b-2 border-slate-700 pb-1 text-sm font-bold uppercase tracking-wide text-slate-800">
+        {titulo}
+      </h3>
+      <div className="mt-2 text-sm text-slate-800">{children}</div>
+    </section>
+  );
+}
+
+function SubSecao({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">{titulo}:</p>
+      <div className="mt-1">{children}</div>
+    </div>
+  );
+}
+
+function Texto({
+  valor,
+  editavel,
+  onChange,
+}: {
+  valor: string;
+  editavel: boolean | undefined;
+  onChange: (v: string) => void;
+}) {
+  if (!editavel) {
+    return <p className="whitespace-pre-wrap text-sm leading-relaxed">{valor}</p>;
+  }
+  return (
+    <textarea
+      value={valor}
+      onChange={(e) => onChange(e.target.value)}
+      rows={Math.max(2, valor.split('\n').length)}
+      className="w-full resize-y rounded border border-slate-200 bg-slate-50 p-2 text-sm leading-relaxed print:border-none print:bg-white print:p-0"
+    />
+  );
+}
+
+function EscalasOperacionaisTabela({
+  entries,
+  kmOverrides,
+  editavel,
+  onKmChange,
+}: {
+  entries: ParteDiaria['escalasOperacionais'];
+  kmOverrides: Record<string, number | null>;
+  editavel: boolean | undefined;
+  onKmChange: (recurso: string, km: number | null) => void;
+}) {
+  if (entries.length === 0) {
+    return <p className="text-sm italic text-slate-500">Nenhum recurso operacional no dia.</p>;
+  }
+  return (
+    <table className="w-full border-collapse text-xs">
+      <thead className="bg-slate-100 print:bg-white">
+        <tr>
+          <th className="border border-slate-400 px-2 py-1 text-left">Viatura</th>
+          <th className="border border-slate-400 px-2 py-1 text-left">KM Inicial</th>
+          <th className="border border-slate-400 px-2 py-1 text-left">Função</th>
+          <th className="border border-slate-400 px-2 py-1 text-left">Militar</th>
+          <th className="border border-slate-400 px-2 py-1 text-left">Observação</th>
+        </tr>
+      </thead>
+      <tbody>
+        {entries.map((e) => {
+          const km = e.recurso in kmOverrides ? kmOverrides[e.recurso] : e.kmInicial;
+          const baixada = e.vtrStatus === 'BAIXADA';
+          const linhasVtr = Math.max(1, e.militares.length);
+          return e.militares.length === 0 ? (
+            <tr key={e.recurso}>
+              <td className="border border-slate-400 px-2 py-1 align-top font-medium">
+                {e.recurso}
+              </td>
+              <td className="border border-slate-400 px-2 py-1 align-top">
+                {editavel ? (
+                  <input
+                    type="number"
+                    value={km ?? ''}
+                    onChange={(ev) =>
+                      onKmChange(e.recurso, ev.target.value ? Number(ev.target.value) : null)
+                    }
+                    className="w-20 rounded border border-slate-300 px-1 text-xs"
+                  />
+                ) : (
+                  (km ?? '-')
+                )}
+              </td>
+              <td className="border border-slate-400 px-2 py-1 align-top text-slate-500">-</td>
+              <td className="border border-slate-400 px-2 py-1 align-top text-slate-500">-</td>
+              <td className="border border-slate-400 px-2 py-1 align-top">
+                {baixada ? 'VTR BAIXADA' : '-'}
+              </td>
+            </tr>
+          ) : (
+            e.militares.map((m, idx) => (
+              <tr key={`${e.recurso}-${idx}`}>
+                {idx === 0 && (
+                  <>
+                    <td
+                      rowSpan={linhasVtr}
+                      className="border border-slate-400 px-2 py-1 align-top font-medium"
+                    >
+                      {e.recurso}
+                    </td>
+                    <td rowSpan={linhasVtr} className="border border-slate-400 px-2 py-1 align-top">
+                      {editavel ? (
+                        <input
+                          type="number"
+                          value={km ?? ''}
+                          onChange={(ev) =>
+                            onKmChange(e.recurso, ev.target.value ? Number(ev.target.value) : null)
+                          }
+                          className="w-20 rounded border border-slate-300 px-1 text-xs"
+                        />
+                      ) : (
+                        (km ?? '-')
+                      )}
+                    </td>
+                  </>
+                )}
+                <td className="border border-slate-400 px-2 py-1">{m.funcao}</td>
+                <td className="border border-slate-400 px-2 py-1">{m.militarRaw}</td>
+                <td className="border border-slate-400 px-2 py-1">{m.observacao || '-'}</td>
+              </tr>
+            ))
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function TabelaHorario({
+  linhas,
+  editavel,
+  onChange,
+  colunas,
+}: {
+  linhas: readonly ParteDiariaLinhaHorario[];
+  editavel: boolean | undefined;
+  onChange: (linhas: ParteDiariaLinhaHorario[]) => void;
+  colunas: [string, string, string];
+}) {
+  if (linhas.length === 0 && !editavel) {
+    return <p className="text-sm italic text-slate-500">Não houve.</p>;
+  }
+  return (
+    <div>
+      <table className="w-full border-collapse text-xs">
+        <thead className="bg-slate-100 print:bg-white">
+          <tr>
+            {colunas.map((c) => (
+              <th key={c} className="border border-slate-400 px-2 py-1 text-left">
+                {c}
+              </th>
+            ))}
+            {editavel && <th className="border-0 print:hidden"></th>}
+          </tr>
+        </thead>
+        <tbody>
+          {linhas.map((l, i) => (
+            <tr key={i}>
+              <td className="border border-slate-400 px-2 py-1">
+                {editavel ? (
+                  <input
+                    value={l.horario}
+                    onChange={(e) => {
+                      const next = [...linhas];
+                      next[i] = { ...l, horario: e.target.value };
+                      onChange(next);
+                    }}
+                    className="w-full rounded border border-slate-200 px-1 text-xs"
+                  />
+                ) : (
+                  l.horario
+                )}
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                {editavel ? (
+                  <input
+                    value={l.militar}
+                    onChange={(e) => {
+                      const next = [...linhas];
+                      next[i] = { ...l, militar: e.target.value };
+                      onChange(next);
+                    }}
+                    className="w-full rounded border border-slate-200 px-1 text-xs"
+                  />
+                ) : (
+                  l.militar
+                )}
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                {editavel ? (
+                  <input
+                    value={l.setorOuArea}
+                    onChange={(e) => {
+                      const next = [...linhas];
+                      next[i] = { ...l, setorOuArea: e.target.value };
+                      onChange(next);
+                    }}
+                    className="w-full rounded border border-slate-200 px-1 text-xs"
+                  />
+                ) : (
+                  l.setorOuArea
+                )}
+              </td>
+              {editavel && (
+                <td className="px-2 print:hidden">
+                  <button
+                    type="button"
+                    onClick={() => onChange(linhas.filter((_, j) => j !== i))}
+                    className="text-xs text-red-600 hover:underline"
+                  >
+                    ×
+                  </button>
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {editavel && (
+        <button
+          type="button"
+          onClick={() => onChange([...linhas, { horario: '', militar: '', setorOuArea: '' }])}
+          className="mt-1 text-xs text-cbmes-blue hover:underline print:hidden"
+        >
+          + linha
+        </button>
+      )}
+    </div>
+  );
+}
+
+function TabelaFaxina({
+  linhas,
+  editavel,
+  onChange,
+}: {
+  linhas: readonly ParteDiariaFaxina[];
+  editavel: boolean | undefined;
+  onChange: (linhas: ParteDiariaFaxina[]) => void;
+}) {
+  if (linhas.length === 0 && !editavel) {
+    return <p className="text-sm italic text-slate-500">Não houve.</p>;
+  }
+  return (
+    <div>
+      <table className="w-full border-collapse text-xs">
+        <thead className="bg-slate-100 print:bg-white">
+          <tr>
+            <th className="border border-slate-400 px-2 py-1 text-left">Militar</th>
+            <th className="border border-slate-400 px-2 py-1 text-left">Local</th>
+            {editavel && <th className="border-0 print:hidden"></th>}
+          </tr>
+        </thead>
+        <tbody>
+          {linhas.map((l, i) => (
+            <tr key={i}>
+              <td className="border border-slate-400 px-2 py-1">
+                {editavel ? (
+                  <input
+                    value={l.militar}
+                    onChange={(e) => {
+                      const next = [...linhas];
+                      next[i] = { ...l, militar: e.target.value };
+                      onChange(next);
+                    }}
+                    className="w-full rounded border border-slate-200 px-1 text-xs"
+                  />
+                ) : (
+                  l.militar
+                )}
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                {editavel ? (
+                  <input
+                    value={l.local}
+                    onChange={(e) => {
+                      const next = [...linhas];
+                      next[i] = { ...l, local: e.target.value };
+                      onChange(next);
+                    }}
+                    className="w-full rounded border border-slate-200 px-1 text-xs"
+                  />
+                ) : (
+                  l.local
+                )}
+              </td>
+              {editavel && (
+                <td className="px-2 print:hidden">
+                  <button
+                    type="button"
+                    onClick={() => onChange(linhas.filter((_, j) => j !== i))}
+                    className="text-xs text-red-600 hover:underline"
+                  >
+                    ×
+                  </button>
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {editavel && (
+        <button
+          type="button"
+          onClick={() => onChange([...linhas, { militar: '', local: '' }])}
+          className="mt-1 text-xs text-cbmes-blue hover:underline print:hidden"
+        >
+          + linha
+        </button>
+      )}
+    </div>
+  );
+}
+
+function TabelaOcorrencias({
+  linhas,
+  editavel,
+  onChange,
+}: {
+  linhas: readonly ParteDiariaOcorrencia[];
+  editavel: boolean | undefined;
+  onChange: (linhas: ParteDiariaOcorrencia[]) => void;
+}) {
+  if (linhas.length === 0 && !editavel) {
+    return <p className="text-sm italic text-slate-500">Não houve.</p>;
+  }
+  return (
+    <div>
+      <table className="w-full border-collapse text-xs">
+        <thead className="bg-slate-100 print:bg-white">
+          <tr>
+            <th className="border border-slate-400 px-2 py-1 text-left">VTR</th>
+            <th className="border border-slate-400 px-2 py-1 text-left">Nº BAON</th>
+            <th className="border border-slate-400 px-2 py-1 text-left">Código da Ocorrência</th>
+            {editavel && <th className="border-0 print:hidden"></th>}
+          </tr>
+        </thead>
+        <tbody>
+          {linhas.map((l, i) => (
+            <tr key={i}>
+              {(['vtr', 'numeroBaon', 'codigo'] as const).map((field) => (
+                <td key={field} className="border border-slate-400 px-2 py-1">
+                  {editavel ? (
+                    <input
+                      value={l[field]}
+                      onChange={(e) => {
+                        const next = [...linhas];
+                        next[i] = { ...l, [field]: e.target.value };
+                        onChange(next);
+                      }}
+                      className="w-full rounded border border-slate-200 px-1 text-xs"
+                    />
+                  ) : (
+                    l[field]
+                  )}
+                </td>
+              ))}
+              {editavel && (
+                <td className="px-2 print:hidden">
+                  <button
+                    type="button"
+                    onClick={() => onChange(linhas.filter((_, j) => j !== i))}
+                    className="text-xs text-red-600 hover:underline"
+                  >
+                    ×
+                  </button>
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {editavel && (
+        <button
+          type="button"
+          onClick={() => onChange([...linhas, { vtr: '', numeroBaon: '', codigo: '' }])}
+          className="mt-1 text-xs text-cbmes-blue hover:underline print:hidden"
+        >
+          + ocorrência
+        </button>
+      )}
+    </div>
+  );
+}
+
+function FiscaisRodape({ pd }: { pd: ParteDiaria }) {
+  return (
+    <div className="mt-6 grid grid-cols-2 gap-8 text-center text-xs">
+      <div>
+        <p className="border-t border-slate-400 pt-1 font-medium">Fiscal que passa o serviço</p>
+        <p className="mt-1">{formatRef(pd.fiscalQueAssume)}</p>
+      </div>
+      <div>
+        <p className="border-t border-slate-400 pt-1 font-medium">Fiscal que assume o serviço</p>
+        <p className="mt-1">{formatRef(pd.fiscalSubstituto)}</p>
+      </div>
+    </div>
+  );
+}
+
+function formatRef(m: ParteDiariaMilitarRef | null): string {
+  if (!m) return '_____________________';
+  return `${m.posto} ${m.nome}`.replace(/\s+/g, ' ').trim();
+}
+
+function formatBr(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return iso;
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}

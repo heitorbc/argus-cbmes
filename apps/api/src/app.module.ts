@@ -14,6 +14,7 @@ import { HealthModule } from './modules/health/health.module';
 import { IdeoModule } from './modules/ideo/ideo.module';
 import { MapaForcaModule } from './modules/mapa-forca/mapa-forca.module';
 import { NotasServicoModule } from './modules/notas-servico/notas-servico.module';
+import { ParteDiariaModule } from './modules/parte-diaria/parte-diaria.module';
 import { PreviaModule } from './modules/previa/previa.module';
 import { RecursosModule } from './modules/recursos/recursos.module';
 import { ServicoModule } from './modules/servico/servico.module';
@@ -39,6 +40,7 @@ import { ViaturasModule } from './modules/viaturas/viaturas.module';
     IdeoModule,
     MapaForcaModule,
     NotasServicoModule,
+    ParteDiariaModule,
     PreviaModule,
     RecursosModule,
     ServicoModule,

@@ -80,6 +80,7 @@ export function HomePage() {
           destaque
         >
           <CardLink to="/previa" icon="🗺️" label="Prévia do Mapa Força" destaque />
+          <CardLink to="/parte-diaria" icon="📑" label="Parte Diária" />
           <CardLink to="/cadastros/fiscais" icon="⭐" label="Fiscais (override)" />
           <CardLink to="/cadastros/ideo" icon="📋" label="IDEO" />
           <CardInfo
