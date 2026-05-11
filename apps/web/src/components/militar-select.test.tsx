@@ -163,4 +163,32 @@ describe('MilitarSelect', () => {
     await waitFor(() => expect(screen.getByText(/OUTRO/)).toBeInTheDocument());
     expect(screen.queryByText(/BARCELLOS/)).not.toBeInTheDocument();
   });
+
+  it('não entra em loop infinito quando excluirNfs é passado inline (regressão fix/militar-select-loop)', () => {
+    // Cenário do bug original: o consumer renderiza um novo array `[]` (ou
+    // `items.map(...)`) por render → useEffect deps via Object.is vê
+    // referência nova → setResults([]) dispara → re-render → loop.
+    // Antes do fix: console.error("Maximum update depth exceeded") em
+    // segundos. Depois do fix: silêncio.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    function Parent() {
+      // Re-cria o array a cada render (mimic do bug original em consumers como
+      // `<MilitarSelect excluirNfs={form.militares.map(...)} />`).
+      return <MilitarSelect onChange={() => undefined} excluirNfs={[]} />;
+    }
+    const { rerender } = render(<Parent />);
+
+    // Força uma rodada extra de render do parent; com o bug, o loop dispara
+    // imediatamente porque o useEffect re-roda no mount + cada rerender.
+    rerender(<Parent />);
+    rerender(<Parent />);
+
+    const loopWarnings = errorSpy.mock.calls.filter((args) =>
+      String(args[0] ?? '').includes('Maximum update depth'),
+    );
+    expect(loopWarnings).toEqual([]);
+
+    errorSpy.mockRestore();
+  });
 });
