@@ -4,6 +4,7 @@ import type {
   ChangePasswordInput,
   ComposicaoEntry,
   ConferenciaEquipeEntry,
+  ConferenciaMateriaisDoDia,
   ConferenciaViaturaEntry,
   Atestado,
   CreateAtestadoInput,
@@ -11,6 +12,7 @@ import type {
   CreateFiscalInput,
   CreateNotaServicoInput,
   CreateRecursoInput,
+  RegistrarConferenciaMateriaisInput,
   CreateUnidadeInput,
   CreateViaturaInput,
   Dispensa,
@@ -535,6 +537,23 @@ export const api = {
   parteDiariaUpsert: (data: string, input: UpsertParteDiariaInput) =>
     request<ParteDiaria>(`/parte-diaria/${data}`, {
       method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+
+  // Conferência de Materiais (S8)
+  materiaisChecklistPadrao: (vtrPrefixo: string) =>
+    request<string[]>(`/materiais/checklist-padrao/${encodeURIComponent(vtrPrefixo)}`),
+
+  materiaisGet: (data: string, vtrPrefixo: string) => {
+    const params = new URLSearchParams({ data, vtr: vtrPrefixo });
+    return request<ConferenciaMateriaisDoDia | ConferenciaMateriaisDoDia[]>(
+      `/materiais?${params.toString()}`,
+    );
+  },
+
+  materiaisRegistrar: (input: RegistrarConferenciaMateriaisInput) =>
+    request<ConferenciaMateriaisDoDia>('/materiais', {
+      method: 'POST',
       body: JSON.stringify(input),
     }),
 

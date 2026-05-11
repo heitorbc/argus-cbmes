@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
+  STATUS_ITEM_MATERIAL,
+  STATUS_ITEM_MATERIAL_LABEL,
   STATUS_VIATURA,
   STATUS_VIATURA_LABEL,
+  type ItemConferenciaMaterial,
+  type StatusItemMaterial,
   type StatusViatura,
   type Viatura,
 } from '@argus/shared-types';
@@ -24,6 +28,11 @@ export function ConferenciaViaturaPage() {
   const [mudarStatus, setMudarStatus] = useState(false);
   const [statusMudanca, setStatusMudanca] = useState<StatusViatura>('DISPONIVEL');
   const [motivoBaixa, setMotivoBaixa] = useState<string>('');
+
+  // S8 — Conferência de Materiais (seção adicional)
+  const [itensMateriais, setItensMateriais] = useState<ItemConferenciaMaterial[]>([]);
+  const [savingMateriais, setSavingMateriais] = useState(false);
+  const [materiaisOk, setMateriaisOk] = useState(false);
 
   useEffect(() => {
     if (!vtrPrefixo) return;
@@ -53,6 +62,51 @@ export function ConferenciaViaturaPage() {
       cancelled = true;
     };
   }, [vtrPrefixo]);
+
+  // S8 — Carrega checklist padrão + conferência existente da data/viatura
+  useEffect(() => {
+    if (!vtrPrefixo || !data) return;
+    const decoded = decodeURIComponent(vtrPrefixo);
+    let cancelled = false;
+    Promise.all([
+      api.materiaisChecklistPadrao(decoded).catch(() => [] as string[]),
+      api.materiaisGet(data, decoded).catch(() => null),
+    ]).then(([padrao, existing]) => {
+      if (cancelled) return;
+      const existingConf = existing && !Array.isArray(existing) ? existing : null;
+      if (existingConf) {
+        setItensMateriais(existingConf.itens.map((i) => ({ ...i })));
+      } else {
+        setItensMateriais(padrao.map((label) => ({ label, status: 'OK' })));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [vtrPrefixo, data]);
+
+  const handleSalvarMateriais = async () => {
+    if (!data || !vtrPrefixo || itensMateriais.length === 0) return;
+    setSavingMateriais(true);
+    setError(null);
+    try {
+      await api.materiaisRegistrar({
+        data,
+        vtrPrefixo: decodeURIComponent(vtrPrefixo),
+        itens: itensMateriais,
+      });
+      setMateriaisOk(true);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Erro ao salvar conferência de materiais');
+    } finally {
+      setSavingMateriais(false);
+    }
+  };
+
+  const updateItemMaterial = (i: number, patch: Partial<ItemConferenciaMaterial>) => {
+    setItensMateriais((arr) => arr.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
+    setMateriaisOk(false);
+  };
 
   const handleSalvar = async () => {
     if (!data || !vtrPrefixo) return;
@@ -203,6 +257,66 @@ export function ConferenciaViaturaPage() {
                   ))}
                 </ul>
               </div>
+            )}
+
+            {/* S8 — Conferência de Materiais */}
+            {itensMateriais.length > 0 && (
+              <fieldset className="rounded border border-cbmes-blue/40 bg-white p-3">
+                <legend className="text-sm font-semibold text-cbmes-blue">
+                  Conferência de Materiais
+                </legend>
+                <p className="text-[11px] text-slate-500">
+                  Marque o estado de cada item da carga. Itens ≠ OK alimentam a seção "Alteração de
+                  Almoxarifado" da Parte Diária.
+                </p>
+                <ul className="mt-2 space-y-2">
+                  {itensMateriais.map((item, i) => (
+                    <li
+                      key={i}
+                      className="flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-slate-50 p-2"
+                    >
+                      <span className="flex-1 min-w-[60%] text-sm">{item.label}</span>
+                      <select
+                        value={item.status}
+                        onChange={(e) =>
+                          updateItemMaterial(i, { status: e.target.value as StatusItemMaterial })
+                        }
+                        className="rounded border border-slate-300 px-2 py-1 text-xs"
+                      >
+                        {STATUS_ITEM_MATERIAL.map((s) => (
+                          <option key={s} value={s}>
+                            {STATUS_ITEM_MATERIAL_LABEL[s]}
+                          </option>
+                        ))}
+                      </select>
+                      {item.status !== 'OK' && (
+                        <input
+                          type="text"
+                          value={item.observacao ?? ''}
+                          onChange={(e) =>
+                            updateItemMaterial(i, { observacao: e.target.value || undefined })
+                          }
+                          placeholder="Observação"
+                          className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                        />
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSalvarMateriais}
+                    disabled={savingMateriais}
+                    className="rounded border border-cbmes-blue px-3 py-1 text-xs font-medium text-cbmes-blue hover:bg-cbmes-blue/10 disabled:opacity-50"
+                  >
+                    {savingMateriais ? 'Salvando…' : 'Salvar materiais'}
+                  </button>
+                  {materiaisOk && (
+                    <span className="text-xs text-emerald-700">✓ Materiais conferidos.</span>
+                  )}
+                </div>
+              </fieldset>
             )}
 
             <div className="flex gap-2 pt-2">

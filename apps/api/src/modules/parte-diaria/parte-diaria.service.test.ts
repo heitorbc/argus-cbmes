@@ -110,13 +110,31 @@ class FakePreviaService {
   }
 }
 
+class FakeMateriaisService {
+  pendencias: Array<{ vtrPrefixo: string; label: string; status: string; observacao?: string }> =
+    [];
+  listarPendenciasDoDia(): Array<{
+    vtrPrefixo: string;
+    label: string;
+    status: string;
+    observacao?: string;
+  }> {
+    return this.pendencias;
+  }
+}
+
 describe('ParteDiariaService (S10)', () => {
   let prevSvc: FakePreviaService;
+  let matSvc: FakeMateriaisService;
   let svc: ParteDiariaService;
 
   beforeEach(() => {
     prevSvc = new FakePreviaService();
-    svc = new ParteDiariaService(prevSvc as unknown as PreviaService);
+    matSvc = new FakeMateriaisService();
+    svc = new ParteDiariaService(
+      prevSvc as unknown as PreviaService,
+      matSvc as unknown as never,
+    );
   });
 
   it('rascunho deriva equipe + Fiscal que assume + dia seguinte', async () => {
@@ -234,6 +252,27 @@ describe('ParteDiariaService (S10)', () => {
     expect(pd.textoAssuncao).toMatch(/em substituição ao 2ºSGT JÚLIO CESAR NOYA LOPES/);
     expect(pd.ultimoEditorNf).toBe('2984946');
     expect(pd.ultimaEdicaoEm).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('textoAlteracaoAlmoxarifado é derivado das pendências de Materiais (S8)', async () => {
+    matSvc.pendencias = [
+      {
+        vtrPrefixo: 'ABTS 011',
+        label: 'Mangueira de 38mm × 2',
+        status: 'AUSENTE',
+        observacao: 'Faltou 1 unidade',
+      },
+      { vtrPrefixo: 'AR 044', label: 'Maca rígida', status: 'DANIFICADO' },
+    ];
+    const pd = await svc.get('2026-05-04');
+    expect(pd.textoAlteracaoAlmoxarifado).toMatch(/1\. ABTS 011.*Mangueira.*Faltando.*Faltou 1/);
+    expect(pd.textoAlteracaoAlmoxarifado).toMatch(/2\. AR 044.*Maca rígida.*Danificado/);
+  });
+
+  it('textoAlteracaoAlmoxarifado fica "Não houve." sem pendências de Materiais', async () => {
+    matSvc.pendencias = [];
+    const pd = await svc.get('2026-05-04');
+    expect(pd.textoAlteracaoAlmoxarifado).toBe('Não houve.');
   });
 
   it('reset() limpa overrides — get volta ao rascunho original', async () => {

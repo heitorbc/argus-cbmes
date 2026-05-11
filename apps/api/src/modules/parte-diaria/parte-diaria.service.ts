@@ -17,6 +17,7 @@ import {
   type TrocaEscalaEspecial,
   type AlteracaoDiversa,
 } from '@argus/shared-types';
+import { MateriaisService } from '../materiais/materiais.service';
 import { PreviaService } from '../previa/previa.service';
 
 /**
@@ -39,7 +40,10 @@ export class ParteDiariaService {
   private readonly metaByData: Map<string, { ultimaEdicaoEm: string; ultimoEditorNf: string }> =
     new Map();
 
-  constructor(private readonly previa: PreviaService) {}
+  constructor(
+    private readonly previa: PreviaService,
+    private readonly materiais: MateriaisService,
+  ) {}
 
   async get(dataIso: string): Promise<ParteDiaria> {
     const rascunho = await this.gerarRascunho(dataIso);
@@ -108,7 +112,9 @@ export class ParteDiariaService {
       textoIdeoFiscal:
         previa.textoAtestadoIdeoFiscal ?? 'Pendente: Fiscal ainda não atestou a IDEO do dia (S6i).',
       textoCumprimentoNs: gerarTextoCumprimentoNs(previa.notasServico),
-      textoAlteracaoAlmoxarifado: 'Não houve.',
+      textoAlteracaoAlmoxarifado: gerarTextoAlteracaoAlmoxarifado(
+        this.materiais.listarPendenciasDoDia(dataIso),
+      ),
       textoAlteracaoViaturas: 'Não houve.',
       textoAlteracoesDiversas: gerarTextoAlteracoesDiversas(
         previa.alteracoesDiversas,
@@ -291,6 +297,19 @@ function formatarAlteracaoDiversa(alt: AlteracaoDiversa): string {
   const para = alt.statusViaturaNovo ? ` para ${alt.statusViaturaNovo}` : '';
   const motivo = alt.motivo ? ` (${alt.motivo})` : '';
   return `Mudança da VTR${vtr}${de}${para}${motivo}.`;
+}
+
+function gerarTextoAlteracaoAlmoxarifado(
+  pendencias: ReadonlyArray<{ vtrPrefixo: string; label: string; status: string; observacao?: string }>,
+): string {
+  if (pendencias.length === 0) return 'Não houve.';
+  return pendencias
+    .map((p, i) => {
+      const obs = p.observacao ? ` — ${p.observacao}` : '';
+      const statusLabel = p.status === 'AUSENTE' ? 'Faltando' : 'Danificado';
+      return `${i + 1}. ${p.vtrPrefixo}: ${p.label} (${statusLabel}${obs}).`;
+    })
+    .join('\n');
 }
 
 function gerarTextoPassagemPadrao(): string {
