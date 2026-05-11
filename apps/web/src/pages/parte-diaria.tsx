@@ -30,6 +30,7 @@ export function ParteDiariaPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [downloadingDocx, setDownloadingDocx] = useState(false);
 
   const carregar = useCallback(async (d: string) => {
     setLoading(true);
@@ -64,6 +65,19 @@ export function ParteDiariaPage() {
       setError(e instanceof ApiError ? e.message : 'Erro ao salvar PD');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const baixarDocx = async () => {
+    if (!pd) return;
+    setDownloadingDocx(true);
+    setError(null);
+    try {
+      await api.parteDiariaDownloadDocx(data);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Erro ao baixar DOCX');
+    } finally {
+      setDownloadingDocx(false);
     }
   };
 
@@ -110,6 +124,14 @@ export function ParteDiariaPage() {
                 {loading ? 'Salvando…' : 'Salvar'}
               </button>
             )}
+            <button
+              type="button"
+              onClick={baixarDocx}
+              disabled={loading || !pd || downloadingDocx}
+              className="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100 disabled:opacity-50"
+            >
+              {downloadingDocx ? 'Baixando…' : 'Baixar DOCX'}
+            </button>
             <button
               type="button"
               onClick={() => window.print()}

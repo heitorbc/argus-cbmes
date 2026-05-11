@@ -528,6 +528,38 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(input),
     }),
+
+  /**
+   * S11 — Baixa o `.docx` da Parte Diária. Faz fetch direto (não passa pelo
+   * helper `request` JSON) porque a resposta é binary. Trigga o download
+   * via anchor `<a download>` + `URL.createObjectURL`.
+   */
+  parteDiariaDownloadDocx: async (data: string): Promise<void> => {
+    const res = await fetch(`${API_URL}/parte-diaria/${data}/docx`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      let message = `Erro ${res.status}`;
+      try {
+        const json: unknown = JSON.parse(text);
+        message = extractMessage(json) ?? message;
+      } catch {
+        // body não é JSON — usa fallback
+      }
+      throw new ApiError(res.status, message);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `parte-diaria-${data}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
 };
 
 /** Shape devolvido por POST /notas-servico/preview-pdf (S6m). */
