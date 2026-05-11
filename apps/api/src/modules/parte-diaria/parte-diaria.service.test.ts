@@ -275,6 +275,26 @@ describe('ParteDiariaService (S10)', () => {
     expect(pd.textoAlteracaoAlmoxarifado).toBe('Não houve.');
   });
 
+  it('finalizar() seta lock; salvar() depois lança ConflictException', async () => {
+    const finalizada = await svc.finalizar('2026-05-04', '2984946');
+    expect(finalizada.finalizadoEm).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(finalizada.finalizadoPorNf).toBe('2984946');
+
+    await expect(
+      svc.salvar('2026-05-04', { textoInstrucao: 'X' }, '2984946'),
+    ).rejects.toThrow(/finalizada/);
+  });
+
+  it('reabrir() limpa o lock; edições voltam a funcionar', async () => {
+    await svc.finalizar('2026-05-04', '2984946');
+    const reaberta = await svc.reabrir('2026-05-04');
+    expect(reaberta.finalizadoEm).toBeNull();
+    expect(reaberta.finalizadoPorNf).toBeNull();
+
+    const pd = await svc.salvar('2026-05-04', { textoInstrucao: 'Pós-reabertura' }, '2984946');
+    expect(pd.textoInstrucao).toBe('Pós-reabertura');
+  });
+
   it('reset() limpa overrides — get volta ao rascunho original', async () => {
     await svc.salvar('2026-05-04', { textoInstrucao: 'X' }, '2984946');
     expect((await svc.get('2026-05-04')).textoInstrucao).toBe('X');

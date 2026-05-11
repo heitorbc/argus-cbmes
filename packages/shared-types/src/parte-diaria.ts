@@ -166,6 +166,14 @@ export const parteDiariaSchema = z.object({
   /** ISO timestamp da última edição feita via PUT (null = só rascunho). */
   ultimaEdicaoEm: z.string().nullable().default(null),
   ultimoEditorNf: z.string().nullable().default(null),
+
+  /**
+   * PD lock — quando o Fiscal "finaliza" o documento, registra timestamp +
+   * NF. Edições subsequentes (`PUT /parte-diaria/:data`) ficam bloqueadas
+   * (409 Conflict) até um admin "reabrir". Ambos `null` = não finalizada.
+   */
+  finalizadoEm: z.string().nullable().default(null),
+  finalizadoPorNf: z.string().nullable().default(null),
 });
 export type ParteDiaria = z.infer<typeof parteDiariaSchema>;
 

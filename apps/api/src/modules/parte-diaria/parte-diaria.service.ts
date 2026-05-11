@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import {
   diaSeguinteIso,
   formatDataBr,
@@ -39,6 +39,9 @@ export class ParteDiariaService {
   private readonly overrides: Map<string, ParteDiariaOverride> = new Map();
   private readonly metaByData: Map<string, { ultimaEdicaoEm: string; ultimoEditorNf: string }> =
     new Map();
+  /** PD lock — quando o Fiscal finaliza, edições ficam bloqueadas até `reabrir()`. */
+  private readonly lockByData: Map<string, { finalizadoEm: string; finalizadoPorNf: string }> =
+    new Map();
 
   constructor(
     private readonly previa: PreviaService,
@@ -50,14 +53,14 @@ export class ParteDiariaService {
     const override = this.overrides.get(dataIso);
     const merged = override ? aplicarOverride(rascunho, override) : rascunho;
     const meta = this.metaByData.get(dataIso);
-    if (meta) {
-      return {
-        ...merged,
-        ultimaEdicaoEm: meta.ultimaEdicaoEm,
-        ultimoEditorNf: meta.ultimoEditorNf,
-      };
-    }
-    return merged;
+    const lock = this.lockByData.get(dataIso);
+    return {
+      ...merged,
+      ultimaEdicaoEm: meta?.ultimaEdicaoEm ?? merged.ultimaEdicaoEm,
+      ultimoEditorNf: meta?.ultimoEditorNf ?? merged.ultimoEditorNf,
+      finalizadoEm: lock?.finalizadoEm ?? null,
+      finalizadoPorNf: lock?.finalizadoPorNf ?? null,
+    };
   }
 
   async salvar(
@@ -65,6 +68,11 @@ export class ParteDiariaService {
     override: ParteDiariaOverride,
     editorNf: string,
   ): Promise<ParteDiaria> {
+    if (this.lockByData.has(dataIso)) {
+      throw new ConflictException(
+        `Parte Diária de ${dataIso} está finalizada — reabra antes de editar.`,
+      );
+    }
     this.overrides.set(dataIso, override);
     this.metaByData.set(dataIso, {
       ultimaEdicaoEm: new Date().toISOString(),
@@ -73,10 +81,30 @@ export class ParteDiariaService {
     return this.get(dataIso);
   }
 
-  /** Útil em tests — limpa overrides e meta. */
+  /**
+   * PD lock — finaliza o documento. Edições subsequentes via `salvar()`
+   * lançam 409 até `reabrir()`. Idempotente: chamada extra atualiza o
+   * timestamp e o NF do último finalizador.
+   */
+  async finalizar(dataIso: string, fiscalNf: string): Promise<ParteDiaria> {
+    this.lockByData.set(dataIso, {
+      finalizadoEm: new Date().toISOString(),
+      finalizadoPorNf: fiscalNf,
+    });
+    return this.get(dataIso);
+  }
+
+  /** Remove o lock (admin only — controller decide o RBAC). */
+  async reabrir(dataIso: string): Promise<ParteDiaria> {
+    this.lockByData.delete(dataIso);
+    return this.get(dataIso);
+  }
+
+  /** Útil em tests — limpa overrides, meta e locks. */
   reset(): void {
     this.overrides.clear();
     this.metaByData.clear();
+    this.lockByData.clear();
   }
 
   private async gerarRascunho(dataIso: string): Promise<ParteDiaria> {
@@ -126,6 +154,8 @@ export class ParteDiariaService {
       geradoEm: new Date().toISOString(),
       ultimaEdicaoEm: null,
       ultimoEditorNf: null,
+      finalizadoEm: null,
+      finalizadoPorNf: null,
     };
   }
 }

@@ -540,6 +540,12 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
+  parteDiariaFinalizar: (data: string) =>
+    request<ParteDiaria>(`/parte-diaria/${data}/finalizar`, { method: 'POST' }),
+
+  parteDiariaReabrir: (data: string) =>
+    request<ParteDiaria>(`/parte-diaria/${data}/reabrir`, { method: 'POST' }),
+
   // Conferência de Materiais (S8)
   materiaisChecklistPadrao: (vtrPrefixo: string) =>
     request<string[]>(`/materiais/checklist-padrao/${encodeURIComponent(vtrPrefixo)}`),

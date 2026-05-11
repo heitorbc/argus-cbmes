@@ -7,6 +7,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Post,
   Put,
   Res,
   StreamableFile,
@@ -61,6 +62,33 @@ export class ParteDiariaController {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     }
     return this.svc.salvar(data, parsed.data, user.nf);
+  }
+
+  /**
+   * PD lock — Fiscal (ou admin) finaliza a Parte Diária. Edições subsequentes
+   * via PUT lançam 409 até `reabrir`. Reabrir é exclusivo de admin.
+   */
+  @Roles('admin', 'fiscal')
+  @Post(':data/finalizar')
+  @HttpCode(HttpStatus.OK)
+  async finalizar(
+    @Param('data') data: string,
+    @CurrentUser() user: UserSession,
+  ): Promise<ParteDiaria> {
+    if (!dataIsoRegex.test(data)) {
+      throw new BadRequestException('Data inválida (esperado YYYY-MM-DD).');
+    }
+    return this.svc.finalizar(data, user.nf);
+  }
+
+  @Roles('admin')
+  @Post(':data/reabrir')
+  @HttpCode(HttpStatus.OK)
+  async reabrir(@Param('data') data: string): Promise<ParteDiaria> {
+    if (!dataIsoRegex.test(data)) {
+      throw new BadRequestException('Data inválida (esperado YYYY-MM-DD).');
+    }
+    return this.svc.reabrir(data);
   }
 
   /**
