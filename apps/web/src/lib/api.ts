@@ -122,6 +122,15 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
+  // Persona Picker (homologação, env-gated)
+  listPersonas: () => request<PersonaSummary[]>('/auth/dev/personas'),
+
+  personaLogin: (nf: string) =>
+    request<{ user: UserSession }>('/auth/dev/persona-login', {
+      method: 'POST',
+      body: JSON.stringify({ nf }),
+    }),
+
   // Efetivo (S2)
   efetivoList: (query: Partial<EfetivoQuery>) => {
     const params = new URLSearchParams();
@@ -561,6 +570,14 @@ export const api = {
     URL.revokeObjectURL(url);
   },
 };
+
+/** Shape devolvido por GET /auth/dev/personas (persona picker, env-gated). */
+export interface PersonaSummary {
+  nf: string;
+  nome: string;
+  posto: string;
+  papeis: UserSession['papeis'];
+}
 
 /** Shape devolvido por POST /notas-servico/preview-pdf (S6m). */
 export interface NotaServicoPreviewPdfResponse {

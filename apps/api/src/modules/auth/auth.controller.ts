@@ -5,11 +5,13 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  NotFoundException,
   Post,
   Res,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
+import { z } from 'zod';
 import {
   changePasswordInputSchema,
   loginInputSchema,
@@ -19,6 +21,8 @@ import {
 import { AuthService, JWT_TTL_SECONDS } from './auth.service';
 import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
+
+const personaLoginSchema = z.object({ nf: z.string().min(1) });
 
 const COOKIE_NAME = 'argus_session';
 
@@ -73,6 +77,48 @@ export class AuthController {
     const token = await this.authService.signToken(updated);
     this.setSessionCookie(res, token);
     return { user: updated };
+  }
+
+  /**
+   * Persona Picker — bypass de homologação.
+   *
+   * Endpoints `/auth/dev/*` só existem se `ARGUS_PERSONA_PICKER=true`. Caso
+   * contrário lançam `404 Not Found` (esconde a existência da rota). Não
+   * usar em produção.
+   */
+  @Public()
+  @Get('dev/personas')
+  listPersonas(): Array<{
+    nf: string;
+    nome: string;
+    posto: string;
+    papeis: UserSession['papeis'];
+  }> {
+    this.assertPersonaPickerEnabled();
+    return this.authService.listPersonas();
+  }
+
+  @Public()
+  @Post('dev/persona-login')
+  @HttpCode(HttpStatus.OK)
+  async personaLogin(
+    @Body() body: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<LoginResponse> {
+    this.assertPersonaPickerEnabled();
+    const parsed = personaLoginSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.errors.map((e) => e.message));
+    }
+    const { user, token } = await this.authService.loginAsPersona(parsed.data.nf);
+    this.setSessionCookie(res, token);
+    return { user };
+  }
+
+  private assertPersonaPickerEnabled(): void {
+    if (this.config.get<string>('ARGUS_PERSONA_PICKER') !== 'true') {
+      throw new NotFoundException();
+    }
   }
 
   private setSessionCookie(res: Response, token: string): void {

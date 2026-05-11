@@ -31,6 +31,8 @@ const FAKE_CPFS = {
   LYRA: '33344455566',
   VICENTE: '44455566677',
   MARTINELLI: '55566677788',
+  BRUNO_MELO: '66677788899',
+  MARIANE: '77788899900',
 } as const;
 
 const COST = 12;
@@ -87,6 +89,31 @@ export const MOCK_USERS: MockUser[] = [
     cpfFake: FAKE_CPFS.MARTINELLI,
     senhaHash: bcrypt.hashSync(FAKE_CPFS.MARTINELLI, COST),
     papeis: ['operador', 'socorrista'],
+    primeiroAcesso: true,
+  },
+  // Personas adicionadas para o persona-picker de homologação (env-gated).
+  // BRUNO MELO já aparece no efetivo CHARLIE (previa.service.test) — usar
+  // como Chefe de Equipe para testar conferência por equipe.
+  {
+    nf: '3022269',
+    nome: 'BRUNO MELO',
+    posto: '3ºSGT',
+    ant: 650,
+    cpfFake: FAKE_CPFS.BRUNO_MELO,
+    senhaHash: bcrypt.hashSync(FAKE_CPFS.BRUNO_MELO, COST),
+    papeis: ['chefe_equipe', 'fiscal'],
+    primeiroAcesso: true,
+  },
+  // MARIANE GUARNIER é a Fiscal do exemplo de PD (2026.05.04). Persona
+  // fiscal-only (sem admin) para validar views isoladas do Fiscal.
+  {
+    nf: '2984946',
+    nome: 'MARIANE GUARNIER BRUMATTI',
+    posto: '2ºSGT',
+    ant: 250,
+    cpfFake: FAKE_CPFS.MARIANE,
+    senhaHash: bcrypt.hashSync(FAKE_CPFS.MARIANE, COST),
+    papeis: ['fiscal'],
     primeiroAcesso: true,
   },
 ];

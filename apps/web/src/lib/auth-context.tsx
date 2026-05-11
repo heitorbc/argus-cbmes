@@ -14,6 +14,8 @@ interface AuthContextValue {
   user: UserSession | null;
   loading: boolean;
   login: (nf: string, senha: string) => Promise<UserSession>;
+  /** Bypass de homologação — só funciona se o backend tiver `ARGUS_PERSONA_PICKER=true`. */
+  loginAsPersona: (nf: string) => Promise<UserSession>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   setUser: (user: UserSession | null) => void;
@@ -51,6 +53,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return result.user;
   }, []);
 
+  const loginAsPersona = useCallback(async (nf: string) => {
+    const result = await api.personaLogin(nf);
+    setUser(result.user);
+    return result.user;
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await api.logout();
@@ -60,8 +68,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ user, loading, login, logout, refresh, setUser }),
-    [user, loading, login, logout, refresh],
+    () => ({ user, loading, login, loginAsPersona, logout, refresh, setUser }),
+    [user, loading, login, loginAsPersona, logout, refresh],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
