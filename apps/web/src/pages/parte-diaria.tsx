@@ -21,7 +21,8 @@ import { api, ApiError } from '@/lib/api';
  */
 export function ParteDiariaPage() {
   const { user } = useAuth();
-  const podeEditar = user?.papeis.some((p) => p === 'admin' || p === 'fiscal');
+  const isAdmin = user?.papeis.includes('admin') ?? false;
+  const isFiscalOuAdmin = user?.papeis.some((p) => p === 'admin' || p === 'fiscal') ?? false;
 
   const today = new Date().toISOString().slice(0, 10);
   const [data, setData] = useState(today);
@@ -31,6 +32,11 @@ export function ParteDiariaPage() {
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
+  const [acaoLockEmAndamento, setAcaoLockEmAndamento] = useState(false);
+
+  const finalizada = pd?.finalizadoEm !== null && pd?.finalizadoEm !== undefined;
+  // PD lock: enquanto finalizada, ninguém edita (mesmo Fiscal). Só admin reabre.
+  const podeEditar = isFiscalOuAdmin && !finalizada;
 
   const carregar = useCallback(async (d: string) => {
     setLoading(true);
@@ -65,6 +71,39 @@ export function ParteDiariaPage() {
       setError(e instanceof ApiError ? e.message : 'Erro ao salvar PD');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const finalizar = async () => {
+    if (!pd) return;
+    if (!window.confirm('Finalizar a Parte Diária deste dia? Edições ficarão bloqueadas até reabertura por um admin.')) {
+      return;
+    }
+    setAcaoLockEmAndamento(true);
+    setError(null);
+    try {
+      const r = await api.parteDiariaFinalizar(data);
+      setPd(r);
+      setDraft({});
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Erro ao finalizar PD');
+    } finally {
+      setAcaoLockEmAndamento(false);
+    }
+  };
+
+  const reabrir = async () => {
+    if (!pd) return;
+    if (!window.confirm('Reabrir a Parte Diária? O Fiscal poderá editar novamente.')) return;
+    setAcaoLockEmAndamento(true);
+    setError(null);
+    try {
+      const r = await api.parteDiariaReabrir(data);
+      setPd(r);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Erro ao reabrir PD');
+    } finally {
+      setAcaoLockEmAndamento(false);
     }
   };
 
@@ -124,6 +163,31 @@ export function ParteDiariaPage() {
                 {loading ? 'Salvando…' : 'Salvar'}
               </button>
             )}
+            {isFiscalOuAdmin && !finalizada && pd && (
+              <button
+                type="button"
+                onClick={finalizar}
+                disabled={acaoLockEmAndamento || Object.keys(draft).length > 0}
+                title={
+                  Object.keys(draft).length > 0
+                    ? 'Salve as edições pendentes antes de finalizar.'
+                    : 'Finalizar a Parte Diária e bloquear edições'
+                }
+                className="rounded bg-cbmes-red px-3 py-1 text-sm text-white disabled:opacity-50"
+              >
+                {acaoLockEmAndamento ? 'Finalizando…' : 'Finalizar PD'}
+              </button>
+            )}
+            {isAdmin && finalizada && (
+              <button
+                type="button"
+                onClick={reabrir}
+                disabled={acaoLockEmAndamento}
+                className="rounded border border-amber-500 bg-amber-50 px-3 py-1 text-sm text-amber-800 disabled:opacity-50"
+              >
+                {acaoLockEmAndamento ? 'Reabrindo…' : 'Reabrir PD'}
+              </button>
+            )}
             <button
               type="button"
               onClick={baixarDocx}
@@ -151,6 +215,18 @@ export function ParteDiariaPage() {
         </p>
       ) : (
         <article className="mx-auto max-w-4xl bg-white p-8 print:max-w-none print:p-0 print:shadow-none">
+          {finalizada && (
+            <div className="mb-6 rounded border-2 border-emerald-500 bg-emerald-50 p-3 text-center print:hidden">
+              <p className="text-sm font-semibold uppercase tracking-wide text-emerald-900">
+                ✓ Parte Diária FINALIZADA
+              </p>
+              <p className="mt-1 text-xs text-emerald-800">
+                Por NF {pd.finalizadoPorNf} em{' '}
+                {pd.finalizadoEm ? new Date(pd.finalizadoEm).toLocaleString('pt-BR') : ''}.
+                Edições bloqueadas até reabertura por admin.
+              </p>
+            </div>
+          )}
           <Cabecalho pd={pd} />
 
           <Secao titulo="ASSUNÇÃO DE SERVIÇO">
