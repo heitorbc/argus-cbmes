@@ -66,13 +66,13 @@
   (via `EscalasEspeciaisService.getAtosDoDia`) e `trocasEscalaEspecial` (via
   ajustes) no payload da Prévia.
 - `apps/api/src/modules/previa/previa.module.ts` — importa `EscalasEspeciaisModule`
-  + `ChefesOperacoesModule`.
+  - `ChefesOperacoesModule`.
 
 **F6 — ChOp:**
 
 - `apps/api/src/modules/chefes-operacoes/chefes-operacoes-csv-parser.ts` — parser
   da aba "ESCALA DE CHEFE DE OPERAÇÕES" (header detection na linha 6, cols
-  POSTO/NOME/TELEFONE/NF, mapeamento de marcadores X/Y/S/* por dia).
+  POSTO/NOME/TELEFONE/NF, mapeamento de marcadores X/Y/S/\* por dia).
 - `apps/api/src/modules/chefes-operacoes/chefes-operacoes-csv-parser.test.ts` — 6 cenários
   com fixture real de maio/2026.
 - `apps/api/src/modules/chefes-operacoes/chefes-operacoes.service.ts` — espelha
@@ -90,7 +90,7 @@
 
 - `apps/web/src/components/militar-select.tsx` — combobox com debounce 300ms,
   navegação por teclado (↑/↓/Enter/Esc), click-outside, chip de selecionado,
-  filtro `excluirNfs` (substituído ≠ substituto), aria-* completo.
+  filtro `excluirNfs` (substituído ≠ substituto), aria-\* completo.
 - `apps/web/src/components/militar-select.test.tsx` — 5 cenários (debounce,
   seleção, disabled, exclusão de NFs, chip de selecionado).
 
@@ -181,7 +181,7 @@ Frontend (http://localhost:5173):
   bug de código. O smoke test e2e adicionado em F1 cobre regressão futura.
 - **Coluna `S` na planilha ChOp** existe mas é separada da "S" sentinela de
   outras planilhas — aqui é apenas marcador de escala (espera-se que seja
-  "Sentinela"/"Service"). Por ora, qualquer marcador X/Y/S/* conta como
+  "Sentinela"/"Service"). Por ora, qualquer marcador X/Y/S/\* conta como
   escalado. Distinção semântica fica para sprint futura se relevante.
 - **api.efetivoList não enviava `somente1aCia`** — bug latente desde S2.
   Corrigido aqui pois o `<MilitarSelect>` precisa do filtro.
@@ -196,9 +196,9 @@ Frontend (http://localhost:5173):
 - **Arquivos novos:** 7 (backend: 5 — controller test, parser, service, module,
   fixture, sprint log; frontend: 2 — MilitarSelect + test; docs: 1 — ADR-010)
 - **Arquivos modificados:** ~10 (efetivo.service.ts + test, ajustes-previa.service.ts
-  + test, previa.service.ts + test, previa.controller.ts, previa.module.ts,
-  app.module.ts, .env.example, packages/shared-types/src/previa.ts, lib/api.ts,
-  pages/previa.tsx, pages/viaturas.tsx, lib/whatsapp.test.ts, ADR-008)
+  - test, previa.service.ts + test, previa.controller.ts, previa.module.ts,
+    app.module.ts, .env.example, packages/shared-types/src/previa.ts, lib/api.ts,
+    pages/previa.tsx, pages/viaturas.tsx, lib/whatsapp.test.ts, ADR-008)
 - **Tests:** 161 (S6a) → 174 (S6a-fix backend) — +13 (6 controller smoke + 4
   novos efetivo + 6 ajustes + 6 chop parser - 9 reescritos efetivo). Frontend
   preservado (10 + 5 novos = 15 quando MilitarSelect.test.tsx for executado).

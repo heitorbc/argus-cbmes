@@ -9,8 +9,7 @@
 > **enriquecimento** de campos demográficos (idade, serviço, município)
 > de militares já presentes em DADOS+1ª1º. NFs novas vêm exclusivamente
 > de DADOS (com LOCAL=1ª1º) ou de 1ª1º. Antes do fix, militares só
-> presentes em EFETIVO geral (ex.: CAP ALAN NF 3269779, TEN ALINE NF
-> 4544935) vazavam para a lista da 1ª Cia. Veja `mergeThreeSources()`
+> presentes em EFETIVO geral (ex.: CAP ALAN NF 3269779, TEN ALINE NF 4544935) vazavam para a lista da 1ª Cia. Veja `mergeThreeSources()`
 > em [efetivo.service.ts](../../apps/api/src/modules/efetivo/efetivo.service.ts).
 
 ## Contexto

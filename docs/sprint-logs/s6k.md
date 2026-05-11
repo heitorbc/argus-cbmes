@@ -29,6 +29,7 @@ em 3 lugares, integração na Prévia (alterações de efetivo).
 ## Registro em 3 lugares
 
 Conforme requisito do Tech Lead, o Atestado pode ser criado em:
+
 1. **Módulo `/cadastros/atestados`** (Sargenteação) — CRUD completo.
 2. **Ajuste pré-turno** da Prévia (`<AtestadosFieldset>`).
 3. **Durante o serviço** — fluxo de Alterações Diversas (S6b/F6) já

@@ -227,6 +227,6 @@ pnpm typecheck && pnpm lint && pnpm build
 - **S5b:** Persistência Prisma+Supabase + deploy Vercel (Servico,
   Conferencias, Alterações migram para tabelas SQL)
 - **S9:** Escrita real no MF via Puppeteer — consome `composicaoMf`
-  + Conferência + Alterações Diversas
+  - Conferência + Alterações Diversas
 - **S10/S11:** Parte Diária consome o que S6b construiu para gerar
   PDF/DOCX da PD oficial

@@ -44,7 +44,7 @@ export const composicaoMfMilitarSchema = z.object({
 });
 
 export const composicaoMfEntrySchema = z.object({
-  recurso: z.string(),                       // chave canônica do MF (ex.: ABTS_01)
+  recurso: z.string(), // chave canônica do MF (ex.: ABTS_01)
   vtrPrefixo: z.string().optional(),
   vtrStatus: z.enum(STATUS_VIATURA).nullable(),
   semEquipe: z.boolean().default(false),
@@ -81,18 +81,18 @@ futuras (S6b/F3 leitura cruzada).
 
 ### 4. Mapeamento campo-a-campo MF ↔ Prévia
 
-| Campo MF              | Campo composicaoMf                       | Notas                       |
-| --------------------- | ---------------------------------------- | --------------------------- |
-| Col A: recurso        | `recurso`                                | Chave canônica              |
-| Col B: vtrPrefixo     | `vtrPrefixo`                             | Espelhado                   |
-| Col C: vtrStatus      | `vtrStatus`                              | DISPONIVEL/BAIXADA/EMPRESTADA |
-| Col D: semEquipe      | `semEquipe`                              | Boolean                     |
-| Col E: chefe (raw)    | `chefe.raw`                              | Texto cru do MF             |
-| Col F: motorista      | `motorista.raw`                          | Texto cru                   |
-| Cols G-J: operadores  | `operadores[].raw`                       | Array                       |
-| —                     | `*.militarResolvido`                     | Adicionado via NomeMatcher  |
-| —                     | `*.statusConferencia`                    | Adicionado pela Conferência |
-| —                     | `*.isFiscal`                             | Marcado pelo PreviaService  |
+| Campo MF             | Campo composicaoMf    | Notas                         |
+| -------------------- | --------------------- | ----------------------------- |
+| Col A: recurso       | `recurso`             | Chave canônica                |
+| Col B: vtrPrefixo    | `vtrPrefixo`          | Espelhado                     |
+| Col C: vtrStatus     | `vtrStatus`           | DISPONIVEL/BAIXADA/EMPRESTADA |
+| Col D: semEquipe     | `semEquipe`           | Boolean                       |
+| Col E: chefe (raw)   | `chefe.raw`           | Texto cru do MF               |
+| Col F: motorista     | `motorista.raw`       | Texto cru                     |
+| Cols G-J: operadores | `operadores[].raw`    | Array                         |
+| —                    | `*.militarResolvido`  | Adicionado via NomeMatcher    |
+| —                    | `*.statusConferencia` | Adicionado pela Conferência   |
+| —                    | `*.isFiscal`          | Marcado pelo PreviaService    |
 
 ### 5. Conferência marca presença
 

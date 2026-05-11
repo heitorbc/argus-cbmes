@@ -99,8 +99,8 @@ export const trocaEscalaEspecialSchema = z.object({
 **Endpoints:**
 
 - `POST /previa/:data/ajustes/escala-especial/trocas` — body com `atoOriginal`
-  + substituido/substituto. Se já houver troca para o mesmo ato, substitui
-  (idempotente). RBAC: admin / fiscal / sargenteante.
+  - substituido/substituto. Se já houver troca para o mesmo ato, substitui
+    (idempotente). RBAC: admin / fiscal / sargenteante.
 - `DELETE /previa/:data/ajustes/escala-especial/trocas/:atoKey` — remove
   por chave url-encoded.
 
@@ -166,7 +166,7 @@ Combinado com [ADR-008] (EFETIVO só enriquece, não adiciona NFs):
 ## Tests
 
 - `apps/api/src/modules/chefes-operacoes/chefes-operacoes-csv-parser.test.ts` — 6
-  cenários (header detection, marcadores X/Y/S/*, filtragem de "CURSO"/"FÉRIAS",
+  cenários (header detection, marcadores X/Y/S/\*, filtragem de "CURSO"/"FÉRIAS",
   separadores ignorados, header ausente).
 - `apps/api/src/modules/previa/ajustes-previa.service.test.ts` — 6 cenários
   cobrindo add/remove/idempotência das trocas de Escala Especial.

@@ -41,7 +41,7 @@
   cobrindo a flag (default sem órfão, com órfão, somente1aCia ignora
   incluirEfetivoOrfao, findByNf inclui órfão).
 - `apps/api/src/modules/previa/previa.service.ts:84` — `getAll({
-  somente1aCia: false, incluirEfetivoOrfao: true })` para o NomeMatcher.
+somente1aCia: false, incluirEfetivoOrfao: true })` para o NomeMatcher.
 
 **F2 — Suprimir OFICIAL DE DIA + PERITOS:**
 

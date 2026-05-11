@@ -27,7 +27,7 @@ export const ESTADO_SERVICO = [
   'INICIADO',
   'EQUIPE_CONFERIDA',
   'VIATURA_CONFERIDA',
-  'PREENCHENDO_MF',  // reservado para S9
+  'PREENCHENDO_MF', // reservado para S9
   'ENCERRADO',
 ] as const;
 ```
@@ -51,16 +51,16 @@ Transições internas (auto) acontecem quando:
 
 ### 3. RBAC granular
 
-| Ação                               | Papéis permitidos                                | Por quê?                              |
-| ---------------------------------- | ------------------------------------------------ | ------------------------------------- |
-| Ler estado                         | qualquer autenticado                             | Visibilidade pública dentro do BBM    |
-| Iniciar serviço                    | `fiscal`, `admin`, `sargenteante`                | Fiscal é responsável pelo dia         |
-| Encerrar serviço                   | `fiscal`, `admin`, `sargenteante`                | Mesma autoridade que iniciou          |
-| Encerrar com `force=true`          | `admin`, `sargenteante` apenas                   | Override de exceção                   |
-| Conferir equipe                    | `chefe_equipe`, `fiscal`, `admin`, `sargenteante` | Chefe da Equipe é o operador natural  |
-| Conferir viatura                   | `motorista`, `fiscal`, `admin`, `sargenteante`   | Motorista da viatura confere          |
-| Registrar alteração diversa        | `fiscal`, `admin`, `sargenteante`                | Decisão operacional fica com o Fiscal |
-| Editar Ajustes pré-turno (read-only) | `admin` apenas (override)                       | Ajustes são pré-serviço; após início, bloqueado |
+| Ação                                 | Papéis permitidos                                 | Por quê?                                        |
+| ------------------------------------ | ------------------------------------------------- | ----------------------------------------------- |
+| Ler estado                           | qualquer autenticado                              | Visibilidade pública dentro do BBM              |
+| Iniciar serviço                      | `fiscal`, `admin`, `sargenteante`                 | Fiscal é responsável pelo dia                   |
+| Encerrar serviço                     | `fiscal`, `admin`, `sargenteante`                 | Mesma autoridade que iniciou                    |
+| Encerrar com `force=true`            | `admin`, `sargenteante` apenas                    | Override de exceção                             |
+| Conferir equipe                      | `chefe_equipe`, `fiscal`, `admin`, `sargenteante` | Chefe da Equipe é o operador natural            |
+| Conferir viatura                     | `motorista`, `fiscal`, `admin`, `sargenteante`    | Motorista da viatura confere                    |
+| Registrar alteração diversa          | `fiscal`, `admin`, `sargenteante`                 | Decisão operacional fica com o Fiscal           |
+| Editar Ajustes pré-turno (read-only) | `admin` apenas (override)                         | Ajustes são pré-serviço; após início, bloqueado |
 
 ### 4. Read-only enforcement no backend
 
@@ -115,7 +115,7 @@ read-only sem chamada extra.
 - Fluxo do dia tem checkpoint claro: ajustes → iniciar → conferências →
   encerrar.
 - Parte Diária (S10/S11) consome `composicaoMf + Conferência + Alterações
-  Diversas` com confiança que estava "congelado".
+Diversas` com confiança que estava "congelado".
 - Backend é fonte de verdade — mesmo se frontend bug, edição não passa.
 
 **Negativas:**
