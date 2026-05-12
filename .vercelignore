@@ -1,0 +1,18 @@
+# Vite/Node env files locais — só env vars configuradas no Vercel dashboard
+# devem chegar a builds de produção.
+.env
+.env.local
+.env.*.local
+apps/*/.env
+apps/*/.env.local
+apps/*/.env.*.local
+
+# Diretórios de dev locais
+node_modules
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+
+# Vercel CLI artifacts
+.vercel
