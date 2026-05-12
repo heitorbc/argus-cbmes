@@ -123,9 +123,13 @@ export class AuthController {
 
   private setSessionCookie(res: Response, token: string): void {
     const isProd = this.config.get<string>('NODE_ENV') === 'production';
+    // Em produção, frontend e backend estão em domínios distintos
+    // (Vercel x Render). `SameSite=None` é obrigatório para o browser
+    // enviar o cookie em requests cross-site — exige `Secure=true`.
+    // Em dev (localhost), `lax` mantém DX simples sem HTTPS.
     res.cookie(COOKIE_NAME, token, {
       httpOnly: true,
-      sameSite: 'lax',
+      sameSite: isProd ? 'none' : 'lax',
       secure: isProd,
       path: '/',
       maxAge: JWT_TTL_SECONDS * 1000,
