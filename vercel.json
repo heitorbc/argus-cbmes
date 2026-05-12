@@ -1,6 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "$comment": "Configuração para o frontend (apps/web). API tem projeto Vercel separado ou hospedagem alternativa (Render/Railway).",
   "buildCommand": "pnpm --filter @argus/shared-types build && pnpm --filter web build",
   "outputDirectory": "apps/web/dist",
   "installCommand": "pnpm install --frozen-lockfile",
