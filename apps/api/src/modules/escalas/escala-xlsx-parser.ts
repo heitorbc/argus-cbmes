@@ -300,6 +300,50 @@ export function parseMilitarCell(raw: string): MilitarRef | null {
 }
 
 /**
+ * Mapeia nome de recurso/funcao do XLSX para o nome canônico esperado pelo
+ * `RecursosService.nomesValidos()` (S6n-fix). Os XLSX institucionais usam
+ * notação abreviada que não bate 1:1 com os nomes canônicos do Mapa Força:
+ *
+ *  - `"ABTS 01"` → `"ABTS_01"` (mesma viatura, separador diferente)
+ *  - `"RESGATE"` (singular) → `"RESGATE 01"` (default quando só há 1 recurso)
+ *  - `"MOT CH OP"` (recurso=funcao) → recurso `"CHEFE DE OPERAÇÕES"` com
+ *    funcao `"Mot"` — o militar listado é o motorista do CHOP. O Chefe
+ *    em si vem da planilha externa (`ChefesOperacoesService`).
+ *  - `"ATB e Plat."` → expande em **2 entries** (`ATB` + `PLATAFORMA`),
+ *    ambos com funcao `"Mot"`. O mesmo militar acumula Chefe+Motorista
+ *    em ambas as viaturas (MF preenche só Motorista).
+ *
+ * Retorna lista de `{viatura, funcao}` — quase sempre 1 par; só `ATB e Plat.`
+ * devolve 2.
+ */
+export function expandViaturaFuncao(
+  viaturaRaw: string,
+  funcaoRaw: string,
+): Array<{ viatura: string; funcao: string }> {
+  const v = viaturaRaw.trim().toUpperCase().replace(/\s+/g, ' ');
+  const f = funcaoRaw.trim();
+
+  if (v === 'MOT CH OP') {
+    return [{ viatura: 'CHEFE DE OPERAÇÕES', funcao: 'Mot' }];
+  }
+
+  if (v === 'ATB E PLAT.' || v === 'ATB E PLAT') {
+    return [
+      { viatura: 'ATB', funcao: 'Mot' },
+      { viatura: 'PLATAFORMA', funcao: 'Mot' },
+    ];
+  }
+
+  const aliasMap: Record<string, string> = {
+    'ABTS 01': 'ABTS_01',
+    'ABTS 02': 'ABTS_02',
+    RESGATE: 'RESGATE 01',
+  };
+  const normalizedV = aliasMap[v] ?? viaturaRaw.trim();
+  return [{ viatura: normalizedV, funcao: f }];
+}
+
+/**
  * Extrai entradas de composição de uma aba dada o mapa de equipes.
  * Linhas 16-31 normalmente — varremos até a linha onde col1 fica vazia E col2 fica vazia.
  */
@@ -336,41 +380,58 @@ function extractComposicao(
     if (!viatura && !funcao) continue;
     if (!funcao) continue; // sem função, não é linha de composição
 
-    for (const [equipe, startCol] of equipeCols.entries()) {
-      // Cada equipe tem 4 cols redundantes; pega a primeira não-vazia.
-      let raw = '';
-      for (let off = 0; off < 4; off++) {
-        const v = cellText(row.getCell(startCol + off));
-        if (v) {
-          raw = v;
-          break;
+    // S6n-fix: expande recurso/funcao para forma canônica (ex.: "ABTS 01" →
+    // "ABTS_01"; "ATB e Plat." → 2 entries). Veja `expandViaturaFuncao`.
+    const expansoes = expandViaturaFuncao(viatura, funcao);
+
+    for (const { viatura: viaturaCanonica, funcao: funcaoCanonica } of expansoes) {
+      for (const [equipe, startCol] of equipeCols.entries()) {
+        // Cada equipe tem 4 cols redundantes; pega a primeira não-vazia.
+        let raw = '';
+        for (let off = 0; off < 4; off++) {
+          const v = cellText(row.getCell(startCol + off));
+          if (v) {
+            raw = v;
+            break;
+          }
         }
-      }
-      if (!raw) continue;
-      const militar = parseMilitarCell(raw);
-      if (!militar) {
-        avisos.push(
-          `Linha ${r}, equipe ${equipe}, ${viatura}/${funcao}: célula "${raw}" não reconhecida como militar.`,
-        );
-        continue;
-      }
-      const baseKey = `${equipe}|${viatura}|${funcao}`;
-      const seen = counters.get(baseKey) ?? 0;
-      let funcaoFinal = funcao;
-      if (seen === 0) {
-        // primeira ocorrência: ainda usa o nome original; pode ser promovida depois.
-      } else if (seen === 1) {
-        // segunda ocorrência: renomeia o primeiro para "funcao 1" e este vira "funcao 2".
+        if (!raw) continue;
+        const militar = parseMilitarCell(raw);
+        if (!militar) {
+          avisos.push(
+            `Linha ${r}, equipe ${equipe}, ${viaturaCanonica}/${funcaoCanonica}: célula "${raw}" não reconhecida como militar.`,
+          );
+          continue;
+        }
+        const baseKey = `${equipe}|${viaturaCanonica}|${funcaoCanonica}`;
         const first = firstEntryByKey.get(baseKey);
-        if (first) first.funcao = `${funcao} 1`;
-        funcaoFinal = `${funcao} 2`;
-      } else {
-        funcaoFinal = `${funcao} ${seen + 1}`;
+
+        // S6n-fix: dedup quando a mesma militar aparece duplicado para
+        // mesma slot (caso comum em "ATB e Plat." que tem 2 rows R27/R28
+        // referindo o mesmo militar). Skip silencioso.
+        if (first && first.militar.raw === militar.raw) continue;
+
+        const seen = counters.get(baseKey) ?? 0;
+        let funcaoFinal = funcaoCanonica;
+        if (seen === 0) {
+          // primeira ocorrência: ainda usa o nome original; pode ser promovida depois.
+        } else if (seen === 1) {
+          // segunda ocorrência: renomeia o primeiro para "funcao 1" e este vira "funcao 2".
+          if (first) first.funcao = `${funcaoCanonica} 1`;
+          funcaoFinal = `${funcaoCanonica} 2`;
+        } else {
+          funcaoFinal = `${funcaoCanonica} ${seen + 1}`;
+        }
+        counters.set(baseKey, seen + 1);
+        const entry: ComposicaoEntry = {
+          equipe,
+          viatura: viaturaCanonica,
+          funcao: funcaoFinal,
+          militar,
+        };
+        if (seen === 0) firstEntryByKey.set(baseKey, entry);
+        entries.push(entry);
       }
-      counters.set(baseKey, seen + 1);
-      const entry: ComposicaoEntry = { equipe, viatura, funcao: funcaoFinal, militar };
-      if (seen === 0) firstEntryByKey.set(baseKey, entry);
-      entries.push(entry);
     }
   }
 

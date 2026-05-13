@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
   EscalaXlsxParseError,
+  expandViaturaFuncao,
   parseEscalaXlsx,
   parseFilename,
   parseMilitarCell,
@@ -182,5 +183,93 @@ describe('parseEscalaXlsx — reupload parcial', () => {
     });
     expect(escala.mes).toBe(5);
     expect(escala.ano).toBe(2026);
+  });
+});
+
+describe('expandViaturaFuncao (S6n-fix)', () => {
+  it('"ABTS 01" normaliza para "ABTS_01" mantendo funcao', () => {
+    expect(expandViaturaFuncao('ABTS 01', 'Ch')).toEqual([{ viatura: 'ABTS_01', funcao: 'Ch' }]);
+    expect(expandViaturaFuncao('ABTS 02', 'Mot')).toEqual([{ viatura: 'ABTS_02', funcao: 'Mot' }]);
+  });
+
+  it('"RESGATE" (singular) mapeia para "RESGATE 01"', () => {
+    expect(expandViaturaFuncao('RESGATE', 'Ch')).toEqual([{ viatura: 'RESGATE 01', funcao: 'Ch' }]);
+  });
+
+  it('"MOT CH OP" vira "CHEFE DE OPERAÇÕES" funcao "Mot" (motorista do Chefe)', () => {
+    expect(expandViaturaFuncao('MOT CH OP', 'MOT CH OP')).toEqual([
+      { viatura: 'CHEFE DE OPERAÇÕES', funcao: 'Mot' },
+    ]);
+  });
+
+  it('"ATB e Plat." expande em ATB + PLATAFORMA, ambos com funcao "Mot"', () => {
+    expect(expandViaturaFuncao('ATB e Plat.', 'Ch/Mot')).toEqual([
+      { viatura: 'ATB', funcao: 'Mot' },
+      { viatura: 'PLATAFORMA', funcao: 'Mot' },
+    ]);
+    expect(expandViaturaFuncao('ATB E PLAT', 'Ch/Mot')).toEqual([
+      { viatura: 'ATB', funcao: 'Mot' },
+      { viatura: 'PLATAFORMA', funcao: 'Mot' },
+    ]);
+  });
+
+  it('viaturas sem alias (ex.: GUARDA, FLORESTAL) passam intactas', () => {
+    expect(expandViaturaFuncao('GUARDA', 'Sent.')).toEqual([
+      { viatura: 'GUARDA', funcao: 'Sent.' },
+    ]);
+    expect(expandViaturaFuncao('FLORESTAL', 'Ch')).toEqual([
+      { viatura: 'FLORESTAL', funcao: 'Ch' },
+    ]);
+  });
+});
+
+describe('parseEscalaXlsx — fixture 01 JANEIRO 2026 com normalização (S6n-fix)', () => {
+  it('emite recursos canônicos (ABTS_01, RESGATE 01, ATB, PLATAFORMA, CHEFE DE OPERAÇÕES, GUARDA)', async () => {
+    let buffer: Buffer;
+    try {
+      buffer = loadFixture('01 JANEIRO DE 2026.xlsx');
+    } catch {
+      // Skip se fixture não existe localmente (CI sem data/).
+      return;
+    }
+    const escala = await parseEscalaXlsx({
+      buffer,
+      filename: '01 JANEIRO DE 2026.xlsx',
+    });
+    const viaturas = new Set(escala.composicao.map((e) => e.viatura));
+
+    expect(viaturas.has('ABTS_01')).toBe(true);
+    expect(viaturas.has('RESGATE 01')).toBe(true);
+    expect(viaturas.has('ATB')).toBe(true);
+    expect(viaturas.has('PLATAFORMA')).toBe(true);
+    expect(viaturas.has('CHEFE DE OPERAÇÕES')).toBe(true);
+    expect(viaturas.has('GUARDA')).toBe(true);
+    // Garante que nomes não-canônicos NÃO aparecem mais.
+    expect(viaturas.has('ABTS 01')).toBe(false);
+    expect(viaturas.has('RESGATE')).toBe(false);
+    expect(viaturas.has('MOT CH OP')).toBe(false);
+    expect(viaturas.has('ATB e Plat.')).toBe(false);
+  });
+
+  it('"ATB e Plat." dedupa o mesmo militar entre R27 e R28 (não vira "Mot 1"/"Mot 2")', async () => {
+    let buffer: Buffer;
+    try {
+      buffer = loadFixture('01 JANEIRO DE 2026.xlsx');
+    } catch {
+      return;
+    }
+    const escala = await parseEscalaXlsx({
+      buffer,
+      filename: '01 JANEIRO DE 2026.xlsx',
+    });
+    const atbEntries = escala.composicao.filter((e) => e.viatura === 'ATB');
+    // Cada equipe deve ter no máximo 1 entry para ATB (mesmo com 2 rows no XLSX).
+    const byEquipe = new Map<string, number>();
+    for (const e of atbEntries) byEquipe.set(e.equipe, (byEquipe.get(e.equipe) ?? 0) + 1);
+    for (const [equipe, count] of byEquipe.entries()) {
+      expect.soft(count, `Equipe ${equipe} ATB duplicada`).toBeLessThanOrEqual(1);
+    }
+    // E sem renomes "Mot 1" / "Mot 2".
+    expect(atbEntries.every((e) => e.funcao === 'Mot')).toBe(true);
   });
 });
