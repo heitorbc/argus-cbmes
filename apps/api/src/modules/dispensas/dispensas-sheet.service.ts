@@ -51,6 +51,26 @@ export class DispensasSheetService {
     this.inflight = null;
   }
 
+  /**
+   * S0.5/PR3 — Força resync ignorando o cache. Usado pelo botão admin em
+   * /configuracoes/integracoes.
+   */
+  async forceSync(): Promise<{ syncedAt: string; count: number }> {
+    const previous = this.cache;
+    try {
+      const entry = await this.fetchAndParse();
+      this.cache = entry;
+      return { syncedAt: new Date(entry.syncedAt).toISOString(), count: entry.parsed.length };
+    } catch (err) {
+      this.logger.error(
+        `forceSync Dispensas Sheet falhou: ${(err as Error).message}. ${previous ? 'Mantendo snapshot anterior.' : 'Sem snapshot anterior.'}`,
+      );
+      throw new ServiceUnavailableException(
+        'Não foi possível sincronizar com a planilha de Dispensas.',
+      );
+    }
+  }
+
   getSyncStatus(): { syncedAt: string | null; count: number; stale: boolean } {
     if (!this.cache) return { syncedAt: null, count: 0, stale: false };
     const stale = Date.now() - this.cache.syncedAt >= CACHE_TTL_MS;

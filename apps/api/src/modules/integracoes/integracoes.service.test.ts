@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { IntegracoesService } from './integracoes.service';
 import { ChefesOperacoesService } from '../chefes-operacoes/chefes-operacoes.service';
@@ -8,16 +9,30 @@ import { ViaturasQdvService } from '../viaturas/viaturas-qdv.service';
 
 type SyncStatus = { syncedAt: string | null; count: number; stale: boolean };
 
-function makeFakeService(status: SyncStatus): { getSyncStatus: () => SyncStatus } {
-  return { getSyncStatus: () => status };
+interface FakeSheetService {
+  status: SyncStatus;
+  getSyncStatus: () => SyncStatus;
+  forceSync: ReturnType<typeof vi.fn>;
+}
+
+function makeFakeService(status: SyncStatus): FakeSheetService {
+  const fake: FakeSheetService = {
+    status,
+    getSyncStatus: () => fake.status,
+    forceSync: vi.fn(async () => {
+      fake.status = { syncedAt: '2026-05-13T12:00:00.000Z', count: 99, stale: false };
+      return { syncedAt: fake.status.syncedAt!, count: fake.status.count };
+    }),
+  };
+  return fake;
 }
 
 describe('IntegracoesService', () => {
   let svc: IntegracoesService;
-  let trocasAut: { getSyncStatus: () => SyncStatus };
-  let chefesOp: { getSyncStatus: () => SyncStatus };
-  let dispensasSheet: { getSyncStatus: () => SyncStatus };
-  let viaturasQdv: { getSyncStatus: () => SyncStatus };
+  let trocasAut: FakeSheetService;
+  let chefesOp: FakeSheetService;
+  let dispensasSheet: FakeSheetService;
+  let viaturasQdv: FakeSheetService;
 
   beforeEach(() => {
     trocasAut = makeFakeService({ syncedAt: null, count: 0, stale: false });
@@ -56,16 +71,8 @@ describe('IntegracoesService', () => {
   });
 
   it('mapeia status "ok" quando há cache fresco e "stale" quando expirado', () => {
-    trocasAut.getSyncStatus = () => ({
-      syncedAt: '2026-05-13T12:00:00.000Z',
-      count: 42,
-      stale: false,
-    });
-    chefesOp.getSyncStatus = () => ({
-      syncedAt: '2026-05-13T08:00:00.000Z',
-      count: 30,
-      stale: true,
-    });
+    trocasAut.status = { syncedAt: '2026-05-13T12:00:00.000Z', count: 42, stale: false };
+    chefesOp.status = { syncedAt: '2026-05-13T08:00:00.000Z', count: 30, stale: true };
 
     const result = svc.list();
     const trocas = result.find((r) => r.id === 'trocas-autorizadas');
@@ -77,6 +84,29 @@ describe('IntegracoesService', () => {
 
     expect(chefes?.status).toBe('stale');
     expect(chefes?.qtdRegistros).toBe(30);
+  });
+
+  describe('sync(id)', () => {
+    it('chama forceSync() do service correspondente e retorna o novo status', async () => {
+      const result = await svc.sync('trocas-autorizadas');
+      expect(trocasAut.forceSync).toHaveBeenCalledTimes(1);
+      expect(result.id).toBe('trocas-autorizadas');
+      expect(result.status).toBe('ok');
+      expect(result.qtdRegistros).toBe(99);
+      expect(result.ultimoSyncEm).toBe('2026-05-13T12:00:00.000Z');
+    });
+
+    it('não chama os outros services', async () => {
+      await svc.sync('chefes-operacoes');
+      expect(chefesOp.forceSync).toHaveBeenCalledTimes(1);
+      expect(trocasAut.forceSync).not.toHaveBeenCalled();
+      expect(dispensasSheet.forceSync).not.toHaveBeenCalled();
+      expect(viaturasQdv.forceSync).not.toHaveBeenCalled();
+    });
+
+    it('lança NotFoundException para id desconhecido', async () => {
+      await expect(svc.sync('inexistente')).rejects.toBeInstanceOf(NotFoundException);
+    });
   });
 
   it('gera URL pública apontando para a planilha + aba correta', () => {

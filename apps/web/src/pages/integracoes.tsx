@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { STATUS_INTEGRACAO_LABEL, type IntegracaoStatus } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 
 const REFRESH_MS = 30_000;
 
@@ -14,10 +15,14 @@ const REFRESH_MS = 30_000;
  * sem o usuário ter que recarregar a página.
  */
 export function IntegracoesPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.papeis.includes('admin') ?? false;
   const [items, setItems] = useState<IntegracaoStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [atualizadoEm, setAtualizadoEm] = useState<Date | null>(null);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,6 +50,20 @@ export function IntegracoesPage() {
       clearInterval(id);
     };
   }, []);
+
+  async function handleSync(id: string) {
+    setSyncingId(id);
+    setSyncError(null);
+    try {
+      const updated = await api.integracoesSync(id);
+      setItems((prev) => prev.map((it) => (it.id === id ? updated : it)));
+      setAtualizadoEm(new Date());
+    } catch (e) {
+      setSyncError(e instanceof ApiError ? e.message : 'Erro ao sincronizar');
+    } finally {
+      setSyncingId(null);
+    }
+  }
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -76,6 +95,12 @@ export function IntegracoesPage() {
           </div>
         )}
 
+        {syncError && (
+          <div className="mt-3 rounded border border-feedback-error/30 bg-feedback-error/10 p-3 text-sm text-feedback-error">
+            {syncError}
+          </div>
+        )}
+
         {loading && items.length === 0 && (
           <p className="mt-4 text-sm text-slate-500">Carregando…</p>
         )}
@@ -90,6 +115,7 @@ export function IntegracoesPage() {
                   <th className="px-3 py-2">Último sync</th>
                   <th className="px-3 py-2 text-right">Registros</th>
                   <th className="px-3 py-2">Fonte</th>
+                  {isAdmin && <th className="px-3 py-2">Ações</th>}
                 </tr>
               </thead>
               <tbody>
@@ -116,6 +142,18 @@ export function IntegracoesPage() {
                         Abrir ↗
                       </a>
                     </td>
+                    {isAdmin && (
+                      <td className="px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleSync(it.id)}
+                          disabled={syncingId !== null}
+                          className="rounded-button border border-cbmes-blue px-2 py-1 text-[11px] font-medium text-cbmes-blue transition hover:bg-cbmes-blue/10 disabled:opacity-50"
+                        >
+                          {syncingId === it.id ? 'Sincronizando…' : '🔄 Sincronizar'}
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
