@@ -47,6 +47,7 @@ const INCONSISTENCIA_LABEL: Record<TipoInconsistencia, string> = {
   FISCAL_SEM_NF_RESOLVIDO: 'Fiscal sem NF',
   IDEO_NAO_CADASTRADO: 'IDEO não cadastrado',
   VIATURA_DESCONHECIDA: 'Viatura desconhecida',
+  TROCAS_AUTORIZADAS_INDISPONIVEIS: 'Trocas autorizadas indisponíveis',
 };
 
 function todayIso(): string {

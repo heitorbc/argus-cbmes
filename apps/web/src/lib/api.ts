@@ -7,6 +7,7 @@ import type {
   ConferenciaMateriaisDoDia,
   CreateFeriasInput,
   Ferias,
+  TrocaAutorizada,
   UpdateFeriasInput,
   ConferenciaViaturaEntry,
   Atestado,
@@ -475,6 +476,14 @@ export const api = {
 
   dispensasSaldoMilitar: (militarNf: string, ano: number) =>
     request<DispensaSaldoMilitar>(`/dispensas/saldo/${militarNf}/${ano}`),
+
+  // Trocas Autorizadas (item 1 + S0.5/PR1)
+  trocasAutorizadasList: (filter: { data?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (filter.data) params.set('data', filter.data);
+    const qs = params.toString();
+    return request<TrocaAutorizada[]>(`/trocas-autorizadas${qs ? `?${qs}` : ''}`);
+  },
 
   // Férias (item 4)
   feriasList: (filter: { militarNf?: string; ano?: number } = {}) => {

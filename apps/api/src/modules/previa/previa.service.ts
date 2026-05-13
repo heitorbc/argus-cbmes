@@ -35,6 +35,7 @@ import { FiscaisService } from '../fiscais/fiscais.service';
 import { IdeoStatusService } from '../ideo/ideo-status.service';
 import { IdeoService } from '../ideo/ideo.service';
 import { ServicoService } from '../servico/servico.service';
+import { TrocasAutorizadasService } from '../trocas-autorizadas/trocas-autorizadas.service';
 import { ViaturasService } from '../viaturas/viaturas.service';
 import { AjustesPreviaService } from './ajustes-previa.service';
 import { NomeMatcher } from './nome-matching';
@@ -69,6 +70,7 @@ export class PreviaService {
     private readonly dispensasSvc: DispensasService,
     private readonly atestadosSvc: AtestadosService,
     private readonly notasServicoSvc: NotasServicoService,
+    private readonly trocasAutorizadas: TrocasAutorizadasService,
   ) {}
 
   async getPreviaDoDia(dataIso: string): Promise<PreviaDoDia> {
@@ -277,6 +279,21 @@ export class PreviaService {
       : null;
     const textoAtestadoIdeoFiscal = gerarTextoFiscalAtestadoIdeo(ideoStatus, fiscalParaTexto);
 
+    // S0.5/PR1 — Trocas Autorizadas (planilha externa) entram automaticamente
+    // em `previa.trocas`. As trocas manuais (`ajustes.trocas`) vêm depois,
+    // permitindo override pelo Fiscal.
+    const trocasAutorizadasDoDia = await this.trocasAutorizadas.listByData(dataIso).catch((err) => {
+      inconsistencias.push({
+        tipo: 'TROCAS_AUTORIZADAS_INDISPONIVEIS',
+        mensagem: `Não foi possível consultar a planilha de Trocas Autorizadas: ${(err as Error).message}`,
+      });
+      return [];
+    });
+    const trocasAutComoPrevia = trocasAutorizadasDoDia.map((t) =>
+      converterTrocaAutorizadaEmPrevia(t, dataIso, matcher),
+    );
+    const trocasFinalDoDia = [...trocasAutComoPrevia, ...ajustes.trocas];
+
     return {
       data: dataIso,
       ano,
@@ -292,7 +309,7 @@ export class PreviaService {
       textoAtestadoIdeoFiscal,
       viaturasOperacionais: viaturasOp,
       inconsistencias,
-      trocas: ajustes.trocas,
+      trocas: trocasFinalDoDia,
       escalaEspecial: ajustes.escalaEspecial,
       notasServico: notasServicoEnriched,
       dispensas: dispensasPrevia,
@@ -500,6 +517,53 @@ function buildComposicaoMfFromMergulho(
     chefe: eq.chefe ? toMilitar(eq.chefe) : undefined,
     motorista: eq.motorista ? toMilitar(eq.motorista) : undefined,
     operadores: eq.mergulhadores.map(toMilitar),
+  };
+}
+
+/**
+ * S0.5/PR1 — Converte uma `TrocaAutorizada` (planilha externa, 2 datas)
+ * em uma `PreviaTroca` apropriada para a data alvo. NF dos militares
+ * fica `undefined` por enquanto — reconciliação raw→NF é sprint separado
+ * no backlog (precisa parse robusto de "SGT MARIANE" / "Sgt mariane" /
+ * variações para `MilitarRef`).
+ */
+function converterTrocaAutorizadaEmPrevia(
+  troca: {
+    dataEscala: string;
+    dataPagamento: string;
+    escaladoOriginal: string;
+    substituto: string;
+    escaladoPagamento: string;
+    substitutoPagamento: string;
+    funcao: string;
+    funcaoPagamento: string;
+    horario: string;
+    horarioPagamento: string;
+    numeroEdocs?: string;
+  },
+  dataIso: string,
+  _matcher: NomeMatcher,
+): {
+  substituidoRaw: string;
+  substitutoRaw: string;
+  periodo: string;
+  funcao?: string;
+  numeroEdocs?: string;
+  origemAutorizada: boolean;
+} {
+  const isLadoEscala = troca.dataEscala === dataIso;
+  const escaladoRaw = isLadoEscala ? troca.escaladoOriginal : troca.escaladoPagamento;
+  const substitutoRaw = isLadoEscala ? troca.substituto : troca.substitutoPagamento;
+  const funcao = isLadoEscala ? troca.funcao : troca.funcaoPagamento;
+  const horario = isLadoEscala ? troca.horario : troca.horarioPagamento;
+
+  return {
+    substituidoRaw: escaladoRaw,
+    substitutoRaw,
+    periodo: horario || 'horário não informado',
+    funcao: funcao || undefined,
+    numeroEdocs: troca.numeroEdocs,
+    origemAutorizada: true,
   };
 }
 
