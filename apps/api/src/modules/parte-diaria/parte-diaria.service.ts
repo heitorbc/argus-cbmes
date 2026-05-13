@@ -173,10 +173,22 @@ function mapEscalaOperacional(
   entry: PreviaDoDia['composicaoMf'][number],
 ): ParteDiariaEscalaOperacionalEntry {
   const militares: ParteDiariaEscalaOperacionalMilitar[] = [];
-  if (entry.chefe) militares.push(mapMilitar('Chefe', entry.chefe));
-  if (entry.motorista) militares.push(mapMilitar('Motorista', entry.motorista));
-  for (let i = 0; i < entry.operadores.length; i += 1) {
-    militares.push(mapMilitar(`Operador ${i + 1}`, entry.operadores[i]!));
+
+  // S6n/0.6 — Equipes compostas por 1 militar acumulam Chefe+Motorista.
+  // Caso típico: ATB / PLATAFORMA / DRO TELEFONISTA — o XLSX tem só uma
+  // entry (com funcao "Mot" ou "Ch") e aqui mostramos como "Chefe/Motorista"
+  // na tabela operacional da PD. No MF (composicaoMf) só motorista é
+  // preenchido — esta função gera apenas a apresentação textual da PD.
+  const total = (entry.chefe ? 1 : 0) + (entry.motorista ? 1 : 0) + entry.operadores.length;
+  if (total === 1 && (entry.motorista || entry.chefe) && entry.operadores.length === 0) {
+    const unico = (entry.chefe ?? entry.motorista)!;
+    militares.push(mapMilitar('Chefe/Motorista', unico));
+  } else {
+    if (entry.chefe) militares.push(mapMilitar('Chefe', entry.chefe));
+    if (entry.motorista) militares.push(mapMilitar('Motorista', entry.motorista));
+    for (let i = 0; i < entry.operadores.length; i += 1) {
+      militares.push(mapMilitar(`Operador ${i + 1}`, entry.operadores[i]!));
+    }
   }
   return {
     recurso: entry.recurso,
@@ -330,7 +342,12 @@ function formatarAlteracaoDiversa(alt: AlteracaoDiversa): string {
 }
 
 function gerarTextoAlteracaoAlmoxarifado(
-  pendencias: ReadonlyArray<{ vtrPrefixo: string; label: string; status: string; observacao?: string }>,
+  pendencias: ReadonlyArray<{
+    vtrPrefixo: string;
+    label: string;
+    status: string;
+    observacao?: string;
+  }>,
 ): string {
   if (pendencias.length === 0) return 'Não houve.';
   return pendencias
