@@ -77,8 +77,10 @@ class FakeViaturasService {
 
 class FakeChefesOperacoesService {
   habilitadosNfs: Set<string> = new Set();
-  async getEscaladosDoDia(): Promise<readonly never[]> {
-    return [];
+  escaladosDoDia: Array<{ posto: string; nomeGuerra: string; nf: string; telefone?: string; marcador?: string }> =
+    [];
+  async getEscaladosDoDia(): Promise<typeof this.escaladosDoDia> {
+    return this.escaladosDoDia;
   }
   async getHabilitadosNfs(): Promise<Set<string>> {
     return this.habilitadosNfs;
@@ -472,6 +474,19 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
     // dia 23 = lado escala → escalado (substituido) é MARIANE, substituto é ALVARENGA
     expect(aut.substituidoRaw).toBe('SGT MARIANE');
     expect(aut.substitutoRaw).toBe('CB ALVARENGA');
+  });
+
+  it('Fix-2 homologação — Chefe de Operações é injetado em tripulacao no mesmo card do motorista CHOP', async () => {
+    const previaAsAny = previa as unknown as { chefesOperacoes: FakeChefesOperacoesService };
+    previaAsAny.chefesOperacoes.escaladosDoDia = [
+      { posto: '1ºTEN QOA', nomeGuerra: 'BOREL', nf: '999001' },
+    ];
+    const r = await previa.getPreviaDoDia('2026-04-23');
+    const chOpEntries = r.tripulacao.filter((t) => t.viatura === 'CHEFE DE OPERAÇÕES');
+    const chefe = chOpEntries.find((t) => t.funcao === 'Ch');
+    expect(chefe).toBeDefined();
+    expect(chefe!.militarRef.nomeGuerra).toBe('BOREL');
+    expect(chefe!.equipe).toBe('STAFF');
   });
 
   it('escolhe Fiscal padrão = militar de menor ANT (BARCELLOS, ANT 418)', async () => {

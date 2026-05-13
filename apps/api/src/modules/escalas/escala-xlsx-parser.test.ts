@@ -349,6 +349,34 @@ describe('parseEscalaXlsx — bug import dia 01 (S0.1-fix homologação)', () =>
   });
 });
 
+describe('parseEscalaXlsx — ordem canônica de recursos (Fix-3 homologação)', () => {
+  it('ATB aparece imediatamente seguido por PLATAFORMA dentro da mesma equipe', async () => {
+    let buffer: Buffer;
+    try {
+      buffer = loadFixture('05 MAIO DE 2026.xlsx');
+    } catch {
+      return;
+    }
+    const escala = await parseEscalaXlsx({
+      buffer,
+      filename: '05 MAIO DE 2026.xlsx',
+    });
+    // Pega a primeira equipe que tem ATB e PLATAFORMA
+    const equipes = ['A', 'B', 'C', 'D'] as const;
+    for (const eq of equipes) {
+      const viaturasDaEq = escala.composicao
+        .filter((e) => e.equipe === eq)
+        .map((e) => e.viatura);
+      const idxAtb = viaturasDaEq.indexOf('ATB');
+      const idxPlat = viaturasDaEq.indexOf('PLATAFORMA');
+      if (idxAtb === -1 || idxPlat === -1) continue;
+      // PLATAFORMA deve vir imediatamente após ATB (sem viatura no meio).
+      const idxAtbUltimo = viaturasDaEq.lastIndexOf('ATB');
+      expect(idxPlat).toBe(idxAtbUltimo + 1);
+    }
+  });
+});
+
 describe('parseEscalaXlsx — fixture 01 JANEIRO 2026 com normalização (S6n-fix)', () => {
   it('emite recursos canônicos (ABTS_01, RESGATE 01, ATB, PLATAFORMA, CHEFE DE OPERAÇÕES, GUARDA)', async () => {
     let buffer: Buffer;

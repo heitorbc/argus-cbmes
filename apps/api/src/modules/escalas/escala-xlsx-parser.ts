@@ -13,6 +13,7 @@ import {
   type LetraEquipeSalvamar,
   LETRA_EQUIPE_SALVAMAR,
   type MilitarRef,
+  recursoOrdemIndex,
 } from '@argus/shared-types';
 
 /**
@@ -728,9 +729,13 @@ function mergeComposicao(
       );
     }
   }
+  // S0.x — Ordem canônica de recursos (CHEFE DE OPERAÇÕES → ABTS → RESGATE
+  // → ATB → PLATAFORMA → GUARDA → AQUÁTICAS) garante que ATB e PLATAFORMA
+  // fiquem adjacentes na Prévia (Tech Lead: facilita conferência).
   return [...map.values()].sort(
     (x, y) =>
       x.equipe.localeCompare(y.equipe) ||
+      recursoOrdemIndex(x.viatura) - recursoOrdemIndex(y.viatura) ||
       x.viatura.localeCompare(y.viatura) ||
       x.funcao.localeCompare(y.funcao),
   );

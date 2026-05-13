@@ -20,6 +20,35 @@ export const LETRA_EQUIPE_LABEL: Record<LetraEquipe, string> = {
   STAFF: 'COMANDO',
 };
 
+/**
+ * Ordem canônica dos recursos para exibição na Prévia/PD. ATB precede
+ * PLATAFORMA imediatamente para facilitar a conferência (são operadas
+ * pelo mesmo militar via `expandViaturaFuncao`). Recursos não listados
+ * aqui caem no final em ordem alfabética.
+ */
+export const RECURSO_ORDEM_CANONICA: readonly string[] = [
+  'CHEFE DE OPERAÇÕES',
+  'ABTS_01',
+  'ABTS_02',
+  'RESGATE 01',
+  'RESGATE 02',
+  'ATB',
+  'PLATAFORMA',
+  'GUARDA',
+  'MERGULHO 01',
+  'MERGULHO 02',
+  'SALVAMAR 01',
+  'SALVAMAR 02',
+  'QUADRICICLO 01',
+  'QUADRICICLO 02',
+];
+
+/** Posição na ordem canônica; recursos desconhecidos retornam `Infinity`. */
+export function recursoOrdemIndex(recurso: string): number {
+  const i = RECURSO_ORDEM_CANONICA.indexOf(recurso);
+  return i < 0 ? Number.POSITIVE_INFINITY : i;
+}
+
 /** Referência de militar conforme aparece na célula da escala XLSX. */
 export const militarRefSchema = z.object({
   raw: z.string(),

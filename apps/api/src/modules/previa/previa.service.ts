@@ -187,6 +187,58 @@ export class PreviaService {
     // S6a-fix item 6 — Chefes de Operações escalados no dia (planilha externa).
     const chefes = await this.chefesOperacoes.getEscaladosDoDia(ano, mes, dia).catch(() => []);
 
+    // S0.x/Fix-2 — Injeta o Chefe Titular (vindo da planilha de ChOp) como
+    // entry em `tripulacao` para que apareça no MESMO card "CHEFE DE OPERAÇÕES"
+    // do motorista do XLSX (linha 16). Só 1 Chefe por dia (decisão Tech Lead
+    // 2026-05-13); trocas seguem fluxo padrão de trocas autorizadas.
+    const chefeTitular = chefes[0];
+    if (chefeTitular) {
+      const ref: MilitarRef = {
+        raw: `${chefeTitular.posto} ${chefeTitular.nomeGuerra}`.trim(),
+        postoAbreviado: chefeTitular.posto.replace(/\s+/g, '').toUpperCase(),
+        nomeGuerra: chefeTitular.nomeGuerra,
+      };
+      const resolvido = efetivoTotal.find((m) => m.nf === chefeTitular.nf) ?? null;
+      tripulacao.push({
+        equipe: 'STAFF',
+        viatura: 'CHEFE DE OPERAÇÕES',
+        funcao: 'Ch',
+        militarRef: ref,
+        militarResolvido: resolvido,
+        isFiscal: false,
+      });
+    }
+
+    // S0.x/Fix-1 — Injeta entries de MERGULHO 01/02 e SALVAMAR 01 em
+    // `tripulacao` ANTES de buildComposicaoMf. Antes os recursos só
+    // entravam em composicaoMf via buildComposicaoMfFromMergulho/Salvamar,
+    // mas o frontend renderiza `tripulacao` — então sumiam visualmente.
+    // Empurrar para tripulacao faz com que buildComposicaoMf gere a
+    // entry automaticamente e que /previa exiba os cards.
+    if (escala?.mergulho && equipe) {
+      const mergulhoDoDia = escala.mergulho.porDia[dataIso];
+      if (mergulhoDoDia) {
+        if (mergulhoDoDia.mergulho01) {
+          const eq = escala.mergulho.equipes[mergulhoDoDia.mergulho01];
+          if (eq) injetarMergulhoEmTripulacao('MERGULHO 01', eq, equipe, tripulacao, matcher);
+        }
+        if (mergulhoDoDia.mergulho02) {
+          const eq = escala.mergulho.equipes[mergulhoDoDia.mergulho02];
+          if (eq) injetarMergulhoEmTripulacao('MERGULHO 02', eq, equipe, tripulacao, matcher);
+        }
+      }
+    }
+
+    if (escala?.salvamar && equipe) {
+      const letra = escala.salvamar.porDia[dataIso];
+      if (letra) {
+        const eq = escala.salvamar.equipes[letra];
+        if (eq && eq.supervisores.length > 0) {
+          injetarSalvamarEmTripulacao(eq, equipe, tripulacao, matcher);
+        }
+      }
+    }
+
     // S0.5 — Aplica swaps de militares entre 2 posições da mesma equipe
     // (UX do Fiscal). Mutação de `tripulacao` ANTES de buildComposicaoMf
     // para que ambas as visões fiquem consistentes. Swaps inválidos
@@ -195,46 +247,10 @@ export class PreviaService {
       aplicarSwapMilitar(swap, tripulacao, inconsistencias);
     }
 
-    // S6b/F2 — composicaoMf espelhando o MF (1 entry por recurso)
+    // S6b/F2 — composicaoMf espelhando o MF (1 entry por recurso).
+    // Já inclui MERGULHO 01/02 e SALVAMAR 01 porque foram empurrados em
+    // tripulacao acima.
     const composicaoMf = buildComposicaoMf(tripulacao, allViaturas);
-
-    // S0.3 — injeta MERGULHO 01/02 quando o XLSX importou seção de
-    // mergulho (cadastro X16:AI20 + schedule R12/R13). Equipe rotativa
-    // do dia é usada como flag por consistência com o resto do sistema.
-    if (escala?.mergulho && equipe) {
-      const mergulhoDoDia = escala.mergulho.porDia[dataIso];
-      if (mergulhoDoDia) {
-        if (mergulhoDoDia.mergulho01) {
-          const eq = escala.mergulho.equipes[mergulhoDoDia.mergulho01];
-          if (eq) {
-            composicaoMf.push(
-              buildComposicaoMfFromMergulho('MERGULHO 01', eq, equipe, allViaturas),
-            );
-          }
-        }
-        if (mergulhoDoDia.mergulho02) {
-          const eq = escala.mergulho.equipes[mergulhoDoDia.mergulho02];
-          if (eq) {
-            composicaoMf.push(
-              buildComposicaoMfFromMergulho('MERGULHO 02', eq, equipe, allViaturas),
-            );
-          }
-        }
-      }
-    }
-
-    // S0.4 — injeta SALVAMAR 01 quando o XLSX importou seção de salvamar
-    // (cadastro X23:AE25 + schedule linha 14). Letra E/F do dia indica
-    // qual equipe está de plantão.
-    if (escala?.salvamar && equipe) {
-      const letra = escala.salvamar.porDia[dataIso];
-      if (letra) {
-        const eq = escala.salvamar.equipes[letra];
-        if (eq && eq.supervisores.length > 0) {
-          composicaoMf.push(buildComposicaoMfFromSalvamar(eq, equipe, allViaturas, matcher));
-        }
-      }
-    }
 
     // S6b/F1 — Estado do Servico do dia
     const estadoServico = this.servico.get(dataIso);
@@ -529,12 +545,16 @@ function buildComposicaoMf(
 }
 
 /**
- * S0.3 — Constrói uma entry de composicaoMf para MERGULHO 01/02 a partir
- * de uma EquipeMergulho (4 militares fixos do cadastro do XLSX). O recurso
- * é tagueado com a equipe rotativa do dia para consistência com o resto
- * do sistema (Prévia, conferências, PD).
+ * S0.x/Fix-1 — Empurra os militares de uma equipe de MERGULHO (cadastro
+ * do XLSX) para `tripulacao` como `PreviaTripulacaoEntry`. O recurso
+ * (MERGULHO 01 ou 02) vira o campo `viatura`. Equipe é tagueada com a
+ * rotativa do dia para consistência com Conferências/PD.
+ *
+ * Substitui o antigo `buildComposicaoMfFromMergulho` — agora composicaoMf
+ * é derivado de tripulacao via `buildComposicaoMf` (1 caminho só, evita
+ * divergência entre as duas visões).
  */
-function buildComposicaoMfFromMergulho(
+function injetarMergulhoEmTripulacao(
   recurso: 'MERGULHO 01' | 'MERGULHO 02',
   eq: {
     chefe: MilitarRef | null;
@@ -542,66 +562,49 @@ function buildComposicaoMfFromMergulho(
     mergulhadores: readonly MilitarRef[];
   },
   equipeRotativa: LetraEquipeRotativa,
-  viaturas: readonly { id: string; prefixo: string; status: StatusViatura }[],
-): ComposicaoMfEntry {
-  const vtr = viaturas.find(
-    (v) => normalizeViaturaCode(v.prefixo) === normalizeViaturaCode(recurso),
-  );
-  const toMilitar = (m: MilitarRef): ComposicaoMfMilitar => ({
-    raw: m.raw,
-    postoAbreviado: m.postoAbreviado,
-    nomeGuerra: m.nomeGuerra,
-    militarResolvido: null, // resolução via NomeMatcher fica para próxima sprint
-    statusConferencia: 'pendente',
-    isFiscal: false,
-  });
-  return {
-    recurso,
-    vtrPrefixo: vtr?.prefixo,
-    vtrStatus: vtr?.status ?? null,
-    semEquipe: false,
-    equipe: equipeRotativa as LetraEquipe,
-    chefe: eq.chefe ? toMilitar(eq.chefe) : undefined,
-    motorista: eq.motorista ? toMilitar(eq.motorista) : undefined,
-    operadores: eq.mergulhadores.map(toMilitar),
+  tripulacao: PreviaTripulacaoEntry[],
+  matcher: NomeMatcher,
+): void {
+  const push = (ref: MilitarRef, funcao: string): void => {
+    tripulacao.push({
+      equipe: equipeRotativa as LetraEquipe,
+      viatura: recurso,
+      funcao,
+      militarRef: ref,
+      militarResolvido: matcher.resolve(ref).resolved,
+      isFiscal: false,
+    });
   };
+  if (eq.chefe) push(eq.chefe, 'Ch');
+  if (eq.motorista) push(eq.motorista, 'Mot');
+  eq.mergulhadores.forEach((m, i) => push(m, `Merg${i + 1}`));
 }
 
 /**
- * S0.4 — Constrói uma entry de composicaoMf para SALVAMAR 01 a partir
- * de uma EquipeSalvamar (1-2 supervisores fixos do cadastro do XLSX).
- * supervisor[0] vira `chefe`, supervisor[1] (se houver) vira operador.
- * Resolve NF via NomeMatcher quando bate com o efetivo consolidado.
+ * S0.x/Fix-1 — Empurra o(s) supervisor(es) de SALVAMAR 01 para
+ * `tripulacao`. supervisor[0] vira funcao=Ch (com 1 militar a PD
+ * já exibe "Chefe/Motorista" via `mapEscalaOperacional`, conforme
+ * PR #21). supervisor[1] (raríssimo) vira funcao=Op.
  */
-function buildComposicaoMfFromSalvamar(
+function injetarSalvamarEmTripulacao(
   eq: { supervisores: readonly MilitarRef[] },
   equipeRotativa: LetraEquipeRotativa,
-  viaturas: readonly { id: string; prefixo: string; status: StatusViatura }[],
+  tripulacao: PreviaTripulacaoEntry[],
   matcher: NomeMatcher,
-): ComposicaoMfEntry {
-  const recurso = 'SALVAMAR 01' as const;
-  const vtr = viaturas.find(
-    (v) => normalizeViaturaCode(v.prefixo) === normalizeViaturaCode(recurso),
-  );
-  const toMilitar = (m: MilitarRef): ComposicaoMfMilitar => ({
-    raw: m.raw,
-    postoAbreviado: m.postoAbreviado,
-    nomeGuerra: m.nomeGuerra,
-    militarResolvido: matcher.resolve(m).resolved,
-    statusConferencia: 'pendente',
-    isFiscal: false,
-  });
+): void {
   const [chefe, ...operadores] = eq.supervisores;
-  return {
-    recurso,
-    vtrPrefixo: vtr?.prefixo,
-    vtrStatus: vtr?.status ?? null,
-    semEquipe: false,
-    equipe: equipeRotativa as LetraEquipe,
-    chefe: chefe ? toMilitar(chefe) : undefined,
-    motorista: undefined,
-    operadores: operadores.map(toMilitar),
+  const push = (ref: MilitarRef, funcao: string): void => {
+    tripulacao.push({
+      equipe: equipeRotativa as LetraEquipe,
+      viatura: 'SALVAMAR 01',
+      funcao,
+      militarRef: ref,
+      militarResolvido: matcher.resolve(ref).resolved,
+      isFiscal: false,
+    });
   };
+  if (chefe) push(chefe, 'Ch');
+  operadores.forEach((m, i) => push(m, `Op${i + 1}`));
 }
 
 /**

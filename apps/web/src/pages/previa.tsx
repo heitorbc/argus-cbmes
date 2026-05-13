@@ -595,7 +595,6 @@ export function PreviaPage() {
               data={data}
               initial={extractAjustes(previa)}
               atosEspeciais={previa.escalaEspecialAtos}
-              chefesOperacoes={previa.chefesOperacoes}
               atestadosAtivos={previa.atestados}
               isReadOnly={isReadOnly}
               onSaved={reload}
@@ -630,7 +629,6 @@ function AjustesPreTurno({
   data,
   initial,
   atosEspeciais,
-  chefesOperacoes,
   atestadosAtivos,
   isReadOnly,
   onSaved,
@@ -639,7 +637,6 @@ function AjustesPreTurno({
   isReadOnly: boolean;
   initial: AjustesPrevia;
   atosEspeciais: EscalaEspecialAtoLight[];
-  chefesOperacoes: PreviaDoDia['chefesOperacoes'];
   atestadosAtivos: PreviaDoDia['atestados'];
   onSaved: () => void;
 }) {
@@ -690,31 +687,13 @@ function AjustesPreTurno({
 
   return (
     <>
-      {chefesOperacoes.length > 0 && (
-        <section className="mt-4 rounded border border-slate-200 bg-white p-3">
-          <h3 className="mb-2 text-sm font-semibold text-slate-700">
-            Chefe de Operações (escalados no dia)
-          </h3>
-          <ul className="divide-y divide-slate-100 text-sm">
-            {chefesOperacoes.map((c) => (
-              <li key={c.nf} className="flex items-baseline justify-between gap-2 py-1">
-                <span>
-                  <strong>{c.posto}</strong> {c.nomeGuerra}
-                  {c.marcador && (
-                    <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-700">
-                      {c.marcador}
-                    </span>
-                  )}
-                </span>
-                <span className="text-xs text-slate-500">
-                  NF {c.nf}
-                  {c.telefone && <> · 📞 {c.telefone}</>}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {/*
+       * S0.x/Fix-2 — A section "Chefe de Operações (escalados no dia)"
+       * foi removida porque o Chefe Titular agora aparece no card
+       * "CHEFE DE OPERAÇÕES" da Tripulação (injetado em
+       * `previa.tripulacao` pelo PreviaService), junto com o motorista
+       * vindo do XLSX.
+       */}
 
       {isReadOnly && (
         <p className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">

@@ -440,7 +440,127 @@ function DetalheEscala({
         editing={editing}
         onUpsert={upsertComposicao}
       />
+      {escala.mergulho && <MergulhoSection mergulho={escala.mergulho} />}
+      {escala.salvamar && <SalvamarSection salvamar={escala.salvamar} />}
     </div>
+  );
+}
+
+function MergulhoSection({
+  mergulho,
+}: {
+  mergulho: NonNullable<EscalaMensal['mergulho']>;
+}) {
+  const letras: Array<'A' | 'B' | 'C'> = ['A', 'B', 'C'];
+  const datasComEscala = Object.keys(mergulho.porDia).sort();
+  return (
+    <section className="mt-4 rounded border border-violet-200 bg-violet-50 p-3">
+      <h3 className="text-sm font-semibold text-violet-900">🤿 Mergulho — cadastro das equipes</h3>
+      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-3">
+        {letras.map((letra) => {
+          const eq = mergulho.equipes[letra];
+          if (!eq) return null;
+          return (
+            <article key={letra} className="rounded border border-violet-200 bg-white p-2 text-xs">
+              <p className="font-bold text-violet-800">Equipe {letra}</p>
+              <dl className="mt-1 space-y-0.5">
+                {eq.chefe && (
+                  <div>
+                    <dt className="inline text-violet-700">Ch:</dt>{' '}
+                    <dd className="inline">
+                      {eq.chefe.postoAbreviado} {eq.chefe.nomeGuerra}
+                    </dd>
+                  </div>
+                )}
+                {eq.motorista && (
+                  <div>
+                    <dt className="inline text-violet-700">Mot:</dt>{' '}
+                    <dd className="inline">
+                      {eq.motorista.postoAbreviado} {eq.motorista.nomeGuerra}
+                    </dd>
+                  </div>
+                )}
+                {eq.mergulhadores.map((m, i) => (
+                  <div key={i}>
+                    <dt className="inline text-violet-700">M{i + 1}:</dt>{' '}
+                    <dd className="inline">
+                      {m.postoAbreviado} {m.nomeGuerra}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </article>
+          );
+        })}
+      </div>
+      {datasComEscala.length > 0 && (
+        <details className="mt-2 text-xs">
+          <summary className="cursor-pointer font-medium text-violet-800">
+            Plantão por dia ({datasComEscala.length} datas)
+          </summary>
+          <ul className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 md:grid-cols-4">
+            {datasComEscala.map((data) => {
+              const v = mergulho.porDia[data]!;
+              return (
+                <li key={data} className="text-violet-700">
+                  <span className="font-mono">{data.slice(8)}</span>: M1={v.mergulho01 ?? '—'} ·
+                  M2={v.mergulho02 ?? '—'}
+                </li>
+              );
+            })}
+          </ul>
+        </details>
+      )}
+    </section>
+  );
+}
+
+function SalvamarSection({
+  salvamar,
+}: {
+  salvamar: NonNullable<EscalaMensal['salvamar']>;
+}) {
+  const letras: Array<'E' | 'F'> = ['E', 'F'];
+  const datasComEscala = Object.keys(salvamar.porDia).sort();
+  return (
+    <section className="mt-4 rounded border border-amber-200 bg-amber-50 p-3">
+      <h3 className="text-sm font-semibold text-amber-900">🚒🤿 Salvamar — cadastro das equipes</h3>
+      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+        {letras.map((letra) => {
+          const eq = salvamar.equipes[letra];
+          if (!eq) return null;
+          return (
+            <article key={letra} className="rounded border border-amber-200 bg-white p-2 text-xs">
+              <p className="font-bold text-amber-800">Equipe {letra}</p>
+              <dl className="mt-1 space-y-0.5">
+                {eq.supervisores.map((s, i) => (
+                  <div key={i}>
+                    <dt className="inline text-amber-700">Sup{i + 1}:</dt>{' '}
+                    <dd className="inline">
+                      {s.postoAbreviado} {s.nomeGuerra}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </article>
+          );
+        })}
+      </div>
+      {datasComEscala.length > 0 && (
+        <details className="mt-2 text-xs">
+          <summary className="cursor-pointer font-medium text-amber-800">
+            Plantão por dia ({datasComEscala.length} datas)
+          </summary>
+          <ul className="mt-1 grid grid-cols-3 gap-x-2 gap-y-0.5 md:grid-cols-6">
+            {datasComEscala.map((data) => (
+              <li key={data} className="text-amber-700">
+                <span className="font-mono">{data.slice(8)}</span>: {salvamar.porDia[data]}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
   );
 }
 
