@@ -37,6 +37,7 @@ import { IdeoService } from '../ideo/ideo.service';
 import { ServicoService } from '../servico/servico.service';
 import { TrocasAutorizadasService } from '../trocas-autorizadas/trocas-autorizadas.service';
 import { ViaturasService } from '../viaturas/viaturas.service';
+import { parseMilitarCell } from '../escalas/escala-xlsx-parser';
 import { AjustesPreviaService } from './ajustes-previa.service';
 import { NomeMatcher } from './nome-matching';
 
@@ -290,7 +291,7 @@ export class PreviaService {
       return [];
     });
     const trocasAutComoPrevia = trocasAutorizadasDoDia.map((t) =>
-      converterTrocaAutorizadaEmPrevia(t, dataIso, matcher),
+      converterTrocaAutorizadaEmPrevia(t, dataIso, matcher, inconsistencias),
     );
     const trocasFinalDoDia = [...trocasAutComoPrevia, ...ajustes.trocas];
 
@@ -522,10 +523,14 @@ function buildComposicaoMfFromMergulho(
 
 /**
  * S0.5/PR1 — Converte uma `TrocaAutorizada` (planilha externa, 2 datas)
- * em uma `PreviaTroca` apropriada para a data alvo. NF dos militares
- * fica `undefined` por enquanto — reconciliação raw→NF é sprint separado
- * no backlog (precisa parse robusto de "SGT MARIANE" / "Sgt mariane" /
- * variações para `MilitarRef`).
+ * em uma `PreviaTroca` apropriada para a data alvo.
+ *
+ * Reconciliação militarRaw → NF: usa `parseMilitarCell()` para extrair
+ * `{postoAbreviado, nomeGuerra}` da string raw ("SGT MARIANE") e
+ * `NomeMatcher.resolve()` para descobrir a NF canônica. Quando não
+ * resolve ou há ambiguidade, registra `NF_NAO_RESOLVIDO` ou
+ * `AMBIGUIDADE_NOME` em `inconsistencias` com `detalhe.origem =
+ * 'trocas-autorizadas'` — Fiscal vê na UI da Prévia.
  */
 function converterTrocaAutorizadaEmPrevia(
   troca: {
@@ -542,10 +547,13 @@ function converterTrocaAutorizadaEmPrevia(
     numeroEdocs?: string;
   },
   dataIso: string,
-  _matcher: NomeMatcher,
+  matcher: NomeMatcher,
+  inconsistencias: PreviaInconsistencia[],
 ): {
   substituidoRaw: string;
+  substituidoNf?: string;
   substitutoRaw: string;
+  substitutoNf?: string;
   periodo: string;
   funcao?: string;
   numeroEdocs?: string;
@@ -557,14 +565,56 @@ function converterTrocaAutorizadaEmPrevia(
   const funcao = isLadoEscala ? troca.funcao : troca.funcaoPagamento;
   const horario = isLadoEscala ? troca.horario : troca.horarioPagamento;
 
+  const substituidoNf = resolverNfTrocaAutorizada(escaladoRaw, 'escalado', matcher, inconsistencias);
+  const substitutoNf = resolverNfTrocaAutorizada(
+    substitutoRaw,
+    'substituto',
+    matcher,
+    inconsistencias,
+  );
+
   return {
     substituidoRaw: escaladoRaw,
+    substituidoNf,
     substitutoRaw,
+    substitutoNf,
     periodo: horario || 'horário não informado',
     funcao: funcao || undefined,
     numeroEdocs: troca.numeroEdocs,
     origemAutorizada: true,
   };
+}
+
+/**
+ * Resolve nome bruto (ex.: "SGT MARIANE") em NF canônica via parser +
+ * matcher. Retorna `undefined` quando não resolve e registra
+ * inconsistência apropriada — caller monta o `PreviaTroca` mesmo sem
+ * NF (raw continua válido para a UI).
+ */
+function resolverNfTrocaAutorizada(
+  raw: string,
+  papel: 'escalado' | 'substituto',
+  matcher: NomeMatcher,
+  inconsistencias: PreviaInconsistencia[],
+): string | undefined {
+  const ref = parseMilitarCell(raw);
+  if (!ref) return undefined;
+  const { resolved, ambiguidade } = matcher.resolve(ref);
+  if (resolved) return resolved.nf;
+  inconsistencias.push({
+    tipo: ambiguidade ? 'AMBIGUIDADE_NOME' : 'NF_NAO_RESOLVIDO',
+    mensagem: ambiguidade
+      ? `Trocas Autorizadas: ambiguidade ao resolver ${papel} "${raw}" — múltiplos militares.`
+      : `Trocas Autorizadas: não foi possível resolver NF de ${papel} "${raw}".`,
+    detalhe: {
+      origem: 'trocas-autorizadas',
+      papel,
+      raw,
+      postoAbreviado: ref.postoAbreviado,
+      nomeGuerra: ref.nomeGuerra,
+    },
+  });
+  return undefined;
 }
 
 /** Re-export para uso em tests/controller. */

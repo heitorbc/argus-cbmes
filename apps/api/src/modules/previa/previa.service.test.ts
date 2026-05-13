@@ -237,6 +237,58 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
     expect(autorizadas[0]!.numeroEdocs).toBe('2026-ABC123');
   });
 
+  it('reconciliação raw→NF: preenche substituidoNf/substitutoNf quando os nomes batem com efetivo', async () => {
+    const previaAsAny = previa as unknown as { trocasAutorizadas: FakeTrocasAutorizadasService };
+    previaAsAny.trocasAutorizadas.trocas = [
+      {
+        dataEscala: '2026-04-23',
+        dataPagamento: '2026-04-30',
+        escaladoOriginal: '2º SGT BARCELLOS',
+        substituto: 'CB FABRE',
+        escaladoPagamento: 'CB FABRE',
+        substitutoPagamento: '2º SGT BARCELLOS',
+        funcao: 'MERGULHADOR',
+        funcaoPagamento: 'MERGULHADOR',
+        horario: '7h10 às 18h',
+        horarioPagamento: '7h10 às 18h',
+      },
+    ];
+    const r = await previa.getPreviaDoDia('2026-04-23');
+    const aut = r.trocas.find((t) => t.origemAutorizada)!;
+    expect(aut.substituidoNf).toBe('3037509'); // BARCELLOS
+    expect(aut.substitutoNf).toBe('3055566'); // FABRE
+  });
+
+  it('reconciliação raw→NF: registra inconsistência quando o nome não bate com nenhum militar', async () => {
+    const previaAsAny = previa as unknown as { trocasAutorizadas: FakeTrocasAutorizadasService };
+    previaAsAny.trocasAutorizadas.trocas = [
+      {
+        dataEscala: '2026-04-23',
+        dataPagamento: '2026-04-30',
+        escaladoOriginal: 'SGT INEXISTENTE',
+        substituto: '2º SGT BARCELLOS',
+        escaladoPagamento: '2º SGT BARCELLOS',
+        substitutoPagamento: 'SGT INEXISTENTE',
+        funcao: 'MERGULHADOR',
+        funcaoPagamento: 'MERGULHADOR',
+        horario: '7h10 às 18h',
+        horarioPagamento: '7h10 às 18h',
+      },
+    ];
+    const r = await previa.getPreviaDoDia('2026-04-23');
+    const aut = r.trocas.find((t) => t.origemAutorizada)!;
+    expect(aut.substituidoNf).toBeUndefined(); // INEXISTENTE não resolve
+    expect(aut.substitutoNf).toBe('3037509'); // BARCELLOS resolve
+
+    const inc = r.inconsistencias.find(
+      (i) =>
+        i.tipo === 'NF_NAO_RESOLVIDO' &&
+        (i.detalhe as Record<string, unknown> | undefined)?.origem === 'trocas-autorizadas',
+    );
+    expect(inc).toBeDefined();
+    expect(inc!.mensagem).toContain('SGT INEXISTENTE');
+  });
+
   it('S0.5/PR1 — no dia de pagamento, papéis se invertem', async () => {
     const previaAsAny = previa as unknown as { trocasAutorizadas: FakeTrocasAutorizadasService };
     previaAsAny.trocasAutorizadas.trocas = [
