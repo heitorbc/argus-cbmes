@@ -17,11 +17,13 @@ import {
   updateDispensaInputSchema,
   type Dispensa,
   type DispensaSaldoMilitar,
+  type DispensaSheet,
   type UserSession,
 } from '@argus/shared-types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { DispensasService } from './dispensas.service';
+import { DispensasSheetService } from './dispensas-sheet.service';
 
 const listQuerySchema = z.object({
   militarNf: z.string().optional(),
@@ -34,7 +36,19 @@ const listQuerySchema = z.object({
 
 @Controller('dispensas')
 export class DispensasController {
-  constructor(private readonly dispensas: DispensasService) {}
+  constructor(
+    private readonly dispensas: DispensasService,
+    private readonly dispensasSheet: DispensasSheetService,
+  ) {}
+
+  /**
+   * Item 2 — Lista as dispensas vindas da aba "Dispensas 2026" da
+   * planilha "Efetivo - Dados Gerais" (read-only, cache 5min).
+   */
+  @Get('sheet')
+  async listFromSheet(): Promise<DispensaSheet[]> {
+    return this.dispensasSheet.listAll();
+  }
 
   @Get()
   list(@Query() query: unknown): Dispensa[] {
