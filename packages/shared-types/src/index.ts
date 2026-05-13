@@ -2,6 +2,7 @@ export * from './atestado.js';
 export * from './auth.js';
 export * from './conferencia-materiais.js';
 export * from './dispensa.js';
+export * from './dispensa-sheet.js';
 export * from './escala.js';
 export * from './escala-especial.js';
 export * from './fiscal.js';
