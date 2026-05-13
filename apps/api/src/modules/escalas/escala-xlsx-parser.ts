@@ -4,10 +4,14 @@ import {
   type EquipeMergulho,
   type EscalaMensal,
   type EscalaMergulhoMes,
+  type EquipeSalvamar,
+  type EscalaSalvamarMes,
   type LetraEquipeMergulho,
   LETRA_EQUIPE_MERGULHO,
   type LetraEquipeRotativa,
   LETRA_EQUIPE_ROTATIVA,
+  type LetraEquipeSalvamar,
+  LETRA_EQUIPE_SALVAMAR,
   type MilitarRef,
 } from '@argus/shared-types';
 
@@ -546,6 +550,86 @@ function parseMergulhoSection(
 }
 
 /**
+ * S0.4 — Parser da seção de Salvamar (Pelotão de Atividades Aquáticas).
+ *
+ * Layout no XLSX (aba mensal/quinzenal):
+ *   - Cadastro: linha 23 = headers "EQUIPE E" (cols X-AA = 24-27) e
+ *     "EQUIPE F" (cols AB-AE = 28-31). Linhas 24-25 trazem o militar
+ *     supervisor de cada equipe (cada equipe pode ter 1-2 supervisores).
+ *   - Schedule: linha 14 traz "E" ou "F" por dia (cols startCol..endCol)
+ *     indicando qual equipe está de plantão. Célula vazia = sem
+ *     SALVAMAR previsto para o dia.
+ *
+ * Letras E/F foram escolhidas pelos próprios planilheiros para não
+ * conflitar com as rotativas A/B/C/D nem com Mergulho A/B/C.
+ */
+function parseSalvamarSection(
+  ws: ExcelJS.Worksheet,
+  startCol: number,
+  endCol: number,
+  ano: number,
+  mes: number,
+): EscalaSalvamarMes | null {
+  // Etapa A — cadastro (X24:AE25). Cada equipe ocupa 4 cols redundantes.
+  const cadastroPorLetra: Record<LetraEquipeSalvamar, [number, number]> = {
+    E: [24, 27], // X-AA
+    F: [28, 31], // AB-AE
+  };
+
+  const equipes: Partial<Record<LetraEquipeSalvamar, EquipeSalvamar>> = {};
+  let cadastroVazio = true;
+
+  for (const letra of LETRA_EQUIPE_SALVAMAR) {
+    const [colIni, colFim] = cadastroPorLetra[letra];
+    const pickPrimeira = (row: number): MilitarRef | null => {
+      for (let c = colIni; c <= colFim; c++) {
+        const raw = cellText(ws.getRow(row).getCell(c));
+        if (raw) {
+          const m = parseMilitarCell(raw);
+          if (m) return m;
+        }
+      }
+      return null;
+    };
+    const sup1 = pickPrimeira(24);
+    const sup2 = pickPrimeira(25);
+    const supervisores: MilitarRef[] = [];
+    if (sup1) supervisores.push(sup1);
+    if (sup2) supervisores.push(sup2);
+    if (supervisores.length > 0) cadastroVazio = false;
+    equipes[letra] = { letra, supervisores };
+  }
+
+  if (cadastroVazio) return null;
+
+  // Etapa B — schedule por dia (linha 14). Para cada coluna no range
+  // de dias, lê a letra E/F e mapeia para o ISO do dia.
+  const porDia: Record<string, LetraEquipeSalvamar> = {};
+  const codigoRegex = /^[EF]$/;
+  const rowDias = [9, 10];
+
+  for (let c = startCol; c <= endCol; c++) {
+    let dia: number | null = null;
+    for (const r of rowDias) {
+      dia = cellAsDayOfMonth(ws.getRow(r).getCell(c));
+      if (dia !== null) break;
+    }
+    if (dia === null) continue;
+
+    const codigo = cellText(ws.getRow(14).getCell(c)).trim().toUpperCase();
+    if (!codigoRegex.test(codigo)) continue;
+
+    const dataIso = `${ano}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+    porDia[dataIso] = codigo as LetraEquipeSalvamar;
+  }
+
+  return {
+    equipes: equipes as EscalaSalvamarMes['equipes'],
+    porDia,
+  };
+}
+
+/**
  * Heurística para extrair a aba inteira: identifica linhas das equipes (header EQUIPE X),
  * extrai o range de dias no header, identifica colunas de cada equipe e itera linhas 16-31.
  */
@@ -557,6 +641,7 @@ function parseAba(
   diaEquipe: Record<string, LetraEquipeRotativa>;
   composicao: ComposicaoEntry[];
   mergulho: EscalaMergulhoMes | null;
+  salvamar: EscalaSalvamarMes | null;
   avisos: string[];
 } {
   const avisos: string[] = [];
@@ -601,7 +686,11 @@ function parseAba(
   // rotativas (cols B-S).
   const mergulho = parseMergulhoSection(ws, 23, 36, ano, mes);
 
-  return { diaEquipe, composicao: entries, mergulho, avisos };
+  // S0.4 — Salvamar (cadastro X24:AE25 + schedule linha 14, mesmo range
+  // de colunas-dia do Mergulho).
+  const salvamar = parseSalvamarSection(ws, 23, 36, ano, mes);
+
+  return { diaEquipe, composicao: entries, mergulho, salvamar, avisos };
 }
 
 /**
@@ -673,6 +762,7 @@ export async function parseEscalaXlsx(input: ParseEscalaInput): Promise<EscalaMe
   const diaEquipe = { ...r1.diaEquipe, ...r2.diaEquipe };
   const composicao = mergeComposicao(r1.composicao, r2.composicao, avisos);
   const mergulho = mergeMergulho(r1.mergulho, r2.mergulho);
+  const salvamar = mergeSalvamar(r1.salvamar, r2.salvamar);
 
   if (Object.keys(diaEquipe).length === 0) {
     throw new EscalaXlsxParseError(
@@ -696,6 +786,7 @@ export async function parseEscalaXlsx(input: ParseEscalaInput): Promise<EscalaMe
     diaEquipe,
     composicao,
     mergulho: mergulho ?? undefined,
+    salvamar: salvamar ?? undefined,
     avisos,
   };
 }
@@ -713,6 +804,23 @@ function mergeMergulho(
   if (!b) return a;
   return {
     equipes: a.equipes, // 1ª quinzena vence — cadastro é imutável no mês
+    porDia: { ...a.porDia, ...b.porDia },
+  };
+}
+
+/**
+ * S0.4 — Mescla a seção de salvamar entre as 2 quinzenas. Mesma
+ * regra do mergulho: cadastro da 1ª vence, `porDia` acumula.
+ */
+function mergeSalvamar(
+  a: EscalaSalvamarMes | null,
+  b: EscalaSalvamarMes | null,
+): EscalaSalvamarMes | null {
+  if (!a && !b) return null;
+  if (!a) return b;
+  if (!b) return a;
+  return {
+    equipes: a.equipes,
     porDia: { ...a.porDia, ...b.porDia },
   };
 }

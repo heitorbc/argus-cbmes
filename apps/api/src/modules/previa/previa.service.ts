@@ -211,6 +211,19 @@ export class PreviaService {
       }
     }
 
+    // S0.4 — injeta SALVAMAR 01 quando o XLSX importou seção de salvamar
+    // (cadastro X23:AE25 + schedule linha 14). Letra E/F do dia indica
+    // qual equipe está de plantão.
+    if (escala?.salvamar && equipe) {
+      const letra = escala.salvamar.porDia[dataIso];
+      if (letra) {
+        const eq = escala.salvamar.equipes[letra];
+        if (eq && eq.supervisores.length > 0) {
+          composicaoMf.push(buildComposicaoMfFromSalvamar(eq, equipe, allViaturas, matcher));
+        }
+      }
+    }
+
     // S6b/F1 — Estado do Servico do dia
     const estadoServico = this.servico.get(dataIso);
     const alteracoesDiversas = this.servico.listAlteracoes(dataIso);
@@ -518,6 +531,43 @@ function buildComposicaoMfFromMergulho(
     chefe: eq.chefe ? toMilitar(eq.chefe) : undefined,
     motorista: eq.motorista ? toMilitar(eq.motorista) : undefined,
     operadores: eq.mergulhadores.map(toMilitar),
+  };
+}
+
+/**
+ * S0.4 — Constrói uma entry de composicaoMf para SALVAMAR 01 a partir
+ * de uma EquipeSalvamar (1-2 supervisores fixos do cadastro do XLSX).
+ * supervisor[0] vira `chefe`, supervisor[1] (se houver) vira operador.
+ * Resolve NF via NomeMatcher quando bate com o efetivo consolidado.
+ */
+function buildComposicaoMfFromSalvamar(
+  eq: { supervisores: readonly MilitarRef[] },
+  equipeRotativa: LetraEquipeRotativa,
+  viaturas: readonly { id: string; prefixo: string; status: StatusViatura }[],
+  matcher: NomeMatcher,
+): ComposicaoMfEntry {
+  const recurso = 'SALVAMAR 01' as const;
+  const vtr = viaturas.find(
+    (v) => normalizeViaturaCode(v.prefixo) === normalizeViaturaCode(recurso),
+  );
+  const toMilitar = (m: MilitarRef): ComposicaoMfMilitar => ({
+    raw: m.raw,
+    postoAbreviado: m.postoAbreviado,
+    nomeGuerra: m.nomeGuerra,
+    militarResolvido: matcher.resolve(m).resolved,
+    statusConferencia: 'pendente',
+    isFiscal: false,
+  });
+  const [chefe, ...operadores] = eq.supervisores;
+  return {
+    recurso,
+    vtrPrefixo: vtr?.prefixo,
+    vtrStatus: vtr?.status ?? null,
+    semEquipe: false,
+    equipe: equipeRotativa as LetraEquipe,
+    chefe: chefe ? toMilitar(chefe) : undefined,
+    motorista: undefined,
+    operadores: operadores.map(toMilitar),
   };
 }
 
