@@ -131,10 +131,7 @@ describe('ParteDiariaService (S10)', () => {
   beforeEach(() => {
     prevSvc = new FakePreviaService();
     matSvc = new FakeMateriaisService();
-    svc = new ParteDiariaService(
-      prevSvc as unknown as PreviaService,
-      matSvc as unknown as never,
-    );
+    svc = new ParteDiariaService(prevSvc as unknown as PreviaService, matSvc as unknown as never);
   });
 
   it('rascunho deriva equipe + Fiscal que assume + dia seguinte', async () => {
@@ -146,6 +143,63 @@ describe('ParteDiariaService (S10)', () => {
     expect(pd.fiscalQueAssume?.nf).toBe('2984946');
     expect(pd.fiscalQuePassa).toBeNull();
     expect(pd.textoAssuncao).toMatch(/MARIANE GUARNIER BRUMATTI/);
+  });
+
+  it('1-militar (só motorista) vira "Chefe/Motorista" na PD (S6n/0.6)', async () => {
+    prevSvc.payload = fakePrevia({
+      composicaoMf: [
+        {
+          recurso: 'ATB',
+          vtrPrefixo: 'ATB 001',
+          vtrStatus: 'DISPONIVEL',
+          semEquipe: false,
+          equipe: 'B',
+          chefe: undefined,
+          motorista: {
+            raw: 'CB ANDRÉ LUIS',
+            postoAbreviado: 'CB',
+            nomeGuerra: 'ANDRÉ LUIS',
+            militarResolvido: null,
+            statusConferencia: 'pendente',
+            isFiscal: false,
+          },
+          operadores: [],
+        },
+      ],
+    });
+    const pd = await svc.get('2026-05-04');
+    const atb = pd.escalasOperacionais.find((e) => e.recurso === 'ATB')!;
+    expect(atb.militares).toHaveLength(1);
+    expect(atb.militares[0]!.funcao).toBe('Chefe/Motorista');
+    expect(atb.militares[0]!.militarRaw).toBe('CB ANDRÉ LUIS');
+  });
+
+  it('1-militar (só chefe) também vira "Chefe/Motorista"', async () => {
+    prevSvc.payload = fakePrevia({
+      composicaoMf: [
+        {
+          recurso: 'AC 001',
+          vtrPrefixo: 'AC 001',
+          vtrStatus: 'DISPONIVEL',
+          semEquipe: false,
+          equipe: 'B',
+          chefe: {
+            raw: '3º SGT DAN',
+            postoAbreviado: '3ºSGT',
+            nomeGuerra: 'DAN',
+            militarResolvido: null,
+            statusConferencia: 'pendente',
+            isFiscal: false,
+          },
+          motorista: undefined,
+          operadores: [],
+        },
+      ],
+    });
+    const pd = await svc.get('2026-05-04');
+    const ac = pd.escalasOperacionais.find((e) => e.recurso === 'AC 001')!;
+    expect(ac.militares).toHaveLength(1);
+    expect(ac.militares[0]!.funcao).toBe('Chefe/Motorista');
   });
 
   it('escalas operacionais espelham composicaoMf com chefe/motorista/operadores ordenados', async () => {
@@ -280,9 +334,9 @@ describe('ParteDiariaService (S10)', () => {
     expect(finalizada.finalizadoEm).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(finalizada.finalizadoPorNf).toBe('2984946');
 
-    await expect(
-      svc.salvar('2026-05-04', { textoInstrucao: 'X' }, '2984946'),
-    ).rejects.toThrow(/finalizada/);
+    await expect(svc.salvar('2026-05-04', { textoInstrucao: 'X' }, '2984946')).rejects.toThrow(
+      /finalizada/,
+    );
   });
 
   it('reabrir() limpa o lock; edições voltam a funcionar', async () => {
