@@ -279,6 +279,52 @@ describe('parseEscalaXlsx — Mergulho (S0.3, fixture 01 JANEIRO 2026)', () => {
   });
 });
 
+describe('parseEscalaXlsx — Salvamar (S0.4, fixture 01 JANEIRO 2026)', () => {
+  it('extrai cadastro de 2 equipes (E/F) com seus supervisores', async () => {
+    let buffer: Buffer;
+    try {
+      buffer = loadFixture('01 JANEIRO DE 2026.xlsx');
+    } catch {
+      return;
+    }
+    const escala = await parseEscalaXlsx({
+      buffer,
+      filename: '01 JANEIRO DE 2026.xlsx',
+    });
+    expect(escala.salvamar).toBeDefined();
+    const equipes = escala.salvamar!.equipes;
+    expect(Object.keys(equipes).sort()).toEqual(['E', 'F']);
+
+    // Equipe E: 3º SGT DAN (sup1, sup2 vazio na fixture)
+    expect(equipes.E!.supervisores.length).toBeGreaterThanOrEqual(1);
+    expect(equipes.E!.supervisores[0]!.nomeGuerra).toContain('DAN');
+
+    // Equipe F: ao menos 1 supervisor cadastrado (CHAGAS na 1ª quinzena
+    // / PAGANOTTO na 2ª — mergeSalvamar mantém a 1ª).
+    expect(equipes.F!.supervisores.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('preenche porDia para dias do mês com letra E ou F', async () => {
+    let buffer: Buffer;
+    try {
+      buffer = loadFixture('01 JANEIRO DE 2026.xlsx');
+    } catch {
+      return;
+    }
+    const escala = await parseEscalaXlsx({
+      buffer,
+      filename: '01 JANEIRO DE 2026.xlsx',
+    });
+    const porDia = escala.salvamar!.porDia;
+    const datas = Object.keys(porDia);
+    expect(datas.length).toBeGreaterThan(0);
+
+    for (const data of datas) {
+      expect(['E', 'F']).toContain(porDia[data]);
+    }
+  });
+});
+
 describe('parseEscalaXlsx — fixture 01 JANEIRO 2026 com normalização (S6n-fix)', () => {
   it('emite recursos canônicos (ABTS_01, RESGATE 01, ATB, PLATAFORMA, CHEFE DE OPERAÇÕES, GUARDA)', async () => {
     let buffer: Buffer;

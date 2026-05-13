@@ -76,6 +76,36 @@ export const escalaMergulhoMesSchema = z.object({
 });
 export type EscalaMergulhoMes = z.infer<typeof escalaMergulhoMesSchema>;
 
+/**
+ * S0.4 — Equipes de Salvamar (Pelotão de Atividades Aquáticas). Layout
+ * paralelo às equipes de Mergulho, mas com 2 equipes (E/F) em vez de 3
+ * (A/B/C) — letras escolhidas para não conflitar com as rotativas.
+ *
+ * Cadastro no XLSX (linhas 24-25): "Sup" (supervisor/chefe) por dia de
+ * plantão. Cada equipe tem 1-2 supervisores. Schedule (linha 14): letra
+ * "E" ou "F" por dia indicando qual equipe está em SALVAMAR.
+ */
+export const LETRA_EQUIPE_SALVAMAR = ['E', 'F'] as const;
+export type LetraEquipeSalvamar = (typeof LETRA_EQUIPE_SALVAMAR)[number];
+
+export const equipeSalvamarSchema = z.object({
+  letra: z.enum(LETRA_EQUIPE_SALVAMAR),
+  /** Supervisores da equipe — 1 ou 2 militares conforme o cadastro do mês. */
+  supervisores: z.array(militarRefSchema),
+});
+export type EquipeSalvamar = z.infer<typeof equipeSalvamarSchema>;
+
+export const escalaSalvamarMesSchema = z.object({
+  /** Cadastro fixo do mês (X23:AE25 da aba mensal). */
+  equipes: z.record(z.enum(LETRA_EQUIPE_SALVAMAR), equipeSalvamarSchema),
+  /**
+   * Para cada `YYYY-MM-DD`, qual equipe (E/F) está de plantão em
+   * SALVAMAR. Dia sem entrada significa sem SALVAMAR previsto.
+   */
+  porDia: z.record(z.string(), z.enum(LETRA_EQUIPE_SALVAMAR)),
+});
+export type EscalaSalvamarMes = z.infer<typeof escalaSalvamarMesSchema>;
+
 export const escalaMensalSchema = z.object({
   /** 1-12 */
   mes: z.number().int().min(1).max(12),
@@ -93,6 +123,11 @@ export const escalaMensalSchema = z.object({
    * sem essa seção (ex.: testes legados, dia da mulher) deixa `undefined`.
    */
   mergulho: escalaMergulhoMesSchema.optional(),
+  /**
+   * S0.4 — Seção de Salvamar (cadastro fixo + schedule por dia). Opcional
+   * com o mesmo critério do mergulho.
+   */
+  salvamar: escalaSalvamarMesSchema.optional(),
   /** Lista de avisos não-fatais detectados durante o parse (NF não resolvido, célula vazia, etc.). */
   avisos: z.array(z.string()),
 });
