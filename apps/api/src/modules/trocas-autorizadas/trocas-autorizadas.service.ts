@@ -44,6 +44,27 @@ export class TrocasAutorizadasService {
     this.inflight = null;
   }
 
+  /**
+   * S0.5/PR3 — Força resync ignorando o cache. Usado pelo botão admin em
+   * /configuracoes/integracoes. Em caso de falha, mantém o snapshot
+   * anterior (fallback stale) e propaga o erro.
+   */
+  async forceSync(): Promise<{ syncedAt: string; count: number }> {
+    const previous = this.cache;
+    try {
+      const entry = await this.fetchAndParse();
+      this.cache = entry;
+      return { syncedAt: new Date(entry.syncedAt).toISOString(), count: entry.parsed.length };
+    } catch (err) {
+      this.logger.error(
+        `forceSync Trocas Autorizadas falhou: ${(err as Error).message}. ${previous ? 'Mantendo snapshot anterior.' : 'Sem snapshot anterior.'}`,
+      );
+      throw new ServiceUnavailableException(
+        'Não foi possível sincronizar com a planilha de Trocas Autorizadas.',
+      );
+    }
+  }
+
   /** S0.5/PR2 — metadados para a página /configuracoes/integracoes. */
   getSyncStatus(): { syncedAt: string | null; count: number; stale: boolean } {
     if (!this.cache) return { syncedAt: null, count: 0, stale: false };

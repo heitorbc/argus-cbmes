@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { IntegracaoStatus } from '@argus/shared-types';
 import { ChefesOperacoesService } from '../chefes-operacoes/chefes-operacoes.service';
@@ -14,6 +14,7 @@ interface SourceConfig {
   sheetIdDefault: string;
   sheetGidOrName?: string;
   getStatus: () => { syncedAt: string | null; count: number; stale: boolean };
+  forceSync: () => Promise<{ syncedAt: string; count: number }>;
 }
 
 /**
@@ -32,7 +33,22 @@ export class IntegracoesService {
   ) {}
 
   list(): IntegracaoStatus[] {
-    const sources: SourceConfig[] = [
+    return this.sources().map((s) => this.buildStatus(s));
+  }
+
+  /**
+   * S0.5/PR3 — Força resync da integração `id` ignorando o cache. Retorna
+   * o status atualizado. Lança NotFoundException se `id` for desconhecido.
+   */
+  async sync(id: string): Promise<IntegracaoStatus> {
+    const src = this.sources().find((s) => s.id === id);
+    if (!src) throw new NotFoundException(`Integração '${id}' não encontrada`);
+    await src.forceSync();
+    return this.buildStatus(src);
+  }
+
+  private sources(): SourceConfig[] {
+    return [
       {
         id: 'trocas-autorizadas',
         nome: 'Trocas Autorizadas',
@@ -42,6 +58,7 @@ export class IntegracoesService {
         sheetIdDefault: '1IjD4XskscfL5w4bCw5lP5qTNIZi5307XJKc3yGWK4D8',
         sheetGidOrName: 'gid=1799360305',
         getStatus: () => this.trocasAut.getSyncStatus(),
+        forceSync: () => this.trocasAut.forceSync(),
       },
       {
         id: 'chefes-operacoes',
@@ -51,6 +68,7 @@ export class IntegracoesService {
         sheetIdDefault: '1Nlr_uSNVD6dByaWPTL6IttSOa2nQPXO-m7FqTpeH8WI',
         sheetGidOrName: 'gid=1250546399',
         getStatus: () => this.chefesOp.getSyncStatus(),
+        forceSync: () => this.chefesOp.forceSync(),
       },
       {
         id: 'dispensas-sheet',
@@ -61,6 +79,7 @@ export class IntegracoesService {
         sheetIdDefault: '1gA17VKQNV8xlnqIhAJfu57TW1GS6VH2YDrcJZk405do',
         sheetGidOrName: 'Dispensas%202026',
         getStatus: () => this.dispensasSheet.getSyncStatus(),
+        forceSync: () => this.dispensasSheet.forceSync(),
       },
       {
         id: 'viaturas-qdv',
@@ -70,28 +89,29 @@ export class IntegracoesService {
         sheetIdDefault: '1iqjSDXpbAjtbi7lvd5_5brims8Ipr-OTVXhQMGiv2I8',
         sheetGidOrName: '1BBM_1CIA',
         getStatus: () => this.viaturasQdv.getSyncStatus(),
+        forceSync: () => this.viaturasQdv.forceSync(),
       },
     ];
+  }
 
-    return sources.map((s) => {
-      const sheetId = this.config.get<string>(s.sheetIdEnv) ?? s.sheetIdDefault;
-      const status = s.getStatus();
-      const url = s.sheetGidOrName
-        ? `https://docs.google.com/spreadsheets/d/${sheetId}/edit#${s.sheetGidOrName}`
-        : `https://docs.google.com/spreadsheets/d/${sheetId}/edit`;
-      let statusLabel: IntegracaoStatus['status'];
-      if (status.syncedAt === null) statusLabel = 'nunca';
-      else if (status.stale) statusLabel = 'stale';
-      else statusLabel = 'ok';
-      return {
-        id: s.id,
-        nome: s.nome,
-        descricao: s.descricao,
-        url,
-        ultimoSyncEm: status.syncedAt,
-        qtdRegistros: status.count,
-        status: statusLabel,
-      };
-    });
+  private buildStatus(s: SourceConfig): IntegracaoStatus {
+    const sheetId = this.config.get<string>(s.sheetIdEnv) ?? s.sheetIdDefault;
+    const status = s.getStatus();
+    const url = s.sheetGidOrName
+      ? `https://docs.google.com/spreadsheets/d/${sheetId}/edit#${s.sheetGidOrName}`
+      : `https://docs.google.com/spreadsheets/d/${sheetId}/edit`;
+    let statusLabel: IntegracaoStatus['status'];
+    if (status.syncedAt === null) statusLabel = 'nunca';
+    else if (status.stale) statusLabel = 'stale';
+    else statusLabel = 'ok';
+    return {
+      id: s.id,
+      nome: s.nome,
+      descricao: s.descricao,
+      url,
+      ultimoSyncEm: status.syncedAt,
+      qtdRegistros: status.count,
+      status: statusLabel,
+    };
   }
 }

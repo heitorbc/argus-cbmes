@@ -489,6 +489,12 @@ export const api = {
   // Integrações Google Sheets (S0.5/PR2)
   integracoesList: () => request<IntegracaoStatus[]>('/integracoes'),
 
+  // S0.5/PR3 — força resync (admin)
+  integracoesSync: (id: string) =>
+    request<IntegracaoStatus>(`/integracoes/${encodeURIComponent(id)}/sync`, {
+      method: 'POST',
+    }),
+
   // Férias (item 4)
   feriasList: (filter: { militarNf?: string; ano?: number } = {}) => {
     const params = new URLSearchParams();

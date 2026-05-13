@@ -43,6 +43,26 @@ export class ChefesOperacoesService {
     };
   }
 
+  /**
+   * S0.5/PR3 — Força resync ignorando o cache. Usado pelo botão admin em
+   * /configuracoes/integracoes.
+   */
+  async forceSync(): Promise<{ syncedAt: string; count: number }> {
+    const previous = this.cache;
+    try {
+      const entry = await this.fetchAndParse();
+      this.cache = entry;
+      return { syncedAt: new Date(entry.syncedAt).toISOString(), count: entry.parsed.length };
+    } catch (err) {
+      this.logger.error(
+        `forceSync ChOp falhou: ${(err as Error).message}. ${previous ? 'Mantendo snapshot anterior.' : 'Sem snapshot anterior.'}`,
+      );
+      throw new ServiceUnavailableException(
+        'Não foi possível sincronizar com a planilha de ChOp.',
+      );
+    }
+  }
+
   private async getEntry(): Promise<{ entry: CacheEntry; stale: boolean }> {
     const now = Date.now();
     if (this.cache && now - this.cache.syncedAt < CACHE_TTL_MS) {
