@@ -10,17 +10,30 @@ import {
   Post,
   Put,
 } from '@nestjs/common';
-import { createViaturaSchema, updateViaturaSchema } from '@argus/shared-types';
+import { createViaturaSchema, updateViaturaSchema, type ViaturaQdv } from '@argus/shared-types';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ViaturasService } from './viaturas.service';
+import { ViaturasQdvService } from './viaturas-qdv.service';
 
 @Controller('viaturas')
 export class ViaturasController {
-  constructor(private readonly viaturas: ViaturasService) {}
+  constructor(
+    private readonly viaturas: ViaturasService,
+    private readonly viaturasQdv: ViaturasQdvService,
+  ) {}
 
   @Get()
   list() {
     return this.viaturas.list();
+  }
+
+  /**
+   * Item 3 — Lista as viaturas vindas da aba "1BBM_1CIA" da planilha
+   * QDV institucional (read-only, cache 5min).
+   */
+  @Get('qdv')
+  async listFromQdv(): Promise<ViaturaQdv[]> {
+    return this.viaturasQdv.listAll();
   }
 
   @Get(':id')
