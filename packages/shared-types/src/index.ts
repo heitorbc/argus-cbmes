@@ -13,5 +13,6 @@ export * from './parte-diaria.js';
 export * from './previa.js';
 export * from './recurso.js';
 export * from './servico.js';
+export * from './troca-autorizada.js';
 export * from './unidade.js';
 export * from './viatura.js';

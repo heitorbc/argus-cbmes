@@ -19,6 +19,7 @@ import { ParteDiariaModule } from './modules/parte-diaria/parte-diaria.module';
 import { PreviaModule } from './modules/previa/previa.module';
 import { RecursosModule } from './modules/recursos/recursos.module';
 import { ServicoModule } from './modules/servico/servico.module';
+import { TrocasAutorizadasModule } from './modules/trocas-autorizadas/trocas-autorizadas.module';
 import { UnidadesModule } from './modules/unidades/unidades.module';
 import { ViaturasModule } from './modules/viaturas/viaturas.module';
 
@@ -46,6 +47,7 @@ import { ViaturasModule } from './modules/viaturas/viaturas.module';
     PreviaModule,
     RecursosModule,
     ServicoModule,
+    TrocasAutorizadasModule,
     UnidadesModule,
     ViaturasModule,
   ],
