@@ -51,6 +51,7 @@ export const ROUTE_TO_SECTION: Record<string, ModuloHome> = {
   '/cadastros/viaturas': 'logistica',
   '/configuracoes/unidades': 'configuracoes',
   '/configuracoes/recursos': 'configuracoes',
+  '/configuracoes/integracoes': 'configuracoes',
 };
 
 /**

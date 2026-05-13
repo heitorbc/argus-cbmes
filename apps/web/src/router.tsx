@@ -26,6 +26,7 @@ import { ConferenciaEquipePage } from '@/pages/conferencia-equipe';
 import { ConferenciaViaturaPage } from '@/pages/conferencia-viatura';
 import { DispensasPage } from '@/pages/dispensas';
 import { FeriasPage } from '@/pages/ferias';
+import { IntegracoesPage } from '@/pages/integracoes';
 import { TrocasPage } from '@/pages/trocas';
 import { NotasServicoPage } from '@/pages/notas-servico';
 import { ParteDiariaPage } from '@/pages/parte-diaria';
@@ -115,6 +116,7 @@ export const router = createBrowserRouter([
           { path: '/cadastros/notas-servico', element: <NotasServicoPage /> },
           { path: '/configuracoes/unidades', element: <UnidadesPage /> },
           { path: '/configuracoes/recursos', element: <RecursosPage /> },
+          { path: '/configuracoes/integracoes', element: <IntegracoesPage /> },
           { path: '/previa', element: <PreviaPage /> },
           { path: '/parte-diaria', element: <ParteDiariaPage /> },
           { path: '/servico/:data/conferencia-equipe', element: <ConferenciaEquipePage /> },

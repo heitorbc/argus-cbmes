@@ -13,6 +13,7 @@ import { FeriasModule } from './modules/ferias/ferias.module';
 import { FiscaisModule } from './modules/fiscais/fiscais.module';
 import { HealthModule } from './modules/health/health.module';
 import { IdeoModule } from './modules/ideo/ideo.module';
+import { IntegracoesModule } from './modules/integracoes/integracoes.module';
 import { MapaForcaModule } from './modules/mapa-forca/mapa-forca.module';
 import { MateriaisModule } from './modules/materiais/materiais.module';
 import { NotasServicoModule } from './modules/notas-servico/notas-servico.module';
@@ -42,6 +43,7 @@ import { ViaturasModule } from './modules/viaturas/viaturas.module';
     FiscaisModule,
     HealthModule,
     IdeoModule,
+    IntegracoesModule,
     MapaForcaModule,
     MateriaisModule,
     NotasServicoModule,
