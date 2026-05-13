@@ -13,6 +13,13 @@ export const dispensaSheetSchema = z.object({
   data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   /** Nome do militar (raw, como veio na planilha). */
   militarRaw: z.string(),
+  /**
+   * NF resolvida (reconciliação raw→NF). Preenchida pelo controller
+   * via `NomeMatcher` quando `militarRaw` bate com algum militar do
+   * efetivo (1ª Cia consolidado). Quando não resolve, fica `undefined`
+   * e o frontend exibe apenas `militarRaw`.
+   */
+  nf: z.string().optional(),
   /** Letra da equipe (A/B/C/D ou rótulo livre como "MERG", "SAT"). */
   equipe: z.string().optional(),
   /** Número do E-Docs (ex.: "2026-VJGXD3") ou indicador alternativo. */

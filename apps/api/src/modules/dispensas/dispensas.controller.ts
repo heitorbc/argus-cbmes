@@ -22,6 +22,9 @@ import {
 } from '@argus/shared-types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { EfetivoService } from '../efetivo/efetivo.service';
+import { parseMilitarCell } from '../escalas/escala-xlsx-parser';
+import { NomeMatcher } from '../previa/nome-matching';
 import { DispensasService } from './dispensas.service';
 import { DispensasSheetService } from './dispensas-sheet.service';
 
@@ -39,15 +42,29 @@ export class DispensasController {
   constructor(
     private readonly dispensas: DispensasService,
     private readonly dispensasSheet: DispensasSheetService,
+    private readonly efetivo: EfetivoService,
   ) {}
 
   /**
    * Item 2 — Lista as dispensas vindas da aba "Dispensas 2026" da
    * planilha "Efetivo - Dados Gerais" (read-only, cache 5min).
+   *
+   * Reconciliação raw→NF: cruza `militarRaw` com efetivo consolidado
+   * via `NomeMatcher`. Quando resolve, preenche `nf`; senão deixa
+   * `undefined` (frontend exibe só raw).
    */
   @Get('sheet')
   async listFromSheet(): Promise<DispensaSheet[]> {
-    return this.dispensasSheet.listAll();
+    const [items, efetivoTotal] = await Promise.all([
+      this.dispensasSheet.listAll(),
+      this.efetivo.getAll({ somente1aCia: false, incluirEfetivoOrfao: true }),
+    ]);
+    const matcher = new NomeMatcher(efetivoTotal);
+    return items.map((d) => {
+      const ref = parseMilitarCell(d.militarRaw);
+      const resolved = ref ? matcher.resolve(ref).resolved : null;
+      return { ...d, nf: resolved?.nf };
+    });
   }
 
   @Get()
