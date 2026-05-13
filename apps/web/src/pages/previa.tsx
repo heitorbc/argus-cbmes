@@ -72,6 +72,98 @@ export function PreviaPage() {
 
   const isReadOnly = (previa?.estadoServico ?? 'NAO_INICIADO') !== 'NAO_INICIADO';
 
+  // S0.5 — Tap-to-swap (UX): primeiro tap registra a posição; segundo tap
+  // em outra posição da mesma equipe dispara o swap via PUT /previa/ajustes.
+  // Cancela com clique no mesmo botão.
+  const [swapOrigem, setSwapOrigem] = useState<{
+    equipe: LetraEquipe;
+    viatura: string;
+    funcao: string;
+  } | null>(null);
+  const [swapInflight, setSwapInflight] = useState(false);
+
+  const podeSwap = !isReadOnly && (user?.papeis.includes('admin') ||
+    user?.papeis.includes('fiscal') ||
+    user?.papeis.includes('sargenteante') ||
+    false);
+
+  const handleSwapClick = async (
+    equipe: LetraEquipe,
+    viatura: string,
+    funcao: string,
+  ): Promise<void> => {
+    if (!previa || !podeSwap) return;
+    if (!swapOrigem) {
+      setSwapOrigem({ equipe, viatura, funcao });
+      return;
+    }
+    if (
+      swapOrigem.equipe === equipe &&
+      swapOrigem.viatura === viatura &&
+      swapOrigem.funcao === funcao
+    ) {
+      setSwapOrigem(null);
+      return;
+    }
+    if (swapOrigem.equipe !== equipe) {
+      setError('Swap só é permitido entre posições da MESMA equipe.');
+      setSwapOrigem(null);
+      return;
+    }
+    setSwapInflight(true);
+    setError(null);
+    try {
+      const ajustes = extractAjustes(previa);
+      const novosSwaps = [
+        ...ajustes.swapsMilitares,
+        {
+          equipe,
+          viaturaA: swapOrigem.viatura,
+          funcaoA: swapOrigem.funcao,
+          viaturaB: viatura,
+          funcaoB: funcao,
+        },
+      ];
+      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/previa/${data}/ajustes`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...ajustes, swapsMilitares: novosSwaps }),
+      }).then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      });
+      setSwapOrigem(null);
+      reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao trocar militares');
+    } finally {
+      setSwapInflight(false);
+    }
+  };
+
+  const handleSwapDesfazer = async (index: number): Promise<void> => {
+    if (!previa) return;
+    setSwapInflight(true);
+    setError(null);
+    try {
+      const ajustes = extractAjustes(previa);
+      const novosSwaps = ajustes.swapsMilitares.filter((_, i) => i !== index);
+      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/previa/${data}/ajustes`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...ajustes, swapsMilitares: novosSwaps }),
+      }).then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      });
+      reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao desfazer swap');
+    } finally {
+      setSwapInflight(false);
+    }
+  };
+
   const reload = () => {
     api
       .previaDoDia(data)
@@ -285,47 +377,124 @@ export function PreviaPage() {
 
             {previa.tripulacao.length > 0 && (
               <section className="mt-4">
-                <h3 className="mb-2 text-sm font-semibold text-slate-700">Tripulação</h3>
+                <div className="mb-2 flex items-baseline justify-between">
+                  <h3 className="text-sm font-semibold text-slate-700">Tripulação</h3>
+                  {swapOrigem && (
+                    <button
+                      type="button"
+                      onClick={() => setSwapOrigem(null)}
+                      className="text-[10px] uppercase tracking-wide text-cbmes-blue hover:underline"
+                    >
+                      Cancelar swap
+                    </button>
+                  )}
+                </div>
+                {swapOrigem && (
+                  <p className="mb-2 rounded border border-cbmes-blue/30 bg-cbmes-blue/5 p-2 text-[11px] text-cbmes-blue">
+                    🔄 Swap em curso (origem:{' '}
+                    <strong>
+                      {swapOrigem.viatura} / {swapOrigem.funcao} ({swapOrigem.equipe})
+                    </strong>
+                    ). Toque em outra posição da MESMA equipe para trocar.
+                  </p>
+                )}
+                {previa.swapsMilitares.length > 0 && (
+                  <details className="mb-2 rounded border border-slate-200 bg-white p-2 text-xs">
+                    <summary className="cursor-pointer font-medium text-slate-700">
+                      Swaps aplicados ({previa.swapsMilitares.length})
+                    </summary>
+                    <ul className="mt-2 space-y-1">
+                      {previa.swapsMilitares.map((s, i) => (
+                        <li key={i} className="flex items-center justify-between gap-2">
+                          <span className="text-slate-600">
+                            {s.equipe}: {s.viaturaA}/{s.funcaoA} ↔ {s.viaturaB}/{s.funcaoB}
+                          </span>
+                          {podeSwap && (
+                            <button
+                              type="button"
+                              onClick={() => void handleSwapDesfazer(i)}
+                              disabled={swapInflight}
+                              className="rounded border border-slate-300 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                            >
+                              desfazer
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
                 <div className="space-y-3">
                   {[...tripulacaoPorViatura.entries()].map(([viatura, linhas]) => (
                     <article key={viatura} className="rounded border border-slate-200 bg-white p-3">
                       <p className="text-sm font-bold text-cbmes-blue">{viatura}</p>
                       <ul className="mt-1 divide-y divide-slate-100 text-sm">
-                        {linhas.map((t, i) => (
-                          <li
-                            key={i}
-                            className={`flex items-baseline justify-between gap-2 py-1 ${
-                              t.isFiscal ? 'rounded bg-cbmes-red/5 px-2' : ''
-                            }`}
-                          >
-                            <span className="text-xs uppercase text-slate-500">
-                              {t.funcao || '—'}
-                              {t.isFiscal && (
-                                <span className="ml-2 rounded-full bg-cbmes-red px-2 py-0.5 text-[10px] font-bold text-white">
-                                  FISCAL
-                                </span>
-                              )}
-                            </span>
-                            <span className="text-right">
-                              {t.militarResolvido ? (
-                                <>
-                                  <span className="font-medium">
-                                    {t.militarResolvido.posto}{' '}
-                                    {t.militarResolvido.nomeGuerra ??
-                                      t.militarResolvido.nome.split(' ')[0]}
+                        {linhas.map((t, i) => {
+                          const isOrigemSelecionada =
+                            swapOrigem?.equipe === t.equipe &&
+                            swapOrigem?.viatura === t.viatura &&
+                            swapOrigem?.funcao === t.funcao;
+                          const swapDisabled =
+                            !!swapOrigem && swapOrigem.equipe !== t.equipe;
+                          return (
+                            <li
+                              key={i}
+                              className={`flex items-baseline justify-between gap-2 py-1 ${
+                                t.isFiscal ? 'rounded bg-cbmes-red/5 px-2' : ''
+                              } ${isOrigemSelecionada ? 'rounded bg-cbmes-blue/10 px-2' : ''}`}
+                            >
+                              <span className="text-xs uppercase text-slate-500">
+                                {t.funcao || '—'}
+                                {t.isFiscal && (
+                                  <span className="ml-2 rounded-full bg-cbmes-red px-2 py-0.5 text-[10px] font-bold text-white">
+                                    FISCAL
                                   </span>
-                                  <span className="ml-2 text-xs text-slate-500">
-                                    NF {t.militarResolvido.nf} · ANT {t.militarResolvido.ant}
-                                  </span>
-                                </>
-                              ) : (
-                                <span className="text-feedback-warn">
-                                  {t.militarRef.raw} <span className="text-xs">(sem NF)</span>
+                                )}
+                              </span>
+                              <span className="flex items-baseline gap-2 text-right">
+                                <span>
+                                  {t.militarResolvido ? (
+                                    <>
+                                      <span className="font-medium">
+                                        {t.militarResolvido.posto}{' '}
+                                        {t.militarResolvido.nomeGuerra ??
+                                          t.militarResolvido.nome.split(' ')[0]}
+                                      </span>
+                                      <span className="ml-2 text-xs text-slate-500">
+                                        NF {t.militarResolvido.nf} · ANT{' '}
+                                        {t.militarResolvido.ant}
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <span className="text-feedback-warn">
+                                      {t.militarRef.raw}{' '}
+                                      <span className="text-xs">(sem NF)</span>
+                                    </span>
+                                  )}
                                 </span>
-                              )}
-                            </span>
-                          </li>
-                        ))}
+                                {podeSwap && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void handleSwapClick(t.equipe, t.viatura, t.funcao)
+                                    }
+                                    disabled={swapInflight || swapDisabled}
+                                    title={
+                                      swapDisabled
+                                        ? 'Swap apenas dentro da mesma equipe'
+                                        : isOrigemSelecionada
+                                          ? 'Cancelar swap'
+                                          : 'Trocar com outra posição'
+                                    }
+                                    className="rounded border border-slate-300 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-50 disabled:opacity-30"
+                                  >
+                                    {isOrigemSelecionada ? '×' : '🔄'}
+                                  </button>
+                                )}
+                              </span>
+                            </li>
+                          );
+                        })}
                       </ul>
                     </article>
                   ))}
@@ -417,6 +586,7 @@ function extractAjustes(previa: PreviaDoDia): AjustesPrevia {
     notasServico: previa.notasServico,
     dispensas: previa.dispensas,
     trocasEscalaEspecial: previa.trocasEscalaEspecial,
+    swapsMilitares: previa.swapsMilitares,
   };
 }
 

@@ -14,6 +14,7 @@ import {
   type PreviaFiscal,
   type PreviaIdeoEntry,
   type PreviaInconsistencia,
+  type PreviaSwapMilitar,
   type PreviaTripulacaoEntry,
   type StatusViatura,
   type TipoIdeo,
@@ -183,6 +184,14 @@ export class PreviaService {
     // S6a-fix item 6 — Chefes de Operações escalados no dia (planilha externa).
     const chefes = await this.chefesOperacoes.getEscaladosDoDia(ano, mes, dia).catch(() => []);
 
+    // S0.5 — Aplica swaps de militares entre 2 posições da mesma equipe
+    // (UX do Fiscal). Mutação de `tripulacao` ANTES de buildComposicaoMf
+    // para que ambas as visões fiquem consistentes. Swaps inválidos
+    // (célula não encontrada ou equipes diferentes) viram inconsistência.
+    for (const swap of ajustes.swapsMilitares) {
+      aplicarSwapMilitar(swap, tripulacao, inconsistencias);
+    }
+
     // S6b/F2 — composicaoMf espelhando o MF (1 entry por recurso)
     const composicaoMf = buildComposicaoMf(tripulacao, allViaturas);
 
@@ -330,6 +339,7 @@ export class PreviaService {
       atestados: atestadosPrevia,
       escalaEspecialAtos: atosEspeciais,
       trocasEscalaEspecial: ajustes.trocasEscalaEspecial,
+      swapsMilitares: ajustes.swapsMilitares,
       chefesOperacoes: chefes,
       estadoServico: estadoServico.estado,
       iniciadoEm: estadoServico.iniciadoEm,
@@ -665,6 +675,45 @@ function resolverNfTrocaAutorizada(
     },
   });
   return undefined;
+}
+
+/**
+ * S0.5 — Aplica um swap de militares trocando o conteúdo de 2 células
+ * (viatura+funcao) da MESMA equipe na lista `tripulacao`. Mutação
+ * in-place. Lados não encontrados ou em equipes diferentes registram
+ * uma inconsistência e o swap é descartado.
+ *
+ * Como o swap acontece sobre `tripulacao` ANTES de `buildComposicaoMf`,
+ * a composição resultante já reflete o swap — não precisa duplicar o
+ * trabalho.
+ */
+function aplicarSwapMilitar(
+  swap: PreviaSwapMilitar,
+  tripulacao: PreviaTripulacaoEntry[],
+  inconsistencias: PreviaInconsistencia[],
+): void {
+  const a = tripulacao.find(
+    (t) => t.equipe === swap.equipe && t.viatura === swap.viaturaA && t.funcao === swap.funcaoA,
+  );
+  const b = tripulacao.find(
+    (t) => t.equipe === swap.equipe && t.viatura === swap.viaturaB && t.funcao === swap.funcaoB,
+  );
+  if (!a || !b) {
+    inconsistencias.push({
+      tipo: 'NF_NAO_RESOLVIDO',
+      mensagem: `Swap inválido: posição ${!a ? swap.viaturaA + '/' + swap.funcaoA : swap.viaturaB + '/' + swap.funcaoB} não encontrada na equipe ${swap.equipe}.`,
+      detalhe: { origem: 'swap-militar', swap: swap as unknown as Record<string, unknown> },
+    });
+    return;
+  }
+  // Troca atômica de quem ocupa cada célula (não troca viatura/funcao,
+  // apenas o militar).
+  const tmpRef = a.militarRef;
+  const tmpResolvido = a.militarResolvido;
+  a.militarRef = b.militarRef;
+  a.militarResolvido = b.militarResolvido;
+  b.militarRef = tmpRef;
+  b.militarResolvido = tmpResolvido;
 }
 
 /** Re-export para uso em tests/controller. */

@@ -14,6 +14,7 @@ const VAZIO: AjustesPrevia = {
   notasServico: [],
   dispensas: [],
   trocasEscalaEspecial: [],
+  swapsMilitares: [],
 };
 
 /**
@@ -58,6 +59,8 @@ export class AjustesPreviaService {
       // upsert preserva trocasEscalaEspecial existentes — o cliente gerencia via add/remove dedicados
       trocasEscalaEspecial:
         this.byData.get(dataIso)?.trocasEscalaEspecial ?? input.trocasEscalaEspecial,
+      // S0.5 — cliente gerencia swapsMilitares via PUT inteiro (mesmo padrão de `trocas`).
+      swapsMilitares: input.swapsMilitares,
     };
     this.byData.set(dataIso, ajustes);
     return ajustes;
@@ -79,7 +82,7 @@ export class AjustesPreviaService {
         `Ato é do dia ${input.atoOriginal.data} mas troca está sendo registrada para ${dataIso}.`,
       );
     }
-    const current = this.byData.get(dataIso) ?? { ...VAZIO };
+    const current: AjustesPrevia = this.byData.get(dataIso) ?? { ...VAZIO };
     const key = atoKey(input.atoOriginal);
     const filtered = current.trocasEscalaEspecial.filter((t) => atoKey(t.atoOriginal) !== key);
     const novaTroca: TrocaEscalaEspecial = {
