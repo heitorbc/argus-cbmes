@@ -76,6 +76,7 @@ const previaCharlie: PreviaDoDia = {
   dispensas: [{ militarRaw: '2° SGT HOFFMAM' }],
   escalaEspecialAtos: [],
   trocasEscalaEspecial: [],
+  swapsMilitares: [],
   chefesOperacoes: [],
   composicaoMf: [],
   estadoServico: 'NAO_INICIADO',

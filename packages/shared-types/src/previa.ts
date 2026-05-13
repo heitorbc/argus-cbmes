@@ -283,6 +283,25 @@ export const chefeOperacoesSchema = z.object({
 export type ChefeOperacoes = z.infer<typeof chefeOperacoesSchema>;
 
 /**
+ * S0.5 — Swap de 2 militares de MESMA equipe entre posições da
+ * tripulação na Prévia. Conveniência UX: o Fiscal troca papéis (ex.: chefe
+ * ABTS_01 ↔ operador RESGATE_01, ambos CHARLIE) sem precisar abrir
+ * uma "Troca de Serviço" institucional. Aplicado pelo `PreviaService`
+ * sobre `tripulacao` e `composicaoMf` quando monta o payload.
+ *
+ * Validação: equipe igual em ambos os lados; ordem dos lados (A/B) é
+ * indiferente — a operação é simétrica.
+ */
+export const previaSwapMilitarSchema = z.object({
+  equipe: z.enum(LETRA_EQUIPE),
+  viaturaA: z.string(),
+  funcaoA: z.string(),
+  viaturaB: z.string(),
+  funcaoB: z.string(),
+});
+export type PreviaSwapMilitar = z.infer<typeof previaSwapMilitarSchema>;
+
+/**
  * "Ajustes pré-turno" da Prévia — campos adicionais editáveis pelo Fiscal antes do
  * início do serviço. Persistidos em `AjustesPreviaService` (mock in-memory; S5b → Prisma).
  */
@@ -292,6 +311,7 @@ export const ajustesPreviaSchema = z.object({
   notasServico: z.array(previaNotaServicoSchema),
   dispensas: z.array(previaDispensaSchema),
   trocasEscalaEspecial: z.array(trocaEscalaEspecialSchema).default([]),
+  swapsMilitares: z.array(previaSwapMilitarSchema).default([]),
 });
 export type AjustesPrevia = z.infer<typeof ajustesPreviaSchema>;
 
@@ -375,6 +395,9 @@ export const previaDoDiaSchema = z.object({
   /** S6a-fix item 4 — atos da Escala Especial do dia (read-only) + trocas registradas. */
   escalaEspecialAtos: z.array(escalaEspecialAtoLightSchema).default([]),
   trocasEscalaEspecial: z.array(trocaEscalaEspecialSchema).default([]),
+
+  /** S0.5 — Swaps de militares aplicados pelo Fiscal (UX troca entre posições da mesma equipe). */
+  swapsMilitares: z.array(previaSwapMilitarSchema).default([]),
 
   /** S6a-fix item 6 — Chefes de Operações escalados no dia (planilha ChOp externa). */
   chefesOperacoes: z.array(chefeOperacoesSchema).default([]),

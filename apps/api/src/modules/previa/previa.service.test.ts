@@ -259,6 +259,78 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
     expect(aut.substitutoNf).toBe('3055566'); // FABRE
   });
 
+  it('S0.5 — swap troca o militar entre 2 posições da mesma equipe (CHARLIE)', async () => {
+    const previaAsAny = previa as unknown as { ajustes: AjustesPreviaService };
+    previaAsAny.ajustes.upsert(
+      '2026-04-23',
+      {
+        trocas: [],
+        escalaEspecial: {},
+        notasServico: [],
+        dispensas: [],
+        trocasEscalaEspecial: [],
+        swapsMilitares: [
+          {
+            equipe: 'C',
+            viaturaA: 'ABTS 01',
+            funcaoA: 'Ch',
+            viaturaB: 'RESGATE',
+            funcaoB: 'Ch',
+          },
+        ],
+      },
+      true, // admin override (sem servico iniciado)
+    );
+
+    const r = await previa.getPreviaDoDia('2026-04-23');
+    // Antes do swap: ABTS 01/Ch = BARCELLOS (3037509); RESGATE/Ch = KARINA (3174824)
+    const abtsCh = r.tripulacao.find(
+      (t) => t.equipe === 'C' && t.viatura === 'ABTS 01' && t.funcao === 'Ch',
+    );
+    const resgateCh = r.tripulacao.find(
+      (t) => t.equipe === 'C' && t.viatura === 'RESGATE' && t.funcao === 'Ch',
+    );
+    expect(abtsCh?.militarResolvido?.nf).toBe('3174824'); // agora KARINA
+    expect(resgateCh?.militarResolvido?.nf).toBe('3037509'); // agora BARCELLOS
+    expect(r.swapsMilitares).toHaveLength(1);
+  });
+
+  it('S0.5 — swap inválido (célula inexistente) registra inconsistência e não muda nada', async () => {
+    const previaAsAny = previa as unknown as { ajustes: AjustesPreviaService };
+    previaAsAny.ajustes.upsert(
+      '2026-04-23',
+      {
+        trocas: [],
+        escalaEspecial: {},
+        notasServico: [],
+        dispensas: [],
+        trocasEscalaEspecial: [],
+        swapsMilitares: [
+          {
+            equipe: 'C',
+            viaturaA: 'ABTS 01',
+            funcaoA: 'Ch',
+            viaturaB: 'INEXISTENTE',
+            funcaoB: 'Ch',
+          },
+        ],
+      },
+      true,
+    );
+
+    const r = await previa.getPreviaDoDia('2026-04-23');
+    const abtsCh = r.tripulacao.find(
+      (t) => t.equipe === 'C' && t.viatura === 'ABTS 01' && t.funcao === 'Ch',
+    );
+    // Continua BARCELLOS — swap descartado.
+    expect(abtsCh?.militarResolvido?.nf).toBe('3037509');
+    const inc = r.inconsistencias.find(
+      (i) =>
+        (i.detalhe as Record<string, unknown> | undefined)?.origem === 'swap-militar',
+    );
+    expect(inc).toBeDefined();
+  });
+
   it('reconciliação raw→NF: registra inconsistência quando o nome não bate com nenhum militar', async () => {
     const previaAsAny = previa as unknown as { trocasAutorizadas: FakeTrocasAutorizadasService };
     previaAsAny.trocasAutorizadas.trocas = [
