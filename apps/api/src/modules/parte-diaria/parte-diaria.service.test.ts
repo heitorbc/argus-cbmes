@@ -145,6 +145,32 @@ describe('ParteDiariaService (S10)', () => {
     expect(pd.textoAssuncao).toMatch(/MARIANE GUARNIER BRUMATTI/);
   });
 
+  it('troca_militar inclui horário "Às HHhMMmin," no texto de Alterações (S6n/0.2)', async () => {
+    prevSvc.payload = fakePrevia({
+      alteracoesDiversas: [
+        {
+          id: 'alt:troca:1',
+          data: '2026-05-04',
+          tipo: 'troca_militar',
+          recurso: 'ABTS_01',
+          funcao: 'Mot',
+          militarOriginalRaw: 'CB ASSIS',
+          militarOriginalNf: '3371760',
+          militarSubstitutoRaw: 'CB FABRE',
+          militarSubstitutoNf: '3055566',
+          motivo: 'mal-estar',
+          registradoPorNf: '2984946',
+          registradoEm: '2026-05-04T14:30:00.000Z',
+        },
+      ],
+    });
+    const pd = await svc.get('2026-05-04');
+    expect(pd.textoAlteracoesDiversas).toMatch(/Às 14h30min/);
+    expect(pd.textoAlteracoesDiversas).toMatch(/troca de militar no ABTS_01\/Mot/);
+    expect(pd.textoAlteracoesDiversas).toMatch(/CB FABRE.*substituiu.*CB ASSIS/);
+    expect(pd.textoAlteracoesDiversas).toMatch(/mal-estar/);
+  });
+
   it('1-militar (só motorista) vira "Chefe/Motorista" na PD (S6n/0.6)', async () => {
     prevSvc.payload = fakePrevia({
       composicaoMf: [
