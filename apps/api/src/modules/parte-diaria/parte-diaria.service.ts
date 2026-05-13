@@ -318,7 +318,19 @@ function gerarTextoAlteracoesDiversas(
   return blocos.map((b, i) => `${i + 1}. ${b}`).join('\n');
 }
 
+/** Extrai HH:MM do timestamp ISO `registradoEm` (assume timezone local). */
+function extrairHora(iso: string): string {
+  const m = /T(\d{2}):(\d{2})/.exec(iso);
+  if (!m) return '';
+  return `${m[1]}h${m[2]}min`;
+}
+
 function formatarAlteracaoDiversa(alt: AlteracaoDiversa): string {
+  // S6n/0.2 — Inclui horário da alteração no início (ex.: "Às 14h30min, ...").
+  // Para tipo "observacao" o horário fica omitido (geralmente já está no texto).
+  const hora = extrairHora(alt.registradoEm);
+  const prefixoHora = hora ? `Às ${hora}, ` : '';
+
   if (alt.tipo === 'observacao') {
     return alt.observacao ?? alt.motivo ?? '(sem descrição)';
   }
@@ -331,14 +343,14 @@ function formatarAlteracaoDiversa(alt: AlteracaoDiversa): string {
       : 'substituto';
     const motivo = alt.motivo ? ` (${alt.motivo})` : '';
     const ctx = alt.recurso ? ` no ${alt.recurso}${alt.funcao ? `/${alt.funcao}` : ''}` : '';
-    return `Troca de militar${ctx}: ${sub} substituiu ${orig}${motivo}.`;
+    return `${prefixoHora}troca de militar${ctx}: ${sub} substituiu ${orig}${motivo}.`;
   }
   // mudanca_viatura
   const vtr = alt.vtrPrefixo ? ` ${alt.vtrPrefixo}` : '';
   const de = alt.statusViaturaAnterior ? ` de ${alt.statusViaturaAnterior}` : '';
   const para = alt.statusViaturaNovo ? ` para ${alt.statusViaturaNovo}` : '';
   const motivo = alt.motivo ? ` (${alt.motivo})` : '';
-  return `Mudança da VTR${vtr}${de}${para}${motivo}.`;
+  return `${prefixoHora}mudança da VTR${vtr}${de}${para}${motivo}.`;
 }
 
 function gerarTextoAlteracaoAlmoxarifado(
