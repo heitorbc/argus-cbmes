@@ -29,6 +29,7 @@ import type {
   IdeoEntry,
   IdeoMatrix,
   IdeoStatusDoDia,
+  IntegracaoStatus,
   LetraEquipe,
   LetraEquipeRotativa,
   LoginInput,
@@ -484,6 +485,9 @@ export const api = {
     const qs = params.toString();
     return request<TrocaAutorizada[]>(`/trocas-autorizadas${qs ? `?${qs}` : ''}`);
   },
+
+  // Integrações Google Sheets (S0.5/PR2)
+  integracoesList: () => request<IntegracaoStatus[]>('/integracoes'),
 
   // Férias (item 4)
   feriasList: (filter: { militarNf?: string; ano?: number } = {}) => {

@@ -32,6 +32,17 @@ export class ChefesOperacoesService {
     return chefesDoDia(entry.parsed, dia);
   }
 
+  /** S0.5/PR2 — metadados para a página /configuracoes/integracoes. */
+  getSyncStatus(): { syncedAt: string | null; count: number; stale: boolean } {
+    if (!this.cache) return { syncedAt: null, count: 0, stale: false };
+    const stale = Date.now() - this.cache.syncedAt >= CACHE_TTL_MS;
+    return {
+      syncedAt: new Date(this.cache.syncedAt).toISOString(),
+      count: this.cache.parsed.length,
+      stale,
+    };
+  }
+
   private async getEntry(): Promise<{ entry: CacheEntry; stale: boolean }> {
     const now = Date.now();
     if (this.cache && now - this.cache.syncedAt < CACHE_TTL_MS) {

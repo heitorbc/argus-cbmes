@@ -8,6 +8,7 @@ export * from './escala-especial.js';
 export * from './ferias.js';
 export * from './fiscal.js';
 export * from './ideo.js';
+export * from './integracao.js';
 export * from './mapa-forca.js';
 export * from './militar.js';
 export * from './nota-servico.js';

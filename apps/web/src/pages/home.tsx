@@ -125,6 +125,7 @@ export function HomePage() {
           >
             <CardLink to="/configuracoes/unidades" icon="🏛️" label="Unidades" />
             <CardLink to="/configuracoes/recursos" icon="📦" label="Recursos" />
+            <CardLink to="/configuracoes/integracoes" icon="🔗" label="Integrações" />
           </ModuloSection>
         )}
 
