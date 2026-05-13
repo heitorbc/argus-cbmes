@@ -9,6 +9,7 @@ import { DispensasModule } from './modules/dispensas/dispensas.module';
 import { EfetivoModule } from './modules/efetivo/efetivo.module';
 import { EscalasModule } from './modules/escalas/escalas.module';
 import { EscalasEspeciaisModule } from './modules/escalas-especiais/escalas-especiais.module';
+import { FeriasModule } from './modules/ferias/ferias.module';
 import { FiscaisModule } from './modules/fiscais/fiscais.module';
 import { HealthModule } from './modules/health/health.module';
 import { IdeoModule } from './modules/ideo/ideo.module';
@@ -37,6 +38,7 @@ import { ViaturasModule } from './modules/viaturas/viaturas.module';
     EfetivoModule,
     EscalasModule,
     EscalasEspeciaisModule,
+    FeriasModule,
     FiscaisModule,
     HealthModule,
     IdeoModule,

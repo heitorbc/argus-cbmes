@@ -25,6 +25,7 @@ import { AtestadosPage } from '@/pages/atestados';
 import { ConferenciaEquipePage } from '@/pages/conferencia-equipe';
 import { ConferenciaViaturaPage } from '@/pages/conferencia-viatura';
 import { DispensasPage } from '@/pages/dispensas';
+import { FeriasPage } from '@/pages/ferias';
 import { NotasServicoPage } from '@/pages/notas-servico';
 import { ParteDiariaPage } from '@/pages/parte-diaria';
 import { ServicoIdeoPage } from '@/pages/servico-ideo';
@@ -107,6 +108,7 @@ export const router = createBrowserRouter([
           { path: '/cadastros/escalas', element: <EscalasPage /> },
           { path: '/cadastros/escalas-especiais', element: <EscalasEspeciaisPage /> },
           { path: '/cadastros/dispensas', element: <DispensasPage /> },
+          { path: '/cadastros/ferias', element: <FeriasPage /> },
           { path: '/cadastros/atestados', element: <AtestadosPage /> },
           { path: '/cadastros/notas-servico', element: <NotasServicoPage /> },
           { path: '/configuracoes/unidades', element: <UnidadesPage /> },
