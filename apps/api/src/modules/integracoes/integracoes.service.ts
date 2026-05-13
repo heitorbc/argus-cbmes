@@ -5,6 +5,7 @@ import { ChefesOperacoesService } from '../chefes-operacoes/chefes-operacoes.ser
 import { DispensasSheetService } from '../dispensas/dispensas-sheet.service';
 import { TrocasAutorizadasService } from '../trocas-autorizadas/trocas-autorizadas.service';
 import { ViaturasQdvService } from '../viaturas/viaturas-qdv.service';
+import { ViaturasQdvExtrasService } from '../viaturas/viaturas-qdv-extras.service';
 
 interface SourceConfig {
   id: string;
@@ -30,6 +31,7 @@ export class IntegracoesService {
     private readonly chefesOp: ChefesOperacoesService,
     private readonly dispensasSheet: DispensasSheetService,
     private readonly viaturasQdv: ViaturasQdvService,
+    private readonly viaturasQdvExtras: ViaturasQdvExtrasService,
   ) {}
 
   list(): IntegracaoStatus[] {
@@ -90,6 +92,36 @@ export class IntegracoesService {
         sheetGidOrName: '1BBM_1CIA',
         getStatus: () => this.viaturasQdv.getSyncStatus(),
         forceSync: () => this.viaturasQdv.forceSync(),
+      },
+      {
+        id: 'viaturas-qdv-base-lista',
+        nome: 'QDV — BASE_LISTA',
+        descricao: 'Cadastro mestre detalhado das viaturas por OBM.',
+        sheetIdEnv: 'QDV_SHEET_ID',
+        sheetIdDefault: '1iqjSDXpbAjtbi7lvd5_5brims8Ipr-OTVXhQMGiv2I8',
+        sheetGidOrName: 'BASE_LISTA',
+        getStatus: () => this.viaturasQdvExtras.getSyncStatusBaseLista(),
+        forceSync: () => this.viaturasQdvExtras.forceSyncBaseLista(),
+      },
+      {
+        id: 'viaturas-qdv-cbmes',
+        nome: 'QDV — Lista Principal CBMES',
+        descricao: 'TODAS as viaturas do CBMES (aba BASE_VTR_LISTA_PRINCIPAL).',
+        sheetIdEnv: 'QDV_SHEET_ID',
+        sheetIdDefault: '1iqjSDXpbAjtbi7lvd5_5brims8Ipr-OTVXhQMGiv2I8',
+        sheetGidOrName: 'BASE_VTR_LISTA_PRINCIPAL',
+        getStatus: () => this.viaturasQdvExtras.getSyncStatusVtrPrincipal(),
+        forceSync: () => this.viaturasQdvExtras.forceSyncVtrPrincipal(),
+      },
+      {
+        id: 'viaturas-qdv-contatos',
+        nome: 'QDV — Contatos Logísticos',
+        descricao: 'Responsável logístico por OBM (aba Contatos_LOGISTICAS).',
+        sheetIdEnv: 'QDV_SHEET_ID',
+        sheetIdDefault: '1iqjSDXpbAjtbi7lvd5_5brims8Ipr-OTVXhQMGiv2I8',
+        sheetGidOrName: 'Contatos_LOGISTICAS',
+        getStatus: () => this.viaturasQdvExtras.getSyncStatusContatos(),
+        forceSync: () => this.viaturasQdvExtras.forceSyncContatos(),
       },
     ];
   }

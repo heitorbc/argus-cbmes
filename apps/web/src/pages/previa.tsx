@@ -55,6 +55,11 @@ function todayIso(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function formatDataBr(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
+}
+
 export function PreviaPage() {
   const { user } = useAuth();
   const podeIniciarServico =
@@ -499,6 +504,33 @@ export function PreviaPage() {
                     </article>
                   ))}
                 </div>
+              </section>
+            )}
+
+            {previa.ferias.length > 0 && (
+              <section className="mt-4">
+                <h3 className="mb-2 text-sm font-semibold text-slate-700">
+                  Militares de férias ({previa.ferias.length})
+                </h3>
+                <ul className="space-y-2">
+                  {previa.ferias.map((f) => (
+                    <li
+                      key={f.feriasId}
+                      className="rounded border border-amber-200 bg-amber-50 p-3 text-sm"
+                    >
+                      <p className="font-medium text-amber-900">
+                        🏝️ {f.militarRaw}
+                      </p>
+                      <p className="mt-0.5 text-xs text-amber-800">
+                        Início {formatDataBr(f.dataInicio)} · {f.dias} dias · mês previsto{' '}
+                        {f.mesAno}
+                      </p>
+                      {f.observacoes && (
+                        <p className="mt-1 text-xs text-amber-700">{f.observacoes}</p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               </section>
             )}
 
