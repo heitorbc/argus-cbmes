@@ -17,3 +17,4 @@ export * from './servico.js';
 export * from './troca-autorizada.js';
 export * from './unidade.js';
 export * from './viatura.js';
+export * from './viatura-qdv.js';
