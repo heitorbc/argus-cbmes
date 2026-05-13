@@ -47,6 +47,7 @@ export const ROUTE_TO_SECTION: Record<string, ModuloHome> = {
   '/cadastros/escalas': 'sargenteacao',
   '/cadastros/escalas-especiais': 'sargenteacao',
   '/cadastros/ferias': 'sargenteacao',
+  '/cadastros/trocas': 'sargenteacao',
   '/cadastros/viaturas': 'logistica',
   '/configuracoes/unidades': 'configuracoes',
   '/configuracoes/recursos': 'configuracoes',

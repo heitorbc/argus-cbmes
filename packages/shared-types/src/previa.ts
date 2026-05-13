@@ -16,6 +16,7 @@ export const TIPO_INCONSISTENCIA = [
   'FISCAL_SEM_NF_RESOLVIDO',
   'IDEO_NAO_CADASTRADO',
   'VIATURA_DESCONHECIDA',
+  'TROCAS_AUTORIZADAS_INDISPONIVEIS',
 ] as const;
 export type TipoInconsistencia = (typeof TIPO_INCONSISTENCIA)[number];
 
@@ -151,6 +152,16 @@ export const previaTrocaSchema = z.object({
   /** Período da troca — `string` é legacy (S5); novo formato é `PeriodoTroca` (S6h). */
   periodo: z.union([z.string(), periodoTrocaSchema]),
   motivo: z.string().optional(),
+  /**
+   * S0.5 — Quando `true`, a troca veio da planilha "Trocas Autorizadas"
+   * integrada automaticamente pelo `PreviaService`. Frontend exibe badge
+   * "Autorizada" para distinguir das trocas manuais (`ajustes.trocas`).
+   */
+  origemAutorizada: z.boolean().optional(),
+  /** Função (opcional, vem das trocas autorizadas). */
+  funcao: z.string().optional(),
+  /** Nº E-Docs da autorização (opcional). */
+  numeroEdocs: z.string().optional(),
 });
 export type PreviaTroca = z.infer<typeof previaTrocaSchema>;
 
