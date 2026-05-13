@@ -246,6 +246,26 @@ export const previaDispensaSchema = z.object({
 export type PreviaDispensa = z.infer<typeof previaDispensaSchema>;
 
 /**
+ * S0.5/4.1 — Férias ativas no dia da Prévia. Espelha o padrão de
+ * `PreviaDispensa`, mas vem do módulo `FeriasService` (cadastro feito
+ * pela Sargenteação) — não é uma dispensa institucional, é um período
+ * de afastamento programado.
+ */
+export const previaFeriasSchema = z.object({
+  feriasId: z.string(),
+  militarNf: z.string(),
+  /** Nome formatado do militar quando NF resolve no efetivo; senão `NF {nf}`. */
+  militarRaw: z.string(),
+  /** YYYY-MM do mês de férias programado. */
+  mesAno: z.string().regex(/^\d{4}-\d{2}$/),
+  /** Data ISO de início efetivo. */
+  dataInicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  dias: z.number().int().min(1),
+  observacoes: z.string().optional(),
+});
+export type PreviaFerias = z.infer<typeof previaFeriasSchema>;
+
+/**
  * Ato leve da Escala Especial injetado read-only na Prévia (S6a-fix item 4).
  * Identificador único: combinação de `data + militarRaw + horario + funcao`.
  */
@@ -391,6 +411,8 @@ export const previaDoDiaSchema = z.object({
   dispensas: z.array(previaDispensaSchema),
   /** S6k — atestados médicos ativos no dia (derivado de AtestadosService). */
   atestados: z.array(previaAtestadoSchema).default([]),
+  /** S0.5/4.1 — Férias ativas no dia (derivado de FeriasService). */
+  ferias: z.array(previaFeriasSchema).default([]),
 
   /** S6a-fix item 4 — atos da Escala Especial do dia (read-only) + trocas registradas. */
   escalaEspecialAtos: z.array(escalaEspecialAtoLightSchema).default([]),

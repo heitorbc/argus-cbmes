@@ -5,6 +5,7 @@ import { DispensasModule } from '../dispensas/dispensas.module';
 import { EfetivoModule } from '../efetivo/efetivo.module';
 import { EscalasModule } from '../escalas/escalas.module';
 import { EscalasEspeciaisModule } from '../escalas-especiais/escalas-especiais.module';
+import { FeriasModule } from '../ferias/ferias.module';
 import { FiscaisModule } from '../fiscais/fiscais.module';
 import { IdeoModule } from '../ideo/ideo.module';
 import { NotasServicoModule } from '../notas-servico/notas-servico.module';
@@ -26,6 +27,7 @@ import { PreviaService } from './previa.service';
     EfetivoModule,
     EscalasModule,
     EscalasEspeciaisModule,
+    FeriasModule,
     FiscaisModule,
     IdeoModule,
     NotasServicoModule,

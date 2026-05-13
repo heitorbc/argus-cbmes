@@ -670,7 +670,19 @@ function parseAba(
   const startCol = colsList[0]!;
   const endCol = colsList[colsList.length - 1]! + 3; // última equipe ocupa +3
 
-  const { diaEquipe, avisos: avisosDia } = extractDiaEquipe(ws, startCol, endCol, ano, mes);
+  // S0.1-fix — Cabeçalho "EQUIPE A/B/C/D" começa na col 3, mas o dia 1
+  // do mês fica na col B (col 2) — uma coluna ANTES do header. Mesmo
+  // padrão na 2ª quinzena (dia 15 na col B). Estendemos o range em -1
+  // só para `extractDiaEquipe`, não para a composição (que continua nos
+  // ranges das equipes).
+  const startColDias = Math.max(1, startCol - 1);
+  const { diaEquipe, avisos: avisosDia } = extractDiaEquipe(
+    ws,
+    startColDias,
+    endCol,
+    ano,
+    mes,
+  );
   avisos.push(...avisosDia);
 
   const { entries, avisos: avisosComp } = extractComposicao(

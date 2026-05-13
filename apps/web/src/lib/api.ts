@@ -10,6 +10,9 @@ import type {
   TrocaAutorizada,
   UpdateFeriasInput,
   ConferenciaViaturaEntry,
+  ContatoLogistico,
+  ViaturaCbmes,
+  ViaturaQdvBaseLista,
   Atestado,
   CreateAtestadoInput,
   CreateDispensaInput,
@@ -157,6 +160,11 @@ export const api = {
 
   // Viaturas (S2)
   viaturasList: () => request<Viatura[]>('/viaturas'),
+
+  // S0.5/3.1 — abas adicionais da QDV (read-only)
+  viaturasQdvBaseLista: () => request<ViaturaQdvBaseLista[]>('/viaturas/qdv/base-lista'),
+  viaturasQdvCbmes: () => request<ViaturaCbmes[]>('/viaturas/qdv/cbmes'),
+  viaturasQdvContatos: () => request<ContatoLogistico[]>('/viaturas/qdv/contatos'),
 
   viaturasFindById: (id: string) => request<Viatura>(`/viaturas/${id}`),
 

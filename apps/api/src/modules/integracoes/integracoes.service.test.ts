@@ -6,6 +6,7 @@ import { ChefesOperacoesService } from '../chefes-operacoes/chefes-operacoes.ser
 import { DispensasSheetService } from '../dispensas/dispensas-sheet.service';
 import { TrocasAutorizadasService } from '../trocas-autorizadas/trocas-autorizadas.service';
 import { ViaturasQdvService } from '../viaturas/viaturas-qdv.service';
+import { ViaturasQdvExtrasService } from '../viaturas/viaturas-qdv-extras.service';
 
 type SyncStatus = { syncedAt: string | null; count: number; stale: boolean };
 
@@ -27,18 +28,49 @@ function makeFakeService(status: SyncStatus): FakeSheetService {
   return fake;
 }
 
+interface FakeExtrasService {
+  baseLista: FakeSheetService;
+  vtrPrincipal: FakeSheetService;
+  contatos: FakeSheetService;
+  getSyncStatusBaseLista: () => SyncStatus;
+  getSyncStatusVtrPrincipal: () => SyncStatus;
+  getSyncStatusContatos: () => SyncStatus;
+  forceSyncBaseLista: ReturnType<typeof vi.fn>;
+  forceSyncVtrPrincipal: ReturnType<typeof vi.fn>;
+  forceSyncContatos: ReturnType<typeof vi.fn>;
+}
+
+function makeFakeExtras(): FakeExtrasService {
+  const baseLista = makeFakeService({ syncedAt: null, count: 0, stale: false });
+  const vtrPrincipal = makeFakeService({ syncedAt: null, count: 0, stale: false });
+  const contatos = makeFakeService({ syncedAt: null, count: 0, stale: false });
+  return {
+    baseLista,
+    vtrPrincipal,
+    contatos,
+    getSyncStatusBaseLista: () => baseLista.status,
+    getSyncStatusVtrPrincipal: () => vtrPrincipal.status,
+    getSyncStatusContatos: () => contatos.status,
+    forceSyncBaseLista: baseLista.forceSync,
+    forceSyncVtrPrincipal: vtrPrincipal.forceSync,
+    forceSyncContatos: contatos.forceSync,
+  };
+}
+
 describe('IntegracoesService', () => {
   let svc: IntegracoesService;
   let trocasAut: FakeSheetService;
   let chefesOp: FakeSheetService;
   let dispensasSheet: FakeSheetService;
   let viaturasQdv: FakeSheetService;
+  let viaturasQdvExtras: FakeExtrasService;
 
   beforeEach(() => {
     trocasAut = makeFakeService({ syncedAt: null, count: 0, stale: false });
     chefesOp = makeFakeService({ syncedAt: null, count: 0, stale: false });
     dispensasSheet = makeFakeService({ syncedAt: null, count: 0, stale: false });
     viaturasQdv = makeFakeService({ syncedAt: null, count: 0, stale: false });
+    viaturasQdvExtras = makeFakeExtras();
 
     const config = new ConfigService({});
     svc = new IntegracoesService(
@@ -47,17 +79,21 @@ describe('IntegracoesService', () => {
       chefesOp as unknown as ChefesOperacoesService,
       dispensasSheet as unknown as DispensasSheetService,
       viaturasQdv as unknown as ViaturasQdvService,
+      viaturasQdvExtras as unknown as ViaturasQdvExtrasService,
     );
   });
 
-  it('lista as 4 integrações cadastradas', () => {
+  it('lista as 7 integrações cadastradas (1BBM_1CIA + 3 abas extras)', () => {
     const result = svc.list();
-    expect(result).toHaveLength(4);
+    expect(result).toHaveLength(7);
     expect(result.map((r) => r.id).sort()).toEqual([
       'chefes-operacoes',
       'dispensas-sheet',
       'trocas-autorizadas',
       'viaturas-qdv',
+      'viaturas-qdv-base-lista',
+      'viaturas-qdv-cbmes',
+      'viaturas-qdv-contatos',
     ]);
   });
 

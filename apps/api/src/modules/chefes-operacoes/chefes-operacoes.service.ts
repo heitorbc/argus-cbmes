@@ -32,6 +32,24 @@ export class ChefesOperacoesService {
     return chefesDoDia(entry.parsed, dia);
   }
 
+  /**
+   * S0.5/0.1.1.3 — Conjunto de NFs habilitados a ser Chefe de Operações
+   * (todos os militares listados na planilha de escala ChOp, escalados
+   * ou não em um dado dia). Usado para validar trocas autorizadas
+   * cuja função envolve ChOp — substituto deve estar habilitado.
+   *
+   * Retorna `Set` para lookup O(1). Vazio se a planilha não foi
+   * sincronizada ainda (sem cache).
+   */
+  async getHabilitadosNfs(): Promise<Set<string>> {
+    try {
+      const { entry } = await this.getEntry();
+      return new Set(entry.parsed.map((c) => c.nf));
+    } catch {
+      return new Set();
+    }
+  }
+
   /** S0.5/PR2 — metadados para a página /configuracoes/integracoes. */
   getSyncStatus(): { syncedAt: string | null; count: number; stale: boolean } {
     if (!this.cache) return { syncedAt: null, count: 0, stale: false };

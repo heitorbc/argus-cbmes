@@ -10,6 +10,7 @@ import { EscalasService } from '../escalas/escalas.service';
 import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.service';
 import { FiscaisService } from '../fiscais/fiscais.service';
 import { AtestadosService } from '../atestados/atestados.service';
+import { FeriasService } from '../ferias/ferias.service';
 import { DispensasService } from '../dispensas/dispensas.service';
 import { NotasServicoService } from '../notas-servico/notas-servico.service';
 import { IdeoStatusService } from '../ideo/ideo-status.service';
@@ -75,8 +76,12 @@ class FakeViaturasService {
 }
 
 class FakeChefesOperacoesService {
+  habilitadosNfs: Set<string> = new Set();
   async getEscaladosDoDia(): Promise<readonly never[]> {
     return [];
+  }
+  async getHabilitadosNfs(): Promise<Set<string>> {
+    return this.habilitadosNfs;
   }
 }
 
@@ -187,6 +192,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
       new AtestadosService(),
       new NotasServicoService(),
       new FakeTrocasAutorizadasService() as unknown as never,
+      new FeriasService(),
     );
 
     escalas.save(escalaAbril2026);
@@ -208,6 +214,27 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
     const resolved = r.tripulacao.filter((t) => t.militarResolvido);
     expect(resolved).toHaveLength(5);
     expect(r.inconsistencias.find((i) => i.tipo === 'NF_NAO_RESOLVIDO')).toBeUndefined();
+  });
+
+  it('S0.5/4.1 — férias ativas no dia aparecem em previa.ferias enriquecidas', async () => {
+    const previaAsAny = previa as unknown as { feriasSvc: FeriasService };
+    previaAsAny.feriasSvc.create(
+      {
+        militarNf: '3037509', // BARCELLOS
+        mesAno: '2026-04',
+        dataInicio: '2026-04-20',
+        dias: 10,
+      },
+      'admin-test',
+    );
+    const r = await previa.getPreviaDoDia('2026-04-23');
+    expect(r.ferias).toHaveLength(1);
+    expect(r.ferias[0]!.militarNf).toBe('3037509');
+    expect(r.ferias[0]!.militarRaw).toContain('BARCELLOS');
+    expect(r.ferias[0]!.dias).toBe(10);
+
+    const r2 = await previa.getPreviaDoDia('2026-04-19');
+    expect(r2.ferias).toHaveLength(0); // ainda não começou
   });
 
   it('S0.5/PR1 — injeta trocas autorizadas em previa.trocas com origemAutorizada=true', async () => {
@@ -361,6 +388,66 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
     expect(inc!.mensagem).toContain('SGT INEXISTENTE');
   });
 
+  it('S0.5/0.1.1.3 — troca de função CHOP com substituto não-habilitado registra inconsistência', async () => {
+    const previaAsAny = previa as unknown as {
+      trocasAutorizadas: FakeTrocasAutorizadasService;
+      chefesOperacoes: FakeChefesOperacoesService;
+    };
+    // Habilitados ChOp: só BARCELLOS (3037509). FABRE (3055566) NÃO está.
+    previaAsAny.chefesOperacoes.habilitadosNfs = new Set(['3037509']);
+    previaAsAny.trocasAutorizadas.trocas = [
+      {
+        dataEscala: '2026-04-23',
+        dataPagamento: '2026-04-30',
+        escaladoOriginal: '2º SGT BARCELLOS',
+        substituto: 'CB FABRE',
+        escaladoPagamento: 'CB FABRE',
+        substitutoPagamento: '2º SGT BARCELLOS',
+        funcao: 'CHEFE DE OPERAÇÕES',
+        funcaoPagamento: 'CHEFE DE OPERAÇÕES',
+        horario: '24h',
+        horarioPagamento: '24h',
+      },
+    ];
+    const r = await previa.getPreviaDoDia('2026-04-23');
+    const inc = r.inconsistencias.find(
+      (i) =>
+        (i.detalhe as Record<string, unknown> | undefined)?.origem ===
+        'troca-chop-nao-habilitado',
+    );
+    expect(inc).toBeDefined();
+    expect(inc!.mensagem).toContain('CB FABRE');
+  });
+
+  it('S0.5/0.1.1.3 — troca de função não-CHOP nunca registra a inconsistência de habilitado', async () => {
+    const previaAsAny = previa as unknown as {
+      trocasAutorizadas: FakeTrocasAutorizadasService;
+      chefesOperacoes: FakeChefesOperacoesService;
+    };
+    previaAsAny.chefesOperacoes.habilitadosNfs = new Set(['3037509']);
+    previaAsAny.trocasAutorizadas.trocas = [
+      {
+        dataEscala: '2026-04-23',
+        dataPagamento: '2026-04-30',
+        escaladoOriginal: '2º SGT BARCELLOS',
+        substituto: 'CB FABRE',
+        escaladoPagamento: 'CB FABRE',
+        substitutoPagamento: '2º SGT BARCELLOS',
+        funcao: 'MERGULHADOR',
+        funcaoPagamento: 'MERGULHADOR',
+        horario: '24h',
+        horarioPagamento: '24h',
+      },
+    ];
+    const r = await previa.getPreviaDoDia('2026-04-23');
+    const inc = r.inconsistencias.find(
+      (i) =>
+        (i.detalhe as Record<string, unknown> | undefined)?.origem ===
+        'troca-chop-nao-habilitado',
+    );
+    expect(inc).toBeUndefined();
+  });
+
   it('S0.5/PR1 — no dia de pagamento, papéis se invertem', async () => {
     const previaAsAny = previa as unknown as { trocasAutorizadas: FakeTrocasAutorizadasService };
     previaAsAny.trocasAutorizadas.trocas = [
@@ -448,6 +535,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
       new AtestadosService(),
       new NotasServicoService(),
       new FakeTrocasAutorizadasService() as unknown as never,
+      new FeriasService(),
     );
     const r = await previa.getPreviaDoDia('2026-04-23');
     const ar044 = r.viaturasOperacionais.find((v) => v.codigo === 'AR 044');
@@ -501,6 +589,7 @@ describe('PreviaService — inconsistências', () => {
       new AtestadosService(),
       new NotasServicoService(),
       new FakeTrocasAutorizadasService() as unknown as never,
+      new FeriasService(),
     );
   });
 

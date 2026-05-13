@@ -23,9 +23,11 @@ import {
   TIPO_DISPENSA_LABEL,
   type PreviaAtestado,
   type PreviaDispensa,
+  type PreviaFerias,
   type PreviaNotaServico,
 } from '@argus/shared-types';
 import { AtestadosService } from '../atestados/atestados.service';
+import { FeriasService } from '../ferias/ferias.service';
 import { ChefesOperacoesService } from '../chefes-operacoes/chefes-operacoes.service';
 import { DispensasService } from '../dispensas/dispensas.service';
 import { NotasServicoService } from '../notas-servico/notas-servico.service';
@@ -73,6 +75,7 @@ export class PreviaService {
     private readonly atestadosSvc: AtestadosService,
     private readonly notasServicoSvc: NotasServicoService,
     private readonly trocasAutorizadas: TrocasAutorizadasService,
+    private readonly feriasSvc: FeriasService,
   ) {}
 
   async getPreviaDoDia(dataIso: string): Promise<PreviaDoDia> {
@@ -256,6 +259,21 @@ export class PreviaService {
       };
     });
 
+    // S0.5/4.1 — Férias ativas no dia (mesmo padrão das dispensas).
+    const feriasAtivas = this.feriasSvc.listAtivasNoDia(dataIso);
+    const feriasPrevia: PreviaFerias[] = feriasAtivas.map((f) => {
+      const m = efetivoByNf.get(f.militarNf);
+      return {
+        feriasId: f.id,
+        militarNf: f.militarNf,
+        militarRaw: m ? `${m.posto} ${m.nomeGuerra ?? m.nome.split(' ')[0]}` : `NF ${f.militarNf}`,
+        mesAno: f.mesAno,
+        dataInicio: f.dataInicio,
+        dias: f.dias,
+        observacoes: f.observacoes,
+      };
+    });
+
     // S6l — Notas de Serviço do dia, enriquecidas com militares (nome formatado).
     const nsDoDia = this.notasServicoSvc.listDoDia(dataIso);
     const notasServicoEnriched: PreviaNotaServico[] = nsDoDia.map((n) => ({
@@ -312,8 +330,12 @@ export class PreviaService {
       });
       return [];
     });
+    // S0.5/0.1.1.3 — para validar substituto de ChOp contra a planilha
+    // específica, carregamos a lista de NFs habilitados (1 vez por
+    // request). Vazio se a planilha não está sincronizada.
+    const chopHabilitados = await this.chefesOperacoes.getHabilitadosNfs();
     const trocasAutComoPrevia = trocasAutorizadasDoDia.map((t) =>
-      converterTrocaAutorizadaEmPrevia(t, dataIso, matcher, inconsistencias),
+      converterTrocaAutorizadaEmPrevia(t, dataIso, matcher, inconsistencias, chopHabilitados),
     );
     const trocasFinalDoDia = [...trocasAutComoPrevia, ...ajustes.trocas];
 
@@ -337,6 +359,7 @@ export class PreviaService {
       notasServico: notasServicoEnriched,
       dispensas: dispensasPrevia,
       atestados: atestadosPrevia,
+      ferias: feriasPrevia,
       escalaEspecialAtos: atosEspeciais,
       trocasEscalaEspecial: ajustes.trocasEscalaEspecial,
       swapsMilitares: ajustes.swapsMilitares,
@@ -609,6 +632,7 @@ function converterTrocaAutorizadaEmPrevia(
   dataIso: string,
   matcher: NomeMatcher,
   inconsistencias: PreviaInconsistencia[],
+  chopHabilitados: Set<string>,
 ): {
   substituidoRaw: string;
   substituidoNf?: string;
@@ -632,6 +656,24 @@ function converterTrocaAutorizadaEmPrevia(
     matcher,
     inconsistencias,
   );
+
+  // S0.5/0.1.1.3 — Quando a função da troca envolve Chefe de Operações,
+  // validar que o substituto está habilitado (presente na planilha ChOp).
+  // Sem essa restrição, qualquer militar viraria ChOp ad-hoc na PD.
+  if (funcao && /CHOP|CHEFE\s+DE\s+OPERA/i.test(funcao)) {
+    if (substitutoNf && chopHabilitados.size > 0 && !chopHabilitados.has(substitutoNf)) {
+      inconsistencias.push({
+        tipo: 'NF_NAO_RESOLVIDO',
+        mensagem: `Trocas Autorizadas: substituto "${substitutoRaw}" não está habilitado a ser Chefe de Operações (ausente na planilha de escala ChOp).`,
+        detalhe: {
+          origem: 'troca-chop-nao-habilitado',
+          substitutoRaw,
+          substitutoNf,
+          funcao,
+        },
+      });
+    }
+  }
 
   return {
     substituidoRaw: escaladoRaw,

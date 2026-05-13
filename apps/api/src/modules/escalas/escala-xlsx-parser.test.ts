@@ -325,6 +325,30 @@ describe('parseEscalaXlsx — Salvamar (S0.4, fixture 01 JANEIRO 2026)', () => {
   });
 });
 
+describe('parseEscalaXlsx — bug import dia 01 (S0.1-fix homologação)', () => {
+  it('inclui o dia 01 do mês no diaEquipe (col B, antes da col EQUIPE A)', async () => {
+    let buffer: Buffer;
+    try {
+      buffer = loadFixture('05 MAIO DE 2026.xlsx');
+    } catch {
+      return;
+    }
+    const escala = await parseEscalaXlsx({
+      buffer,
+      filename: '05 MAIO DE 2026.xlsx',
+    });
+    // Antes do fix: dia 01 (col B) ficava fora do range porque equipeCols
+    // começa na col 3 (EQUIPE A). Com o fix, startCol = colsList[0] - 1.
+    expect(escala.diaEquipe['2026-05-01']).toBeDefined();
+    expect(escala.diaEquipe['2026-05-01']).toBe('C'); // sexta 01/05 = CHARLIE
+    // E dia 15 (col B da 2ª quinzena) também.
+    expect(escala.diaEquipe['2026-05-15']).toBeDefined();
+    expect(escala.diaEquipe['2026-05-15']).toBe('A');
+    // O mês todo deve estar mapeado (31 dias de maio).
+    expect(Object.keys(escala.diaEquipe).length).toBe(31);
+  });
+});
+
 describe('parseEscalaXlsx — fixture 01 JANEIRO 2026 com normalização (S6n-fix)', () => {
   it('emite recursos canônicos (ABTS_01, RESGATE 01, ATB, PLATAFORMA, CHEFE DE OPERAÇÕES, GUARDA)', async () => {
     let buffer: Buffer;
