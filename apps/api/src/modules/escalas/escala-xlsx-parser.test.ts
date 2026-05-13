@@ -223,6 +223,62 @@ describe('expandViaturaFuncao (S6n-fix)', () => {
   });
 });
 
+describe('parseEscalaXlsx — Mergulho (S0.3, fixture 01 JANEIRO 2026)', () => {
+  it('extrai cadastro de 3 equipes (A/B/C) com 4 militares cada', async () => {
+    let buffer: Buffer;
+    try {
+      buffer = loadFixture('01 JANEIRO DE 2026.xlsx');
+    } catch {
+      return;
+    }
+    const escala = await parseEscalaXlsx({
+      buffer,
+      filename: '01 JANEIRO DE 2026.xlsx',
+    });
+    expect(escala.mergulho).toBeDefined();
+    const equipes = escala.mergulho!.equipes;
+    expect(Object.keys(equipes).sort()).toEqual(['A', 'B', 'C']);
+
+    // Equipe A: 2º SGT ALEXANDRE (chefe), CB BEATRIZ (mot), CB VINICIUS + CB JACQUES (mergulhadores)
+    expect(equipes.A!.chefe?.nomeGuerra).toContain('ALEXANDR');
+    expect(equipes.A!.motorista?.nomeGuerra).toContain('BEATRIZ');
+    expect(equipes.A!.mergulhadores).toHaveLength(2);
+
+    // Equipe B: SGT RHUAN (chefe), CB VAZ (mot), SD MARCHESI + CB ELEUTERIO
+    expect(equipes.B!.chefe?.nomeGuerra).toContain('RHUAN');
+    expect(equipes.B!.motorista?.nomeGuerra).toContain('VAZ');
+
+    // Equipe C: SGT RAFAEL (chefe), CB ALVARENGA (mot), SD PELICIONI + CB FABRE
+    expect(equipes.C!.chefe?.nomeGuerra).toContain('RAFAEL');
+    expect(equipes.C!.motorista?.nomeGuerra).toContain('ALVARENGA');
+  });
+
+  it('preenche porDia para os dias do mês com schedule de mergulho', async () => {
+    let buffer: Buffer;
+    try {
+      buffer = loadFixture('01 JANEIRO DE 2026.xlsx');
+    } catch {
+      return;
+    }
+    const escala = await parseEscalaXlsx({
+      buffer,
+      filename: '01 JANEIRO DE 2026.xlsx',
+    });
+    const porDia = escala.mergulho!.porDia;
+    // Espera pelo menos 1 dia com schedule completo
+    const datasComMergulho = Object.entries(porDia).filter(
+      ([, v]) => v.mergulho01 !== undefined || v.mergulho02 !== undefined,
+    );
+    expect(datasComMergulho.length).toBeGreaterThan(0);
+
+    // Cada letra mapeada deve ser A/B/C (não vazar A1/A2/etc).
+    for (const [, v] of datasComMergulho) {
+      if (v.mergulho01) expect(['A', 'B', 'C']).toContain(v.mergulho01);
+      if (v.mergulho02) expect(['A', 'B', 'C']).toContain(v.mergulho02);
+    }
+  });
+});
+
 describe('parseEscalaXlsx — fixture 01 JANEIRO 2026 com normalização (S6n-fix)', () => {
   it('emite recursos canônicos (ABTS_01, RESGATE 01, ATB, PLATAFORMA, CHEFE DE OPERAÇÕES, GUARDA)', async () => {
     let buffer: Buffer;

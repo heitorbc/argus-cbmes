@@ -1,7 +1,11 @@
 import ExcelJS from 'exceljs';
 import {
   type ComposicaoEntry,
+  type EquipeMergulho,
   type EscalaMensal,
+  type EscalaMergulhoMes,
+  type LetraEquipeMergulho,
+  LETRA_EQUIPE_MERGULHO,
   type LetraEquipeRotativa,
   LETRA_EQUIPE_ROTATIVA,
   type MilitarRef,
@@ -180,6 +184,13 @@ function cellAsDayOfMonth(cell: ExcelJS.Cell): number | null {
     if (r instanceof Date) return r.getUTCDate();
     if (typeof r === 'number' && Number.isFinite(r) && r >= 1 && r <= 31) return Math.floor(r);
     if (typeof r === 'string') {
+      // S0.3 — algumas células R10 do XLSX trazem o resultado como ISO
+      // datetime ("2026-01-15T00:00:00.000Z"). Extrai o dia daí.
+      const iso = /^\d{4}-\d{2}-(\d{2})T/.exec(r);
+      if (iso) {
+        const n = Number.parseInt(iso[1]!, 10);
+        if (n >= 1 && n <= 31) return n;
+      }
       const n = Number.parseInt(r, 10);
       if (Number.isFinite(n) && n >= 1 && n <= 31) return n;
     }
@@ -439,6 +450,102 @@ function extractComposicao(
 }
 
 /**
+ * Sprint 0.3 — Extrai a seção de Mergulho da aba.
+ *
+ *  - **Cadastro fixo** em X16:AI20 (cols 24-35, rows 16-20):
+ *    - R16 = headers "EQUIPE A" / "EQUIPE B" / "EQUIPE C" (4 cols cada)
+ *    - R17 = Chefe, R18 = Motorista, R19/R20 = Mergulhadores
+ *  - **Schedule** em R12 (MERGULHO 01) e R13 (MERGULHO 02). Cada coluna
+ *    de dia (mesmas usadas em `extractDiaEquipe`) contém código
+ *    `A1`/`A2`/`B1`/`B2`/`C1`/`C2`. Os sufixos 1/2 indicam dia 1 ou
+ *    dia 2 do plantão da equipe — mesmos militares; aqui só nos
+ *    interessa a letra.
+ *
+ * Retorna `null` se a seção estiver vazia (XLSX sem seção de mergulho,
+ * ex.: testes legados).
+ */
+function parseMergulhoSection(
+  ws: ExcelJS.Worksheet,
+  startCol: number,
+  endCol: number,
+  ano: number,
+  mes: number,
+): EscalaMergulhoMes | null {
+  // Etapa A — cadastro (X16:AI20).
+  // Coluna X = 24. Cada equipe ocupa 4 colunas redundantes.
+  const cadastroPorLetra: Partial<Record<LetraEquipeMergulho, [number, number]>> = {
+    A: [24, 27], // X-AA
+    B: [28, 31], // AB-AE
+    C: [32, 35], // AF-AI
+  };
+
+  const equipes: Partial<Record<LetraEquipeMergulho, EquipeMergulho>> = {};
+  let cadastroVazio = true;
+
+  for (const letra of LETRA_EQUIPE_MERGULHO) {
+    const [colIni, colFim] = cadastroPorLetra[letra]!;
+    const pickPrimeira = (row: number): MilitarRef | null => {
+      for (let c = colIni; c <= colFim; c++) {
+        const raw = cellText(ws.getRow(row).getCell(c));
+        if (raw) {
+          const m = parseMilitarCell(raw);
+          if (m) return m;
+        }
+      }
+      return null;
+    };
+    const chefe = pickPrimeira(17);
+    const motorista = pickPrimeira(18);
+    const m1 = pickPrimeira(19);
+    const m2 = pickPrimeira(20);
+    const mergulhadores: MilitarRef[] = [];
+    if (m1) mergulhadores.push(m1);
+    if (m2) mergulhadores.push(m2);
+
+    if (chefe || motorista || mergulhadores.length > 0) cadastroVazio = false;
+
+    equipes[letra] = { letra, chefe, motorista, mergulhadores };
+  }
+
+  if (cadastroVazio) return null;
+
+  // Etapa B — schedule por dia (R12 = MERGULHO 01, R13 = MERGULHO 02).
+  // Para cada coluna (startCol..endCol), descobrir o dia do mês via
+  // linha 9 ou 10 (mesma lógica de extractDiaEquipe), e ler o código
+  // em R12 e R13.
+  const porDia: Record<
+    string,
+    { mergulho01?: LetraEquipeMergulho; mergulho02?: LetraEquipeMergulho }
+  > = {};
+  const codigoRegex = /^([ABC])[12]$/;
+  const rowDias = [9, 10];
+
+  for (let c = startCol; c <= endCol; c++) {
+    let dia: number | null = null;
+    for (const r of rowDias) {
+      dia = cellAsDayOfMonth(ws.getRow(r).getCell(c));
+      if (dia !== null) break;
+    }
+    if (dia === null) continue;
+
+    const dataIso = `${ano}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+    const cod12 = cellText(ws.getRow(12).getCell(c)).trim().toUpperCase();
+    const cod13 = cellText(ws.getRow(13).getCell(c)).trim().toUpperCase();
+    const m12 = codigoRegex.exec(cod12);
+    const m13 = codigoRegex.exec(cod13);
+    if (!m12 && !m13) continue;
+    if (!porDia[dataIso]) porDia[dataIso] = {};
+    if (m12) porDia[dataIso].mergulho01 = m12[1] as LetraEquipeMergulho;
+    if (m13) porDia[dataIso].mergulho02 = m13[1] as LetraEquipeMergulho;
+  }
+
+  return {
+    equipes: equipes as EscalaMergulhoMes['equipes'],
+    porDia,
+  };
+}
+
+/**
  * Heurística para extrair a aba inteira: identifica linhas das equipes (header EQUIPE X),
  * extrai o range de dias no header, identifica colunas de cada equipe e itera linhas 16-31.
  */
@@ -449,6 +556,7 @@ function parseAba(
 ): {
   diaEquipe: Record<string, LetraEquipeRotativa>;
   composicao: ComposicaoEntry[];
+  mergulho: EscalaMergulhoMes | null;
   avisos: string[];
 } {
   const avisos: string[] = [];
@@ -488,7 +596,12 @@ function parseAba(
   );
   avisos.push(...avisosComp);
 
-  return { diaEquipe, composicao: entries, avisos };
+  // S0.3 — Mergulho (cadastro X16:AI20 + schedule R12/R13).
+  // Range fixo cols W (23) .. AJ (36) — independente do range das equipes
+  // rotativas (cols B-S).
+  const mergulho = parseMergulhoSection(ws, 23, 36, ano, mes);
+
+  return { diaEquipe, composicao: entries, mergulho, avisos };
 }
 
 /**
@@ -559,6 +672,7 @@ export async function parseEscalaXlsx(input: ParseEscalaInput): Promise<EscalaMe
 
   const diaEquipe = { ...r1.diaEquipe, ...r2.diaEquipe };
   const composicao = mergeComposicao(r1.composicao, r2.composicao, avisos);
+  const mergulho = mergeMergulho(r1.mergulho, r2.mergulho);
 
   if (Object.keys(diaEquipe).length === 0) {
     throw new EscalaXlsxParseError(
@@ -581,7 +695,25 @@ export async function parseEscalaXlsx(input: ParseEscalaInput): Promise<EscalaMe
     importadoPorNf: input.importadoPorNf,
     diaEquipe,
     composicao,
+    mergulho: mergulho ?? undefined,
     avisos,
+  };
+}
+
+/**
+ * Mescla a seção de mergulho entre as 2 quinzenas. Cadastro fixo da
+ * primeira quinzena vence; `porDia` acumula (datas distintas).
+ */
+function mergeMergulho(
+  a: EscalaMergulhoMes | null,
+  b: EscalaMergulhoMes | null,
+): EscalaMergulhoMes | null {
+  if (!a && !b) return null;
+  if (!a) return b;
+  if (!b) return a;
+  return {
+    equipes: a.equipes, // 1ª quinzena vence — cadastro é imutável no mês
+    porDia: { ...a.porDia, ...b.porDia },
   };
 }
 

@@ -9,6 +9,7 @@ import {
   type LetraEquipe,
   type LetraEquipeRotativa,
   type Militar,
+  type MilitarRef,
   type PreviaDoDia,
   type PreviaFiscal,
   type PreviaIdeoEntry,
@@ -181,6 +182,31 @@ export class PreviaService {
 
     // S6b/F2 — composicaoMf espelhando o MF (1 entry por recurso)
     const composicaoMf = buildComposicaoMf(tripulacao, allViaturas);
+
+    // S0.3 — injeta MERGULHO 01/02 quando o XLSX importou seção de
+    // mergulho (cadastro X16:AI20 + schedule R12/R13). Equipe rotativa
+    // do dia é usada como flag por consistência com o resto do sistema.
+    if (escala?.mergulho && equipe) {
+      const mergulhoDoDia = escala.mergulho.porDia[dataIso];
+      if (mergulhoDoDia) {
+        if (mergulhoDoDia.mergulho01) {
+          const eq = escala.mergulho.equipes[mergulhoDoDia.mergulho01];
+          if (eq) {
+            composicaoMf.push(
+              buildComposicaoMfFromMergulho('MERGULHO 01', eq, equipe, allViaturas),
+            );
+          }
+        }
+        if (mergulhoDoDia.mergulho02) {
+          const eq = escala.mergulho.equipes[mergulhoDoDia.mergulho02];
+          if (eq) {
+            composicaoMf.push(
+              buildComposicaoMfFromMergulho('MERGULHO 02', eq, equipe, allViaturas),
+            );
+          }
+        }
+      }
+    }
 
     // S6b/F1 — Estado do Servico do dia
     const estadoServico = this.servico.get(dataIso);
@@ -436,6 +462,45 @@ function buildComposicaoMf(
   }
 
   return Array.from(byRecurso.values());
+}
+
+/**
+ * S0.3 — Constrói uma entry de composicaoMf para MERGULHO 01/02 a partir
+ * de uma EquipeMergulho (4 militares fixos do cadastro do XLSX). O recurso
+ * é tagueado com a equipe rotativa do dia para consistência com o resto
+ * do sistema (Prévia, conferências, PD).
+ */
+function buildComposicaoMfFromMergulho(
+  recurso: 'MERGULHO 01' | 'MERGULHO 02',
+  eq: {
+    chefe: MilitarRef | null;
+    motorista: MilitarRef | null;
+    mergulhadores: readonly MilitarRef[];
+  },
+  equipeRotativa: LetraEquipeRotativa,
+  viaturas: readonly { id: string; prefixo: string; status: StatusViatura }[],
+): ComposicaoMfEntry {
+  const vtr = viaturas.find(
+    (v) => normalizeViaturaCode(v.prefixo) === normalizeViaturaCode(recurso),
+  );
+  const toMilitar = (m: MilitarRef): ComposicaoMfMilitar => ({
+    raw: m.raw,
+    postoAbreviado: m.postoAbreviado,
+    nomeGuerra: m.nomeGuerra,
+    militarResolvido: null, // resolução via NomeMatcher fica para próxima sprint
+    statusConferencia: 'pendente',
+    isFiscal: false,
+  });
+  return {
+    recurso,
+    vtrPrefixo: vtr?.prefixo,
+    vtrStatus: vtr?.status ?? null,
+    semEquipe: false,
+    equipe: equipeRotativa as LetraEquipe,
+    chefe: eq.chefe ? toMilitar(eq.chefe) : undefined,
+    motorista: eq.motorista ? toMilitar(eq.motorista) : undefined,
+    operadores: eq.mergulhadores.map(toMilitar),
+  };
 }
 
 /** Re-export para uso em tests/controller. */
