@@ -5,6 +5,9 @@ import type {
   ComposicaoEntry,
   ConferenciaEquipeEntry,
   ConferenciaMateriaisDoDia,
+  CreateFeriasInput,
+  Ferias,
+  UpdateFeriasInput,
   ConferenciaViaturaEntry,
   Atestado,
   CreateAtestadoInput,
@@ -472,6 +475,23 @@ export const api = {
 
   dispensasSaldoMilitar: (militarNf: string, ano: number) =>
     request<DispensaSaldoMilitar>(`/dispensas/saldo/${militarNf}/${ano}`),
+
+  // Férias (item 4)
+  feriasList: (filter: { militarNf?: string; ano?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (filter.militarNf) params.set('militarNf', filter.militarNf);
+    if (filter.ano) params.set('ano', String(filter.ano));
+    const qs = params.toString();
+    return request<Ferias[]>(`/ferias${qs ? `?${qs}` : ''}`);
+  },
+
+  feriasCreate: (input: CreateFeriasInput) =>
+    request<Ferias>('/ferias', { method: 'POST', body: JSON.stringify(input) }),
+
+  feriasUpdate: (id: string, input: UpdateFeriasInput) =>
+    request<Ferias>(`/ferias/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
+
+  feriasRemove: (id: string) => request<void>(`/ferias/${id}`, { method: 'DELETE' }),
 
   // Atestados (S6k)
   atestadosList: (filter: { militarNf?: string; ano?: number } = {}) => {

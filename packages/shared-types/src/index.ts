@@ -5,6 +5,7 @@ export * from './dispensa.js';
 export * from './dispensa-sheet.js';
 export * from './escala.js';
 export * from './escala-especial.js';
+export * from './ferias.js';
 export * from './fiscal.js';
 export * from './ideo.js';
 export * from './mapa-forca.js';
