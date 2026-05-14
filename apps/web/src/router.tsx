@@ -14,6 +14,7 @@ import { HomePage } from '@/pages/home';
 import { EfetivoPage } from '@/pages/efetivo';
 import { EfetivoDetalhePage } from '@/pages/efetivo-detalhe';
 import { ViaturasPage } from '@/pages/viaturas';
+import { ViaturasDetalhePage } from '@/pages/viaturas-detalhe';
 import { EscalasPage } from '@/pages/escalas';
 import { EscalasEspeciaisPage } from '@/pages/escalas-especiais';
 import { FiscaisPage } from '@/pages/fiscais';
@@ -105,6 +106,7 @@ export const router = createBrowserRouter([
           { path: '/cadastros/efetivo', element: <EfetivoPage /> },
           { path: '/cadastros/efetivo/:nf', element: <EfetivoDetalhePage /> },
           { path: '/cadastros/viaturas', element: <ViaturasPage /> },
+          { path: '/cadastros/viaturas/:prefixo', element: <ViaturasDetalhePage /> },
           { path: '/cadastros/fiscais', element: <FiscaisPage /> },
           { path: '/cadastros/ideo', element: <IdeoPage /> },
           { path: '/cadastros/escalas', element: <EscalasPage /> },

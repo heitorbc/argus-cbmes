@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { viaturaSchema } from './viatura';
 
 /**
  * Item 3 — Viatura lida da planilha QDV (aba `1BBM_1CIA`).
@@ -109,8 +110,22 @@ export const viaturaEnriquecidaSchema = z.object({
   placa: z.string().optional(),
   renavam: z.string().optional(),
   categoriaCnh: z.string().optional(),
+  /** Vem da aba `BASE_VTR_LISTA_PRINCIPAL` (cadastro CBMES). */
+  tipoVeiculo: z.string().optional(),
   marcaModelo: z.string().optional(),
   combustivel: z.string().optional(),
   modeloPneu: z.string().optional(),
 });
 export type ViaturaEnriquecida = z.infer<typeof viaturaEnriquecidaSchema>;
+
+/**
+ * S0.x — DTO de detalhe da viatura para `/cadastros/viaturas/:prefixo`.
+ * Combina visão consolidada QDV (read-only) + override interno editável +
+ * contato logístico da unidade.
+ */
+export const viaturaDetalheSchema = z.object({
+  qdv: viaturaEnriquecidaSchema,
+  interno: viaturaSchema.nullable(),
+  contatoResponsavel: contatoLogisticoSchema.nullable(),
+});
+export type ViaturaDetalhe = z.infer<typeof viaturaDetalheSchema>;

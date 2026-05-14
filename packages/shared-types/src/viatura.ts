@@ -35,6 +35,25 @@ export const FUNCOES_VIATURA = [
 ] as const;
 export type FuncaoViatura = (typeof FUNCOES_VIATURA)[number];
 
+/**
+ * Origem do registro de KM no histórico — `manual_admin` (entrada manual
+ * na tela de detalhe da viatura), `conferencia` (S6b, alimentado pelo
+ * motorista no início do serviço) ou `ocorrencia` (futuro módulo de
+ * registro de deslocamentos).
+ */
+export const ORIGEM_HISTORICO_KM = ['manual_admin', 'conferencia', 'ocorrencia'] as const;
+export type OrigemHistoricoKm = (typeof ORIGEM_HISTORICO_KM)[number];
+
+export const historicoKmEntrySchema = z.object({
+  kmRegistrado: z.number().int().nonnegative(),
+  /** ISO datetime (`new Date().toISOString()`). */
+  registradoEm: z.string(),
+  /** NF do usuário que registrou o KM. */
+  registradoPorNf: z.string(),
+  origem: z.enum(ORIGEM_HISTORICO_KM).default('manual_admin'),
+});
+export type HistoricoKmEntry = z.infer<typeof historicoKmEntrySchema>;
+
 export const viaturaSchema = z.object({
   id: z.string(),
   prefixo: z.string().min(1),
@@ -56,10 +75,13 @@ export const viaturaSchema = z.object({
   kmAtual: z.number().int().nonnegative().optional(),
   tipoCombustivel: z.enum(TIPOS_COMBUSTIVEL).optional(),
   usaArla32: z.boolean().optional(),
-  /** Capacidade do tanque em litros. */
+  /** Capacidade do tanque de combustível em litros. */
   capacidadeTanqueLitros: z.number().nonnegative().optional(),
+  /** Capacidade do tanque de ARLA32 em litros (relevante só se `usaArla32`). */
+  capacidadeTanqueArlaLitros: z.number().nonnegative().optional(),
   /**
-   * Estado do tanque em % (0-100). **Read-only** — preenchido na Conferência da Viatura (S6b).
+   * Estado do tanque em % (0-100). Atualizado na Conferência da Viatura
+   * (S6b) pelo motorista, mas o admin pode sobrescrever na tela de detalhe.
    */
   estadoTanquePercent: z.number().min(0).max(100).optional(),
   alturaMetros: z.number().positive().optional(),
@@ -81,6 +103,13 @@ export const viaturaSchema = z.object({
     )
     .default([]),
 
+  /**
+   * Histórico de atualizações de KM (data/hora/NF/origem). Cresce a cada
+   * mudança de `kmAtual`. Origens previstas: `manual_admin` (S0.x), depois
+   * `conferencia` (S6b) e `ocorrencia` (módulo de deslocamentos).
+   */
+  historicoKm: z.array(historicoKmEntrySchema).default([]),
+
   criadoEm: z.string(),
   atualizadoEm: z.string(),
 });
@@ -94,13 +123,19 @@ export const createViaturaSchema = viaturaSchema
     origem: true,
     estadoTanquePercent: true,
     observacoesDataDas: true,
+    historicoKm: true,
   })
   .extend({
     prefixo: z.string().regex(/^[A-Z]{2,4}[ _]\d{3}$/, 'Prefixo no formato "ABTS 011" ou "AM_002"'),
   });
 export type CreateViaturaInput = z.infer<typeof createViaturaSchema>;
 
-export const updateViaturaSchema = createViaturaSchema.partial();
+export const updateViaturaSchema = createViaturaSchema
+  .partial()
+  .extend({
+    /** Permite edição via PUT (na tela de detalhe). */
+    estadoTanquePercent: z.number().min(0).max(100).optional(),
+  });
 export type UpdateViaturaInput = z.infer<typeof updateViaturaSchema>;
 
 export const TIPO_VIATURA_LABEL: Record<TipoViatura, string> = {

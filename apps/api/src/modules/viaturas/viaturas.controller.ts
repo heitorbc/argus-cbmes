@@ -14,11 +14,14 @@ import {
   createViaturaSchema,
   updateViaturaSchema,
   type ContatoLogistico,
+  type UserSession,
   type ViaturaCbmes,
+  type ViaturaDetalhe,
   type ViaturaEnriquecida,
   type ViaturaQdv,
   type ViaturaQdvBaseLista,
 } from '@argus/shared-types';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ViaturasService } from './viaturas.service';
 import { ViaturasQdvService } from './viaturas-qdv.service';
@@ -49,6 +52,16 @@ export class ViaturasController {
       this.viaturasEnriquecidas.getContatoResponsavel1aCia(),
     ]);
     return { items, contatoResponsavel };
+  }
+
+  /**
+   * S0.x — Detalhe consolidado por prefixo, consumido por
+   * `/cadastros/viaturas/:prefixo`. Combina QDV (read-only) + override
+   * interno (editável) + contato logístico da unidade.
+   */
+  @Get('enriquecidas/:prefixo')
+  async getEnriquecidaByPrefixo(@Param('prefixo') prefixo: string): Promise<ViaturaDetalhe> {
+    return this.viaturasEnriquecidas.getDetalhe(prefixo);
   }
 
   @Get()
@@ -98,14 +111,33 @@ export class ViaturasController {
     return this.viaturas.create(parsed.data);
   }
 
+  /**
+   * S0.x — Upsert por prefixo (tela de detalhe `/cadastros/viaturas/:prefixo`).
+   * Cria override inicial se a viatura QDV ainda não tem registro interno.
+   * Deve vir antes da rota `:id` para evitar colisão de matching.
+   */
   @Roles('admin')
-  @Put(':id')
-  update(@Param('id') id: string, @Body() body: unknown) {
+  @Put('by-prefixo/:prefixo')
+  upsertByPrefixo(
+    @Param('prefixo') prefixo: string,
+    @Body() body: unknown,
+    @CurrentUser() user: UserSession,
+  ) {
     const parsed = updateViaturaSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     }
-    return this.viaturas.update(id, parsed.data);
+    return this.viaturas.upsertByPrefixo(prefixo, parsed.data, user.nf);
+  }
+
+  @Roles('admin')
+  @Put(':id')
+  update(@Param('id') id: string, @Body() body: unknown, @CurrentUser() user: UserSession) {
+    const parsed = updateViaturaSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.errors.map((e) => e.message));
+    }
+    return this.viaturas.update(id, parsed.data, user.nf);
   }
 
   @Roles('admin')
