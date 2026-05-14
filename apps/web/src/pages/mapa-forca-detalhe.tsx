@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
   ESTADO_SERVICO_LABEL,
   TIPO_DISPENSA,
@@ -51,32 +51,50 @@ const INCONSISTENCIA_LABEL: Record<TipoInconsistencia, string> = {
   TROCAS_AUTORIZADAS_INDISPONIVEIS: 'Trocas autorizadas indisponíveis',
 };
 
-function todayIso(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 function formatDataBr(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
   return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
 }
 
-export function PreviaPage() {
+/**
+ * S0.x/rename-mapa-forca — Tela de detalhe do Mapa Força para uma data.
+ *
+ * - Sempre carrega em modo read-only por padrão.
+ * - Botão "Iniciar Prévia do Mapa Força" libera edição APENAS para o
+ *   Fiscal escalado do dia (computado pelo backend) ou admin.
+ * - Edição efetiva (swaps, ajustes, ativações) só fica habilitada quando
+ *   estadoServico === 'PREVIA_INICIADA' E o usuário é o iniciador (ou admin).
+ */
+export function MapaForcaDetalhePage() {
+  const { data: dataParam } = useParams<{ data: string }>();
   const { user } = useAuth();
-  const podeIniciarServico =
-    user?.papeis.includes('admin') ||
-    user?.papeis.includes('fiscal') ||
-    user?.papeis.includes('sargenteante') ||
-    false;
+  const isAdmin = user?.papeis.includes('admin') ?? false;
 
-  const [data, setData] = useState<string>(todayIso());
+  const data = dataParam ?? '';
   const [previa, setPrevia] = useState<MapaForcaDoDia | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [servicoActionInflight, setServicoActionInflight] = useState(false);
 
-  const isReadOnly = (previa?.estadoServico ?? 'NAO_INICIADO') !== 'NAO_INICIADO';
+  // Edição liberada SOMENTE quando o serviço está em PREVIA_INICIADA e o
+  // usuário é o iniciador da Prévia (ou admin). Para os demais casos
+  // (NAO_INICIADO, PREVIA_INICIADA por outro NF, INICIADO+) é read-only.
+  const estado = previa?.estadoServico ?? 'NAO_INICIADO';
+  const isPreviaInitiator = previa?.previaIniciadaPorNf === user?.nf;
+  const isReadOnly = !(estado === 'PREVIA_INICIADA' && (isAdmin || isPreviaInitiator));
+
+  // Pode iniciar Prévia se: estado é NAO_INICIADO E (user.nf == fiscal escalado OR admin)
+  const fiscalNf = previa?.fiscal?.militarNf ?? null;
+  const podeIniciarPrevia =
+    estado === 'NAO_INICIADO' && (isAdmin || (fiscalNf !== null && fiscalNf === user?.nf));
+
+  // Pode iniciar Serviço se: estado é PREVIA_INICIADA E (admin OR initiator)
+  const podeIniciarServico =
+    estado === 'PREVIA_INICIADA' && (isAdmin || isPreviaInitiator);
+
+  // Pode cancelar Prévia: mesmo critério do iniciar serviço
+  const podeCancelarPrevia = podeIniciarServico;
 
   // S0.5 — Tap-to-swap (UX): primeiro tap registra a posição; segundo tap
   // em outra posição da mesma equipe dispara o swap via PUT /previa/ajustes.
@@ -88,10 +106,8 @@ export function PreviaPage() {
   } | null>(null);
   const [swapInflight, setSwapInflight] = useState(false);
 
-  const podeSwap = !isReadOnly && (user?.papeis.includes('admin') ||
-    user?.papeis.includes('fiscal') ||
-    user?.papeis.includes('sargenteante') ||
-    false);
+  // Swap segue o mesmo gate: edição liberada apenas em PREVIA_INICIADA pelo iniciador (ou admin).
+  const podeSwap = !isReadOnly;
 
   const handleSwapClick = async (
     equipe: LetraEquipe,
@@ -130,7 +146,7 @@ export function PreviaPage() {
           funcaoB: funcao,
         },
       ];
-      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/previa/${data}/ajustes`, {
+      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -154,7 +170,7 @@ export function PreviaPage() {
     try {
       const ajustes = extractAjustes(previa);
       const novosSwaps = ajustes.swapsMilitares.filter((_, i) => i !== index);
-      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/previa/${data}/ajustes`, {
+      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -185,7 +201,7 @@ export function PreviaPage() {
       const novos = existe
         ? ajustes.overridesMergulho.filter((o) => o.data !== data)
         : [...ajustes.overridesMergulho, { data, swap: true as const }];
-      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/previa/${data}/ajustes`, {
+      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -217,7 +233,7 @@ export function PreviaPage() {
       const novos = existe
         ? ajustes.overridesParesRecursos.filter((o) => !(o.data === data && o.par === par))
         : [...ajustes.overridesParesRecursos, { data, par, swap: true as const }];
-      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/previa/${data}/ajustes`, {
+      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -235,7 +251,7 @@ export function PreviaPage() {
 
   const reload = () => {
     api
-      .previaDoDia(data)
+      .mapaForcaDoDia(data)
       .then(setPrevia)
       .catch((e) => setError(e instanceof ApiError ? e.message : 'Erro ao recarregar'));
   };
@@ -248,6 +264,34 @@ export function PreviaPage() {
       reload();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Erro ao iniciar serviço');
+    } finally {
+      setServicoActionInflight(false);
+    }
+  };
+
+  // S0.x/rename-mapa-forca — Iniciar Prévia (libera edição para Fiscal/admin).
+  const handleIniciarPrevia = async () => {
+    setServicoActionInflight(true);
+    setError(null);
+    try {
+      await api.servicoIniciarPrevia(data);
+      reload();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Erro ao iniciar Prévia');
+    } finally {
+      setServicoActionInflight(false);
+    }
+  };
+
+  const handleCancelarPrevia = async () => {
+    if (!confirm('Cancelar Prévia em edição? Os ajustes ficam preservados, mas a Prévia volta a ser somente leitura.')) return;
+    setServicoActionInflight(true);
+    setError(null);
+    try {
+      await api.servicoCancelarPrevia(data);
+      reload();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Erro ao cancelar Prévia');
     } finally {
       setServicoActionInflight(false);
     }
@@ -283,7 +327,7 @@ export function PreviaPage() {
     setLoading(true);
     setError(null);
     api
-      .previaDoDia(data)
+      .mapaForcaDoDia(data)
       .then((r) => {
         if (!cancelled) setPrevia(r);
       })
@@ -325,34 +369,25 @@ export function PreviaPage() {
   return (
     <main className="min-h-screen bg-slate-50">
       <header className="bg-cbmes-red px-4 py-4 text-white">
-        <Link to="/" className="text-sm opacity-90 hover:opacity-100">
-          ← Início
+        <Link to="/mapa-forca" className="text-sm opacity-90 hover:opacity-100">
+          ← Voltar para o calendário
         </Link>
-        <h1 className="mt-1 text-lg font-bold">Prévia do Mapa Força</h1>
-        <p className="text-xs opacity-90">Composição diária consolidada</p>
+        <h1 className="mt-1 text-lg font-bold">Mapa Força — {formatDataBr(data)}</h1>
+        <p className="text-xs opacity-90">
+          Composição do dia · {ESTADO_SERVICO_LABEL[estado]}
+        </p>
       </header>
 
       <section className="mx-auto max-w-3xl p-4">
-        <div className="flex items-end gap-3 rounded border border-slate-200 bg-white p-3">
-          <div className="flex-1">
-            <label htmlFor="data" className="mb-1 block text-xs font-medium text-slate-700">
-              Data
-            </label>
-            <input
-              id="data"
-              type="date"
-              value={data}
-              onChange={(e) => setData(e.target.value)}
-              className="w-full rounded border border-slate-300 px-3 py-2 text-base"
-            />
+        <div className="flex items-center justify-between rounded border border-slate-200 bg-white p-3">
+          <div className="text-sm text-slate-700">
+            <span className="font-medium">Data:</span> {formatDataBr(data)}
+            {previa && previa.equipe && (
+              <span className="ml-2 text-xs uppercase text-slate-500">
+                · Equipe {previa.equipe} ({previa.equipeNome})
+              </span>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={() => setData(todayIso())}
-            className="rounded-button border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
-          >
-            Hoje
-          </button>
           <button
             type="button"
             disabled={!previa}
@@ -363,6 +398,18 @@ export function PreviaPage() {
             {copied ? '✓ Copiado!' : '📋 WhatsApp'}
           </button>
         </div>
+
+        {/* S0.x/rename-mapa-forca — Banner do estado + ações da Prévia */}
+        {previa && (
+          <PreviaEstadoBanner
+            previa={previa}
+            podeIniciarPrevia={podeIniciarPrevia}
+            podeCancelarPrevia={podeCancelarPrevia}
+            inflight={servicoActionInflight}
+            onIniciarPrevia={handleIniciarPrevia}
+            onCancelarPrevia={handleCancelarPrevia}
+          />
+        )}
 
         {error && (
           <div
@@ -870,7 +917,7 @@ function EscalaEspecialBox({
 
   const removerTrocaEspecial = async (ato: EscalaEspecialAtoLight) => {
     try {
-      await api.previaRemoveTrocaEscalaEspecial(data, atoKey(ato));
+      await api.mapaForcaRemoveTrocaEscalaEspecial(data, atoKey(ato));
       onSaved();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Erro ao remover troca');
@@ -988,7 +1035,7 @@ function AjustesPreTurno({
     setErr(null);
     try {
       await fetch(
-        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/previa/${data}/ajustes`,
+        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`,
         {
           method: 'PUT',
           credentials: 'include',
@@ -1169,7 +1216,7 @@ function ModalTrocaEscalaEspecial({
     setSaving(true);
     setErr(null);
     try {
-      await api.previaAddTrocaEscalaEspecial(data, {
+      await api.mapaForcaAddTrocaEscalaEspecial(data, {
         atoOriginal: ato,
         substituidoRaw: ato.militarRaw,
         substitutoRaw,
@@ -2565,7 +2612,7 @@ function AtivarRecursoCard({
         },
       ];
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/previa/${data}/ajustes`,
+        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`,
         {
           method: 'PUT',
           credentials: 'include',
@@ -2590,7 +2637,7 @@ function AtivarRecursoCard({
       const ajustes = extractAjustes(previa);
       const novas = ajustes.ativacoesRecurso.filter((_, i) => i !== idx);
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/previa/${data}/ajustes`,
+        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`,
         {
           method: 'PUT',
           credentials: 'include',
@@ -2737,5 +2784,117 @@ function AtivarRecursoCard({
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * S0.x/rename-mapa-forca — Banner que controla a transição de estado da Prévia.
+ *
+ * Mostra:
+ * - Estado atual (NAO_INICIADO / PREVIA_INICIADA / INICIADO+).
+ * - Botão "Iniciar Prévia do Mapa Força" se NAO_INICIADO + (Fiscal escalado OR admin).
+ * - Botão "Cancelar Prévia" se PREVIA_INICIADA + (iniciador OR admin).
+ * - Mensagem informativa quando o usuário não pode interagir naquele estado.
+ */
+function PreviaEstadoBanner({
+  previa,
+  podeIniciarPrevia,
+  podeCancelarPrevia,
+  inflight,
+  onIniciarPrevia,
+  onCancelarPrevia,
+}: {
+  previa: MapaForcaDoDia;
+  podeIniciarPrevia: boolean;
+  podeCancelarPrevia: boolean;
+  inflight: boolean;
+  onIniciarPrevia: () => void | Promise<void>;
+  onCancelarPrevia: () => void | Promise<void>;
+}) {
+  const estado = previa.estadoServico;
+  if (estado === 'NAO_INICIADO') {
+    return (
+      <div className="mt-3 rounded border border-cbmes-blue/30 bg-cbmes-blue/5 p-3 text-sm text-cbmes-blue">
+        <p className="font-semibold">Mapa Força em modo somente leitura.</p>
+        {podeIniciarPrevia ? (
+          <>
+            <p className="mt-1 text-xs text-slate-700">
+              Você é o Fiscal escalado deste dia. Clique abaixo para abrir a edição da
+              <strong> Prévia do Mapa Força</strong> (ajustes pré-turno na passagem de serviço).
+            </p>
+            <button
+              type="button"
+              onClick={() => void onIniciarPrevia()}
+              disabled={inflight}
+              className="mt-2 rounded-button bg-cbmes-red px-4 py-2 text-sm font-semibold text-white hover:bg-cbmes-red/90 disabled:opacity-60"
+            >
+              {inflight ? 'Iniciando…' : 'Iniciar Prévia do Mapa Força'}
+            </button>
+          </>
+        ) : (
+          <p className="mt-1 text-xs italic text-slate-600">
+            Aguardando o Fiscal escalado iniciar a Prévia para liberar a edição.
+            {previa.fiscal?.militarResolvido && (
+              <>
+                {' '}
+                Fiscal: <strong>{previa.fiscal.militarResolvido.posto}{' '}
+                {previa.fiscal.militarResolvido.nomeGuerra ??
+                  previa.fiscal.militarResolvido.nome.split(' ')[0]}</strong> (NF{' '}
+                {previa.fiscal.militarNf}).
+              </>
+            )}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  if (estado === 'PREVIA_INICIADA') {
+    return (
+      <div className="mt-3 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+        <p className="font-semibold">
+          ✏️ Prévia em edição
+          {previa.previaIniciadaPorNf && (
+            <span className="ml-2 text-xs font-normal">
+              · iniciada por NF {previa.previaIniciadaPorNf}
+            </span>
+          )}
+        </p>
+        {podeCancelarPrevia ? (
+          <>
+            <p className="mt-1 text-xs">
+              Faça os ajustes necessários na composição abaixo. Quando concluído, clique em
+              <strong> "Iniciar Serviço"</strong> abaixo para congelar e abrir as Conferências.
+            </p>
+            <button
+              type="button"
+              onClick={() => void onCancelarPrevia()}
+              disabled={inflight}
+              className="mt-2 rounded-button border border-amber-700 bg-white px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-60"
+            >
+              {inflight ? 'Cancelando…' : 'Cancelar Prévia (volta a read-only)'}
+            </button>
+          </>
+        ) : (
+          <p className="mt-1 text-xs italic">
+            Você visualiza esta Prévia em modo leitura — apenas o Fiscal que iniciou (ou admin)
+            pode editá-la.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // INICIADO ou estados posteriores: serviço já em andamento.
+  return (
+    <div className="mt-3 rounded border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
+      <p className="font-semibold">
+        🚒 Serviço em andamento — estado: {previa.estadoServico}
+      </p>
+      <p className="mt-1 text-xs">
+        Os ajustes da Prévia foram congelados. Use as Conferências de Equipe/Viatura/Materiais e
+        Alterações Diversas durante o turno.
+      </p>
+    </div>
   );
 }

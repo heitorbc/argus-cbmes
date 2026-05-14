@@ -312,11 +312,26 @@ export const api = {
       body: JSON.stringify({ quinzena, ...entry }),
     }),
 
-  // Prévia do Mapa Força (S4)
-  previaDoDia: (data: string) => request<MapaForcaDoDia>(`/previa?data=${data}`),
+  // Mapa Força do dia (S4 + S0.x/rename-mapa-forca)
+  mapaForcaDoDia: (data: string) => request<MapaForcaDoDia>(`/mapa-forca?data=${data}`),
+
+  /** Retorna apenas o Fiscal escalado do dia, sem carregar o payload completo. */
+  mapaForcaFiscalDoDia: (data: string) =>
+    request<{ fiscal: import('@argus/shared-types').FiscalDoDia | null }>(
+      `/mapa-forca/${data}/fiscal`,
+    ),
+
+  /** S0.x/rename-mapa-forca — Lista dias do mês com escala XLSX importada. */
+  escalasDiasDisponiveis: (ano: number, mes: number) =>
+    request<{
+      ano: number;
+      mes: number;
+      dias: string[];
+      equipePorDia: Record<string, string>;
+    }>(`/escalas/${ano}/${mes}/dias-disponiveis`),
 
   // Trocas de Escala Especial (S6a-fix item 4)
-  previaAddTrocaEscalaEspecial: (
+  mapaForcaAddTrocaEscalaEspecial: (
     data: string,
     input: {
       atoOriginal: { data: string; militarRaw: string; horario: string; funcao: string };
@@ -326,18 +341,27 @@ export const api = {
       substitutoNf?: string;
     },
   ) =>
-    request<TrocaEscalaEspecial>(`/previa/${data}/ajustes/escala-especial/trocas`, {
+    request<TrocaEscalaEspecial>(`/mapa-forca/${data}/ajustes/escala-especial/trocas`, {
       method: 'POST',
       body: JSON.stringify(input),
     }),
 
-  previaRemoveTrocaEscalaEspecial: (data: string, atoKey: string) =>
-    request<void>(`/previa/${data}/ajustes/escala-especial/trocas/${encodeURIComponent(atoKey)}`, {
-      method: 'DELETE',
-    }),
+  mapaForcaRemoveTrocaEscalaEspecial: (data: string, atoKey: string) =>
+    request<void>(
+      `/mapa-forca/${data}/ajustes/escala-especial/trocas/${encodeURIComponent(atoKey)}`,
+      { method: 'DELETE' },
+    ),
 
-  // Servico — estado do dia (S6b/F1)
+  // Servico — estado do dia (S6b/F1 + S0.x/rename-mapa-forca)
   servicoGet: (data: string) => request<ServicoEstado>(`/servico/${data}`),
+
+  /** S0.x/rename-mapa-forca — Fiscal escalado/admin abre Prévia para edição. */
+  servicoIniciarPrevia: (data: string) =>
+    request<ServicoEstado>(`/servico/${data}/iniciar-previa`, { method: 'POST' }),
+
+  /** S0.x/rename-mapa-forca — Cancela a Prévia em edição. */
+  servicoCancelarPrevia: (data: string) =>
+    request<ServicoEstado>(`/servico/${data}/cancelar-previa`, { method: 'POST' }),
 
   servicoIniciar: (data: string) =>
     request<ServicoEstado>(`/servico/${data}/iniciar`, { method: 'POST' }),

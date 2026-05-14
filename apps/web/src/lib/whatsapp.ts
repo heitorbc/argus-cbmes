@@ -95,7 +95,7 @@ function agruparPorViatura(
 
 /**
  * Função pura: MapaForcaDoDia → texto WhatsApp Markdown.
- * Usado no botão "Copiar para WhatsApp" na tela `/previa`.
+ * Usado no botão "Copiar para WhatsApp" na tela `/mapa-forca/:data`.
  */
 export function formatPreviaParaWhatsapp(previa: MapaForcaDoDia): string {
   const lines: string[] = [];

@@ -32,7 +32,7 @@ export function ServicoIdeoPage() {
     if (!data) return;
     let cancelled = false;
     setLoading(true);
-    Promise.all([api.previaDoDia(data), api.ideoStatusGet(data)])
+    Promise.all([api.mapaForcaDoDia(data), api.ideoStatusGet(data)])
       .then(([p, statuses]) => {
         if (cancelled) return;
         setPrevia(p);
@@ -110,7 +110,7 @@ export function ServicoIdeoPage() {
   return (
     <main className="min-h-screen bg-slate-50">
       <header className="bg-cbmes-red px-4 py-4 text-white">
-        <Link to={`/previa?data=${data}`} className="text-sm opacity-90 hover:opacity-100">
+        <Link to={`/mapa-forca/${data}`} className="text-sm opacity-90 hover:opacity-100">
           ← Voltar à Prévia
         </Link>
         <h1 className="mt-1 text-lg font-bold">Inspeção Diária de Equipamentos (IDEO)</h1>

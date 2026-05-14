@@ -125,7 +125,7 @@ export function ConferenciaViaturaPage() {
         statusMudanca: mudarStatus ? statusMudanca : undefined,
         motivoBaixa: mudarStatus && statusMudanca === 'BAIXADA' ? motivoBaixa : undefined,
       });
-      navigate(`/previa?data=${data}`);
+      navigate(`/mapa-forca/${data}`);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Erro ao salvar conferência');
     } finally {
@@ -138,7 +138,7 @@ export function ConferenciaViaturaPage() {
   return (
     <main className="min-h-screen bg-slate-50">
       <header className="bg-cbmes-red px-4 py-4 text-white">
-        <Link to={`/previa?data=${data}`} className="text-sm opacity-90 hover:opacity-100">
+        <Link to={`/mapa-forca/${data}`} className="text-sm opacity-90 hover:opacity-100">
           ← Voltar à Prévia
         </Link>
         <h1 className="mt-1 text-lg font-bold">Conferência da Viatura</h1>
@@ -329,7 +329,7 @@ export function ConferenciaViaturaPage() {
                 {saving ? 'Salvando…' : 'Salvar conferência'}
               </button>
               <Link
-                to={`/previa?data=${data}`}
+                to={`/mapa-forca/${data}`}
                 className="flex-1 rounded-button border border-slate-300 bg-white py-2 text-center text-base text-slate-700"
               >
                 Cancelar

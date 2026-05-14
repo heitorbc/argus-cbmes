@@ -19,7 +19,8 @@ import { EscalasPage } from '@/pages/escalas';
 import { EscalasEspeciaisPage } from '@/pages/escalas-especiais';
 import { FiscaisPage } from '@/pages/fiscais';
 import { IdeoPage } from '@/pages/ideo';
-import { PreviaPage } from '@/pages/previa';
+import { MapaForcaPage } from '@/pages/mapa-forca';
+import { MapaForcaDetalhePage } from '@/pages/mapa-forca-detalhe';
 import { RecursosPage } from '@/pages/recursos';
 import { UnidadesPage } from '@/pages/unidades';
 import { AtestadosPage } from '@/pages/atestados';
@@ -119,7 +120,10 @@ export const router = createBrowserRouter([
           { path: '/configuracoes/unidades', element: <UnidadesPage /> },
           { path: '/configuracoes/recursos', element: <RecursosPage /> },
           { path: '/configuracoes/integracoes', element: <IntegracoesPage /> },
-          { path: '/previa', element: <PreviaPage /> },
+          { path: '/mapa-forca', element: <MapaForcaPage /> },
+          { path: '/mapa-forca/:data', element: <MapaForcaDetalhePage /> },
+          // Redirect curto para bookmarks antigos (S0.x/rename-mapa-forca).
+          { path: '/previa', element: <Navigate to="/mapa-forca" replace /> },
           { path: '/parte-diaria', element: <ParteDiariaPage /> },
           { path: '/servico/:data/conferencia-equipe', element: <ConferenciaEquipePage /> },
           {

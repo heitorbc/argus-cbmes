@@ -26,6 +26,12 @@
 
 ### O que muda de v2.0 para v2.1
 
+0. **Renomeação semântica (ADR-013)**: módulo `previa` (URL `/previa`) → `mapa-forca`
+   (URL `/mapa-forca`). "Mapa Força" passa a ser o nome do **documento/visão**;
+   "Prévia do Mapa Força" designa apenas o **ato de edição** pelo Fiscal escalado
+   na passagem de serviço. Card no home abre calendário; clique em um dia abre
+   leitura; botão "Iniciar Prévia do Mapa Força" libera edição apenas para o
+   Fiscal escalado (ou admin). Novo estado `PREVIA_INICIADA` no `ESTADO_SERVICO`.
 1. **Sistema em produção** com 33/45 RFs implementados (73%); frontend Vercel + backend deployado.
 2. **Service Account Google rejeitada** pelo Tech Lead — substituída por CSV público com cache (ADR-003). Escrita no Mapa Força permanece bloqueada e move-se para Fase 1.5.
 3. **Persistência Supabase/Prisma adiada** — sistema em produção opera com mock in-memory; dados não sobrevivem restart. Sprint S5b move-se para Fase 1.5.
@@ -118,6 +124,7 @@
 | ADR-010 | Fontes da Prévia do dia (consolidação 5 fontes) | ACEITO |
 | ADR-011 | Mapeamento `composicaoMf` (1 entrada por recurso) vs. `tripulacao` (1 por militar) | ACEITO |
 | ADR-012 | Estado do dia Serviço (NAO_INICIADO → INICIADO → ENCERRADO) sem deadline de horário | ACEITO |
+| ADR-013 | Renomeação `previa` → `mapa-forca`; novo estado `PREVIA_INICIADA`; gate de edição por NF do Fiscal escalado; calendário lazy-loaded | ACEITO |
 
 ---
 

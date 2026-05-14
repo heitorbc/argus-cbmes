@@ -14,7 +14,9 @@
   "dependencies": {
     "@argus/shared-types": "workspace:*",
     "@hookform/resolvers": "^5.2.2",
+    "date-fns": "^4.1.0",
     "react": "^18.3.1",
+    "react-day-picker": "^10.0.0",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.75.0",
     "react-router-dom": "^7.15.0",
