@@ -476,6 +476,78 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
     expect(aut.substitutoRaw).toBe('CB ALVARENGA');
   });
 
+  it('Fix-Mergulho — sem override, MERGULHO 01 = equipe A (BARCELLOS), MERGULHO 02 = equipe B (KARINA)', async () => {
+    // Substitui a escala de abril por uma com seção de mergulho preenchida.
+    escalas.save({
+      ...escalaAbril2026,
+      mergulho: {
+        equipes: {
+          A: {
+            letra: 'A',
+            chefe: { raw: '2º SGT BARCELLOS', postoAbreviado: '2ºSGT', nomeGuerra: 'BARCELLOS' },
+            motorista: null,
+            mergulhadores: [],
+          },
+          B: {
+            letra: 'B',
+            chefe: { raw: '3º SGT KARINA', postoAbreviado: '3ºSGT', nomeGuerra: 'KARINA' },
+            motorista: null,
+            mergulhadores: [],
+          },
+        },
+        porDia: { '2026-04-23': { mergulho01: 'A', mergulho02: 'B' } },
+      },
+    });
+    const r = await previa.getPreviaDoDia('2026-04-23');
+    const m01 = r.tripulacao.find((t) => t.viatura === 'MERGULHO 01' && t.funcao === 'Ch');
+    const m02 = r.tripulacao.find((t) => t.viatura === 'MERGULHO 02' && t.funcao === 'Ch');
+    expect(m01?.militarRef.nomeGuerra).toBe('BARCELLOS');
+    expect(m02?.militarRef.nomeGuerra).toBe('KARINA');
+  });
+
+  it('Fix-Mergulho — com override swap, M01 e M02 invertem suas equipes', async () => {
+    escalas.save({
+      ...escalaAbril2026,
+      mergulho: {
+        equipes: {
+          A: {
+            letra: 'A',
+            chefe: { raw: '2º SGT BARCELLOS', postoAbreviado: '2ºSGT', nomeGuerra: 'BARCELLOS' },
+            motorista: null,
+            mergulhadores: [],
+          },
+          B: {
+            letra: 'B',
+            chefe: { raw: '3º SGT KARINA', postoAbreviado: '3ºSGT', nomeGuerra: 'KARINA' },
+            motorista: null,
+            mergulhadores: [],
+          },
+        },
+        porDia: { '2026-04-23': { mergulho01: 'A', mergulho02: 'B' } },
+      },
+    });
+    const previaAsAny = previa as unknown as { ajustes: AjustesPreviaService };
+    previaAsAny.ajustes.upsert(
+      '2026-04-23',
+      {
+        trocas: [],
+        escalaEspecial: {},
+        notasServico: [],
+        dispensas: [],
+        trocasEscalaEspecial: [],
+        swapsMilitares: [],
+        overridesMergulho: [{ data: '2026-04-23', swap: true }],
+      },
+      true,
+    );
+    const r = await previa.getPreviaDoDia('2026-04-23');
+    const m01 = r.tripulacao.find((t) => t.viatura === 'MERGULHO 01' && t.funcao === 'Ch');
+    const m02 = r.tripulacao.find((t) => t.viatura === 'MERGULHO 02' && t.funcao === 'Ch');
+    expect(m01?.militarRef.nomeGuerra).toBe('KARINA'); // antes era B em M02
+    expect(m02?.militarRef.nomeGuerra).toBe('BARCELLOS'); // antes era A em M01
+    expect(r.overridesMergulho).toHaveLength(1);
+  });
+
   it('Fix-2 homologação — Chefe de Operações é injetado em tripulacao no mesmo card do motorista CHOP', async () => {
     const previaAsAny = previa as unknown as { chefesOperacoes: FakeChefesOperacoesService };
     previaAsAny.chefesOperacoes.escaladosDoDia = [

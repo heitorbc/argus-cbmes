@@ -77,6 +77,7 @@ const previaCharlie: PreviaDoDia = {
   escalaEspecialAtos: [],
   trocasEscalaEspecial: [],
   swapsMilitares: [],
+  overridesMergulho: [],
   ferias: [],
   chefesOperacoes: [],
   composicaoMf: [],

@@ -169,6 +169,37 @@ export function PreviaPage() {
     }
   };
 
+  /**
+   * S0.x/Fix-Mergulho — Toggle do override M01↔M02 do dia. Se ainda não
+   * tem entry para a data atual, adiciona; se já tem, remove (idempotente).
+   * Reload pega o novo estado calculado pelo backend.
+   */
+  const handleToggleOverrideMergulho = async (): Promise<void> => {
+    if (!previa) return;
+    setSwapInflight(true);
+    setError(null);
+    try {
+      const ajustes = extractAjustes(previa);
+      const existe = ajustes.overridesMergulho.some((o) => o.data === data);
+      const novos = existe
+        ? ajustes.overridesMergulho.filter((o) => o.data !== data)
+        : [...ajustes.overridesMergulho, { data, swap: true as const }];
+      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/previa/${data}/ajustes`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...ajustes, overridesMergulho: novos }),
+      }).then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      });
+      reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao trocar M01↔M02');
+    } finally {
+      setSwapInflight(false);
+    }
+  };
+
   const reload = () => {
     api
       .previaDoDia(data)
@@ -430,9 +461,37 @@ export function PreviaPage() {
                   </details>
                 )}
                 <div className="space-y-3">
-                  {[...tripulacaoPorViatura.entries()].map(([viatura, linhas]) => (
+                  {[...tripulacaoPorViatura.entries()].map(([viatura, linhas]) => {
+                    const isMergulho = viatura === 'MERGULHO 01' || viatura === 'MERGULHO 02';
+                    const showSwapMergulho =
+                      isMergulho &&
+                      podeSwap &&
+                      tripulacaoPorViatura.has('MERGULHO 01') &&
+                      tripulacaoPorViatura.has('MERGULHO 02');
+                    const swapAtivo = previa.overridesMergulho.some((o) => o.data === data);
+                    return (
                     <article key={viatura} className="rounded border border-slate-200 bg-white p-3">
-                      <p className="text-sm font-bold text-cbmes-blue">{viatura}</p>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p className="text-sm font-bold text-cbmes-blue">
+                          {viatura}
+                          {swapAtivo && isMergulho && (
+                            <span className="ml-2 rounded-full bg-cbmes-blue/10 px-2 py-0.5 text-[10px] font-medium text-cbmes-blue">
+                              ⇄ M01↔M02 trocados
+                            </span>
+                          )}
+                        </p>
+                        {showSwapMergulho && (
+                          <button
+                            type="button"
+                            onClick={() => void handleToggleOverrideMergulho()}
+                            disabled={swapInflight}
+                            title="Trocar quem está em MERGULHO 01 com MERGULHO 02 neste dia"
+                            className="rounded border border-cbmes-blue px-2 py-0.5 text-[10px] font-medium text-cbmes-blue hover:bg-cbmes-blue/10 disabled:opacity-50"
+                          >
+                            {swapAtivo ? '↶ desfazer' : '⇄ Trocar M01↔M02'}
+                          </button>
+                        )}
+                      </div>
                       <ul className="mt-1 divide-y divide-slate-100 text-sm">
                         {linhas.map((t, i) => {
                           const isOrigemSelecionada =
@@ -502,7 +561,8 @@ export function PreviaPage() {
                         })}
                       </ul>
                     </article>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
             )}
@@ -618,6 +678,7 @@ function extractAjustes(previa: PreviaDoDia): AjustesPrevia {
     dispensas: previa.dispensas,
     trocasEscalaEspecial: previa.trocasEscalaEspecial,
     swapsMilitares: previa.swapsMilitares,
+    overridesMergulho: previa.overridesMergulho,
   };
 }
 

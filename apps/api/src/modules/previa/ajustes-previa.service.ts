@@ -15,6 +15,7 @@ const VAZIO: AjustesPrevia = {
   dispensas: [],
   trocasEscalaEspecial: [],
   swapsMilitares: [],
+  overridesMergulho: [],
 };
 
 /**
@@ -61,6 +62,8 @@ export class AjustesPreviaService {
         this.byData.get(dataIso)?.trocasEscalaEspecial ?? input.trocasEscalaEspecial,
       // S0.5 — cliente gerencia swapsMilitares via PUT inteiro (mesmo padrão de `trocas`).
       swapsMilitares: input.swapsMilitares,
+      // S0.x/Fix-Mergulho — cliente gerencia overridesMergulho via PUT inteiro.
+      overridesMergulho: input.overridesMergulho,
     };
     this.byData.set(dataIso, ajustes);
     return ajustes;
