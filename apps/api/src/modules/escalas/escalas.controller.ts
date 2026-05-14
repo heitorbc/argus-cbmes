@@ -16,7 +16,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { z } from 'zod';
-import type { PreviewEscalaResponse } from '@argus/shared-types';
+import { escalaMensalSchema, type PreviewEscalaResponse } from '@argus/shared-types';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { UserSession } from '@argus/shared-types';
@@ -128,35 +128,16 @@ export class EscalasController {
   /**
    * Persiste a escala mensal. Aceita o objeto EscalaMensal devolvido pelo preview —
    * idealmente o frontend repassa o mesmo body (com a confirmação do usuário).
+   *
+   * Usa o `escalaMensalSchema` canônico de shared-types para evitar drift
+   * (anteriormente o schema inline omitia `mergulho` e `salvamar`, que
+   * eram silenciosamente strippados pelo Zod e sumiam no GET).
    */
   @Roles('admin', 'sargenteante')
   @Post('confirm')
   @HttpCode(HttpStatus.OK)
   confirm(@Body() body: unknown) {
-    // Validação leve: aceita apenas o shape esperado.
-    const schema = z.object({
-      mes: z.number().int().min(1).max(12),
-      ano: z.number().int().min(2024).max(2100),
-      origemArquivo: z.string(),
-      importadoEm: z.string(),
-      importadoPorNf: z.string().optional(),
-      diaEquipe: z.record(z.string(), z.enum(['A', 'B', 'C', 'D'])),
-      composicao: z.array(
-        z.object({
-          equipe: z.enum(['A', 'B', 'C', 'D']),
-          viatura: z.string(),
-          funcao: z.string(),
-          militar: z.object({
-            raw: z.string(),
-            postoAbreviado: z.string(),
-            nomeGuerra: z.string(),
-            nf: z.string().optional(),
-          }),
-        }),
-      ),
-      avisos: z.array(z.string()),
-    });
-    const parsed = schema.safeParse(body);
+    const parsed = escalaMensalSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     }
