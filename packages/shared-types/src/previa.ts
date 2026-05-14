@@ -303,6 +303,20 @@ export const chefeOperacoesSchema = z.object({
 export type ChefeOperacoes = z.infer<typeof chefeOperacoesSchema>;
 
 /**
+ * S0.x/Fix-Mergulho — Override do Fiscal: trocar a equipe que compõe
+ * MERGULHO 01 com a que compõe MERGULHO 02 num dia específico.
+ * Quando aplicado pelo `PreviaService`, equipe que estava em mergulho01
+ * passa para mergulho02 e vice-versa.
+ */
+export const overrideMergulhoSchema = z.object({
+  /** Data ISO (YYYY-MM-DD). */
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  /** Sempre true; deixa o schema extensível para futuros tipos de override. */
+  swap: z.literal(true),
+});
+export type OverrideMergulho = z.infer<typeof overrideMergulhoSchema>;
+
+/**
  * S0.5 — Swap de 2 militares de MESMA equipe entre posições da
  * tripulação na Prévia. Conveniência UX: o Fiscal troca papéis (ex.: chefe
  * ABTS_01 ↔ operador RESGATE_01, ambos CHARLIE) sem precisar abrir
@@ -332,6 +346,8 @@ export const ajustesPreviaSchema = z.object({
   dispensas: z.array(previaDispensaSchema),
   trocasEscalaEspecial: z.array(trocaEscalaEspecialSchema).default([]),
   swapsMilitares: z.array(previaSwapMilitarSchema).default([]),
+  /** S0.x/Fix-Mergulho — Por dia, troca M01↔M02. */
+  overridesMergulho: z.array(overrideMergulhoSchema).default([]),
 });
 export type AjustesPrevia = z.infer<typeof ajustesPreviaSchema>;
 
@@ -420,6 +436,9 @@ export const previaDoDiaSchema = z.object({
 
   /** S0.5 — Swaps de militares aplicados pelo Fiscal (UX troca entre posições da mesma equipe). */
   swapsMilitares: z.array(previaSwapMilitarSchema).default([]),
+
+  /** S0.x/Fix-Mergulho — overrides M01↔M02 do Fiscal aplicados ao dia. */
+  overridesMergulho: z.array(overrideMergulhoSchema).default([]),
 
   /** S6a-fix item 6 — Chefes de Operações escalados no dia (planilha ChOp externa). */
   chefesOperacoes: z.array(chefeOperacoesSchema).default([]),

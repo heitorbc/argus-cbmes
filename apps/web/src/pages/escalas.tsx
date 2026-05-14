@@ -272,6 +272,9 @@ export function EscalasPage() {
 
             <ComposicaoTable composicao={preview.composicao} />
 
+            {preview.mergulho && <MergulhoSection mergulho={preview.mergulho} />}
+            {preview.salvamar && <SalvamarSection salvamar={preview.salvamar} />}
+
             <div className="mt-4 flex gap-2">
               <button
                 type="button"
@@ -494,24 +497,103 @@ function MergulhoSection({
         })}
       </div>
       {datasComEscala.length > 0 && (
-        <details className="mt-2 text-xs">
-          <summary className="cursor-pointer font-medium text-violet-800">
-            Plantão por dia ({datasComEscala.length} datas)
-          </summary>
-          <ul className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 md:grid-cols-4">
-            {datasComEscala.map((data) => {
-              const v = mergulho.porDia[data]!;
-              return (
-                <li key={data} className="text-violet-700">
-                  <span className="font-mono">{data.slice(8)}</span>: M1={v.mergulho01 ?? '—'} ·
-                  M2={v.mergulho02 ?? '—'}
-                </li>
-              );
-            })}
-          </ul>
-        </details>
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <CalendarioRecurso
+            titulo="MERGULHO 01 (AM_002)"
+            dias={Object.fromEntries(
+              datasComEscala
+                .filter((d) => mergulho.porDia[d]!.mergulho01)
+                .map((d) => [d, mergulho.porDia[d]!.mergulho01!]),
+            )}
+            cores={MERGULHO_COLOR}
+            accent="violet"
+          />
+          <CalendarioRecurso
+            titulo="MERGULHO 02 (AM_003)"
+            dias={Object.fromEntries(
+              datasComEscala
+                .filter((d) => mergulho.porDia[d]!.mergulho02)
+                .map((d) => [d, mergulho.porDia[d]!.mergulho02!]),
+            )}
+            cores={MERGULHO_COLOR}
+            accent="violet"
+          />
+        </div>
       )}
     </section>
+  );
+}
+
+const MERGULHO_COLOR: Record<string, string> = {
+  A: 'bg-emerald-100 text-emerald-900 border-emerald-300',
+  B: 'bg-amber-100 text-amber-900 border-amber-300',
+  C: 'bg-sky-100 text-sky-900 border-sky-300',
+};
+
+const SALVAMAR_COLOR: Record<string, string> = {
+  E: 'bg-cyan-100 text-cyan-900 border-cyan-300',
+  F: 'bg-fuchsia-100 text-fuchsia-900 border-fuchsia-300',
+};
+
+/**
+ * S0.x — Calendário read-only de um recurso (MERGULHO 01/02 ou
+ * SALVAMAR 01) mostrando qual letra de equipe ocupa cada dia. Mesmo
+ * layout grid-7 do CalendarioMensal das rotativas para coerência
+ * visual, sem edição (alteração só via reimport do XLSX).
+ */
+const ACCENT_STYLES: Record<'violet' | 'amber', { border: string; header: string }> = {
+  violet: { border: 'border-violet-200', header: 'text-violet-800' },
+  amber: { border: 'border-amber-200', header: 'text-amber-800' },
+};
+
+function CalendarioRecurso({
+  titulo,
+  dias,
+  cores,
+  accent,
+}: {
+  titulo: string;
+  dias: Record<string, string>;
+  cores: Record<string, string>;
+  accent: 'violet' | 'amber';
+}) {
+  const entries = Object.entries(dias).sort(([a], [b]) => a.localeCompare(b));
+  const styles = ACCENT_STYLES[accent];
+  const usadas = new Set(entries.map(([, l]) => l));
+  if (entries.length === 0) {
+    return (
+      <article className={`rounded border ${styles.border} bg-white p-2 text-xs`}>
+        <p className={`font-semibold ${styles.header}`}>{titulo}</p>
+        <p className="mt-1 italic text-slate-500">Sem plantão neste mês.</p>
+      </article>
+    );
+  }
+  return (
+    <article className={`rounded border ${styles.border} bg-white p-2 text-xs`}>
+      <p className={`font-semibold ${styles.header}`}>
+        {titulo} · {entries.length} dias
+      </p>
+      <div className="mt-2 grid grid-cols-7 gap-0.5">
+        {entries.map(([data, letra]) => (
+          <div
+            key={data}
+            className={`rounded border p-0.5 text-center ${cores[letra] ?? 'bg-slate-100 text-slate-700 border-slate-300'}`}
+          >
+            <div className="text-[9px] text-slate-700">
+              {data.slice(8, 10)}/{data.slice(5, 7)}
+            </div>
+            <div className="text-[11px] font-bold">{letra}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-1 flex flex-wrap gap-1 text-[9px]">
+        {[...usadas].sort().map((l) => (
+          <span key={l} className={`rounded px-1.5 ${cores[l] ?? 'bg-slate-100'}`}>
+            Equipe {l}
+          </span>
+        ))}
+      </div>
+    </article>
   );
 }
 
@@ -547,18 +629,14 @@ function SalvamarSection({
         })}
       </div>
       {datasComEscala.length > 0 && (
-        <details className="mt-2 text-xs">
-          <summary className="cursor-pointer font-medium text-amber-800">
-            Plantão por dia ({datasComEscala.length} datas)
-          </summary>
-          <ul className="mt-1 grid grid-cols-3 gap-x-2 gap-y-0.5 md:grid-cols-6">
-            {datasComEscala.map((data) => (
-              <li key={data} className="text-amber-700">
-                <span className="font-mono">{data.slice(8)}</span>: {salvamar.porDia[data]}
-              </li>
-            ))}
-          </ul>
-        </details>
+        <div className="mt-3">
+          <CalendarioRecurso
+            titulo="SALVAMAR 01 (AC_001)"
+            dias={Object.fromEntries(datasComEscala.map((d) => [d, salvamar.porDia[d]!]))}
+            cores={SALVAMAR_COLOR}
+            accent="amber"
+          />
+        </div>
       )}
     </section>
   );

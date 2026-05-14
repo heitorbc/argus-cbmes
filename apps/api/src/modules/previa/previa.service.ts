@@ -218,12 +218,16 @@ export class PreviaService {
     if (escala?.mergulho && equipe) {
       const mergulhoDoDia = escala.mergulho.porDia[dataIso];
       if (mergulhoDoDia) {
-        if (mergulhoDoDia.mergulho01) {
-          const eq = escala.mergulho.equipes[mergulhoDoDia.mergulho01];
+        // S0.x/Fix-Mergulho — Override do Fiscal pode trocar M01↔M02.
+        const swap = ajustes.overridesMergulho.some((o) => o.data === dataIso && o.swap);
+        const letraM01 = swap ? mergulhoDoDia.mergulho02 : mergulhoDoDia.mergulho01;
+        const letraM02 = swap ? mergulhoDoDia.mergulho01 : mergulhoDoDia.mergulho02;
+        if (letraM01) {
+          const eq = escala.mergulho.equipes[letraM01];
           if (eq) injetarMergulhoEmTripulacao('MERGULHO 01', eq, equipe, tripulacao, matcher);
         }
-        if (mergulhoDoDia.mergulho02) {
-          const eq = escala.mergulho.equipes[mergulhoDoDia.mergulho02];
+        if (letraM02) {
+          const eq = escala.mergulho.equipes[letraM02];
           if (eq) injetarMergulhoEmTripulacao('MERGULHO 02', eq, equipe, tripulacao, matcher);
         }
       }
@@ -379,6 +383,7 @@ export class PreviaService {
       escalaEspecialAtos: atosEspeciais,
       trocasEscalaEspecial: ajustes.trocasEscalaEspecial,
       swapsMilitares: ajustes.swapsMilitares,
+      overridesMergulho: ajustes.overridesMergulho,
       chefesOperacoes: chefes,
       estadoServico: estadoServico.estado,
       iniciadoEm: estadoServico.iniciadoEm,
