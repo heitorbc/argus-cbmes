@@ -272,6 +272,9 @@ export function EscalasPage() {
 
             <ComposicaoTable composicao={preview.composicao} />
 
+            {preview.mergulho && <MergulhoSection mergulho={preview.mergulho} />}
+            {preview.salvamar && <SalvamarSection salvamar={preview.salvamar} />}
+
             <div className="mt-4 flex gap-2">
               <button
                 type="button"
