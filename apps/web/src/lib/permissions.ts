@@ -19,6 +19,11 @@ const PAPEL_SECOES_EXTRAS: Record<string, ModuloHome[]> = {
   admin: ['sargenteacao', 'logistica', 'configuracoes'],
   sargenteante: ['sargenteacao'],
   motorista: ['logistica'],
+  // Almoxarife = persona logística dedicada (frota + futuros materiais).
+  almoxarife: ['logistica'],
+  // Fiscal precisa visualizar o cadastro de Recursos (Logística) para
+  // conferir o estado MF dos recursos antes da Prévia. Edição segue admin-only.
+  fiscal: ['logistica'],
 };
 
 /**
@@ -49,8 +54,8 @@ export const ROUTE_TO_SECTION: Record<string, ModuloHome> = {
   '/cadastros/ferias': 'sargenteacao',
   '/cadastros/trocas': 'sargenteacao',
   '/cadastros/viaturas': 'logistica',
+  '/logistica/recursos': 'logistica',
   '/configuracoes/unidades': 'configuracoes',
-  '/configuracoes/recursos': 'configuracoes',
   '/configuracoes/integracoes': 'configuracoes',
 };
 

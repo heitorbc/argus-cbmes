@@ -7,9 +7,11 @@ import {
   TIPOS_VIATURA,
   TIPO_COMBUSTIVEL_LABEL,
   TIPO_VIATURA_LABEL,
+  type ContatoLogistico,
   type StatusViatura,
   type TipoCombustivel,
   type Viatura,
+  type ViaturaEnriquecida,
 } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
@@ -56,6 +58,8 @@ export function ViaturasPage() {
   const isAdmin = user?.papeis.includes('admin') ?? false;
 
   const [viaturas, setViaturas] = useState<Viatura[]>([]);
+  const [enriquecidas, setEnriquecidas] = useState<ViaturaEnriquecida[]>([]);
+  const [contatoResponsavel, setContatoResponsavel] = useState<ContatoLogistico | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,8 +75,13 @@ export function ViaturasPage() {
   const reload = async () => {
     setLoading(true);
     try {
-      const list = await api.viaturasList();
+      const [list, enr] = await Promise.all([
+        api.viaturasList(),
+        api.viaturasEnriquecidas().catch(() => ({ items: [], contatoResponsavel: null })),
+      ]);
       setViaturas(list);
+      setEnriquecidas(enr.items);
+      setContatoResponsavel(enr.contatoResponsavel);
       setError(null);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Erro ao carregar viaturas');
@@ -224,7 +233,17 @@ export function ViaturasPage() {
           <p className="mt-6 text-center text-sm text-slate-500">Carregando viaturas…</p>
         )}
 
-        <ul className="mt-4 divide-y divide-slate-200 rounded border border-slate-200 bg-white">
+        {enriquecidas.length > 0 && (
+          <ViaturasQdvSection
+            items={enriquecidas}
+            contatoResponsavel={contatoResponsavel}
+          />
+        )}
+
+        <h2 className="mt-6 text-sm font-semibold text-slate-700">
+          Cadastro auxiliar (overrides admin · Mapa Força)
+        </h2>
+        <ul className="mt-2 divide-y divide-slate-200 rounded border border-slate-200 bg-white">
           {viaturas.map((v) => (
             <li key={v.id} className="p-3 text-sm">
               <div className="flex items-baseline justify-between gap-3">
@@ -536,5 +555,94 @@ function ViaturaForm({
         </button>
       </div>
     </form>
+  );
+}
+
+/**
+ * S0.x — Visão consolidada das viaturas da unidade 1BBM/1ªCIA vinda
+ * da QDV (1BBM_1CIA) enriquecida com BASE_LISTA + Mapa Força + contato
+ * responsável da unidade. Read-only (a fonte de verdade é a planilha).
+ */
+function ViaturasQdvSection({
+  items,
+  contatoResponsavel,
+}: {
+  items: ViaturaEnriquecida[];
+  contatoResponsavel: ContatoLogistico | null;
+}) {
+  return (
+    <section className="mt-2 rounded border border-cbmes-blue/30 bg-white p-3">
+      <h2 className="text-sm font-semibold text-cbmes-blue">
+        🚒 Frota da unidade 1BBM/1ªCIA · {items.length} viaturas (QDV)
+      </h2>
+      <p className="mt-1 text-[11px] text-slate-500">
+        Lista vinda da aba <code>1BBM_1CIA</code> da planilha QDV, enriquecida com BASE_LISTA
+        (renavam, modelo de pneu, ano, nomenclatura) e status diário do Mapa Força.
+      </p>
+      <div className="mt-3 overflow-x-auto">
+        <table className="min-w-full text-[11px]">
+          <thead className="bg-slate-50 text-slate-700">
+            <tr>
+              <th className="px-2 py-1 text-left">Prefixo</th>
+              <th className="px-2 py-1 text-left">Nomenclatura</th>
+              <th className="px-2 py-1 text-left">Status</th>
+              <th className="px-2 py-1 text-left">KM</th>
+              <th className="px-2 py-1 text-left">Marca/Modelo</th>
+              <th className="px-2 py-1 text-left">Placa</th>
+              <th className="px-2 py-1 text-left">Renavam</th>
+              <th className="px-2 py-1 text-left">CNH</th>
+              <th className="px-2 py-1 text-left">Pneu</th>
+              <th className="px-2 py-1 text-left">Combustível</th>
+              <th className="px-2 py-1 text-left">Empregos</th>
+              <th className="px-2 py-1 text-left">Obs.</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((v) => (
+              <tr key={v.prefixo} className="border-t border-slate-100">
+                <td className="px-2 py-1 font-medium text-cbmes-blue">{v.prefixo}</td>
+                <td className="px-2 py-1">{v.nomenclatura ?? '—'}</td>
+                <td className="px-2 py-1">
+                  {v.statusMf ? (
+                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_VIATURA_BADGE[v.statusMf]}`}>
+                      {STATUS_VIATURA_LABEL[v.statusMf]}
+                    </span>
+                  ) : (
+                    <span className="text-slate-500">{v.statusQdv ?? '—'}</span>
+                  )}
+                  {v.emprestadaA && (
+                    <span className="ml-1 text-[10px] italic text-amber-700">→ {v.emprestadaA}</span>
+                  )}
+                </td>
+                <td className="px-2 py-1">
+                  {v.kmAtual !== undefined ? v.kmAtual.toLocaleString('pt-BR') : '—'}
+                </td>
+                <td className="px-2 py-1">{v.marcaModelo ?? '—'}</td>
+                <td className="px-2 py-1 font-mono">{v.placa ?? '—'}</td>
+                <td className="px-2 py-1 font-mono text-slate-500">{v.renavam ?? '—'}</td>
+                <td className="px-2 py-1">{v.categoriaCnh ?? '—'}</td>
+                <td className="px-2 py-1 text-slate-500">{v.modeloPneu ?? '—'}</td>
+                <td className="px-2 py-1">{v.combustivel ?? '—'}</td>
+                <td className="px-2 py-1 text-[10px] text-slate-600">
+                  {[v.empregoPrimario, v.empregoSecundario].filter(Boolean).join(' / ') || '—'}
+                </td>
+                <td className="px-2 py-1 text-[10px] italic text-slate-500">
+                  {v.observacao ?? '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {contatoResponsavel && (
+        <div className="mt-3 rounded border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-700">
+          <strong>Responsável logístico da unidade:</strong>{' '}
+          {contatoResponsavel.militarResponsavel}
+          {contatoResponsavel.nomeCompleto && ` (${contatoResponsavel.nomeCompleto})`}
+          {contatoResponsavel.telefone && ` · 📞 ${contatoResponsavel.telefone}`}
+          {contatoResponsavel.email && ` · ✉️ ${contatoResponsavel.email}`}
+        </div>
+      )}
+    </section>
   );
 }

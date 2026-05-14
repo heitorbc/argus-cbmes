@@ -33,6 +33,7 @@ const FAKE_CPFS = {
   MARTINELLI: '55566677788',
   BRUNO_MELO: '66677788899',
   MARIANE: '77788899900',
+  JEZREEL: '88899900011',
 } as const;
 
 const COST = 12;
@@ -114,6 +115,20 @@ export const MOCK_USERS: MockUser[] = [
     cpfFake: FAKE_CPFS.MARIANE,
     senhaHash: bcrypt.hashSync(FAKE_CPFS.MARIANE, COST),
     papeis: ['fiscal'],
+    primeiroAcesso: true,
+  },
+  // JEZREEL — Logística dedicada (mantém o cadastro de Recursos do MF) +
+  // Almoxarifado. Sem admin, sem fiscal: persona "puramente logística +
+  // almoxarife" para validar a visão restrita do módulo Logística e
+  // futuras features de almoxarifado.
+  {
+    nf: '3037770',
+    nome: 'JEZREEL',
+    posto: 'SGT',
+    ant: 420,
+    cpfFake: FAKE_CPFS.JEZREEL,
+    senhaHash: bcrypt.hashSync(FAKE_CPFS.JEZREEL, COST),
+    papeis: ['motorista', 'almoxarife'],
     primeiroAcesso: true,
   },
 ];

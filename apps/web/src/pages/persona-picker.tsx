@@ -23,6 +23,7 @@ const PAPEL_LABEL: Record<string, string> = {
   dro: 'DRO',
   sentinela: 'Sentinela',
   sargenteante: 'Sargenteante',
+  almoxarife: 'Almoxarife',
   militar: 'Militar',
 };
 
@@ -32,6 +33,7 @@ const PAPEL_BADGE: Record<string, string> = {
   chefe_equipe: 'bg-amber-500/15 text-amber-800',
   sargenteante: 'bg-emerald-500/15 text-emerald-800',
   motorista: 'bg-orange-500/15 text-orange-800',
+  almoxarife: 'bg-teal-500/15 text-teal-800',
   cov: 'bg-violet-500/15 text-violet-800',
   operador: 'bg-sky-500/15 text-sky-800',
   socorrista: 'bg-pink-500/15 text-pink-800',

@@ -13,6 +13,7 @@ export const PAPEIS = [
   'dro',
   'sentinela',
   'sargenteante',
+  'almoxarife',
   'militar',
 ] as const;
 

@@ -8,6 +8,7 @@ import {
   type AlteracaoDiversa,
   type EscalaEspecialAtoLight,
   type LetraEquipe,
+  type ParRecurso,
   type PeriodoTroca,
   type PeriodoTrocaPredefinido,
   type PreviaAtestado,
@@ -200,6 +201,38 @@ export function PreviaPage() {
     }
   };
 
+  /**
+   * Toggle do override 01↔02 para pares operacionais (ABTS/RESGATE/SALVAMAR/
+   * QUADRICICLO). Idempotente: se já existe, remove; se não, adiciona.
+   */
+  const handleToggleOverridePar = async (par: ParRecurso): Promise<void> => {
+    if (!previa) return;
+    setSwapInflight(true);
+    setError(null);
+    try {
+      const ajustes = extractAjustes(previa);
+      const existe = ajustes.overridesParesRecursos.some(
+        (o) => o.data === data && o.par === par,
+      );
+      const novos = existe
+        ? ajustes.overridesParesRecursos.filter((o) => !(o.data === data && o.par === par))
+        : [...ajustes.overridesParesRecursos, { data, par, swap: true as const }];
+      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/previa/${data}/ajustes`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...ajustes, overridesParesRecursos: novos }),
+      }).then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      });
+      reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : `Erro ao trocar ${par} 01↔02`);
+    } finally {
+      setSwapInflight(false);
+    }
+  };
+
   const reload = () => {
     api
       .previaDoDia(data)
@@ -275,6 +308,18 @@ export function PreviaPage() {
       map.set(key, arr);
     }
     return map;
+  }, [previa]);
+
+  /**
+   * Mapa "recurso → composição atual do MF" para render lado-a-lado nos cards
+   * da tripulação. Chave casa com `viatura` da tripulação XLSX (ABTS_01,
+   * RESGATE 01, etc.) — o parser do MF normaliza os nomes para a mesma forma.
+   */
+  const mfAtualPorRecurso = useMemo(() => {
+    const m = new Map<string, PreviaDoDia['composicaoAtualMf'][number]>();
+    if (!previa) return m;
+    for (const r of previa.composicaoAtualMf) m.set(r.recurso, r);
+    return m;
   }, [previa]);
 
   return (
@@ -469,6 +514,16 @@ export function PreviaPage() {
                       tripulacaoPorViatura.has('MERGULHO 01') &&
                       tripulacaoPorViatura.has('MERGULHO 02');
                     const swapAtivo = previa.overridesMergulho.some((o) => o.data === data);
+                    // Pares 01/02 (não-Mergulho): RESGATE/ABTS/SALVAMAR/QUADRICICLO.
+                    // Botão "⇄ Trocar 01↔02" aparece quando há viatura escalada (XLSX)
+                    // de qualquer um dos lados do par e o Fiscal tem permissão.
+                    const parInfo = detectarParRecurso(viatura);
+                    const overridePar = parInfo
+                      ? previa.overridesParesRecursos.find(
+                          (o) => o.data === data && o.par === parInfo.par,
+                        )
+                      : null;
+                    const showSwapPar = !!parInfo && podeSwap;
                     return (
                     <article key={viatura} className="rounded border border-slate-200 bg-white p-3">
                       <div className="flex items-baseline justify-between gap-2">
@@ -477,6 +532,11 @@ export function PreviaPage() {
                           {swapAtivo && isMergulho && (
                             <span className="ml-2 rounded-full bg-cbmes-blue/10 px-2 py-0.5 text-[10px] font-medium text-cbmes-blue">
                               ⇄ M01↔M02 trocados
+                            </span>
+                          )}
+                          {overridePar && parInfo && (
+                            <span className="ml-2 rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-medium text-amber-900">
+                              ⇄ {parInfo.par} 01↔02 trocados
                             </span>
                           )}
                         </p>
@@ -491,81 +551,110 @@ export function PreviaPage() {
                             {swapAtivo ? '↶ desfazer' : '⇄ Trocar M01↔M02'}
                           </button>
                         )}
+                        {showSwapPar && parInfo && (
+                          <button
+                            type="button"
+                            onClick={() => void handleToggleOverridePar(parInfo.par)}
+                            disabled={swapInflight}
+                            title={`Trocar tripulação entre ${parInfo.v01} e ${parInfo.v02} neste dia`}
+                            className="rounded border border-cbmes-blue px-2 py-0.5 text-[10px] font-medium text-cbmes-blue hover:bg-cbmes-blue/10 disabled:opacity-50"
+                          >
+                            {overridePar ? '↶ desfazer' : `⇄ Trocar ${parInfo.par} 01↔02`}
+                          </button>
+                        )}
                       </div>
-                      <ul className="mt-1 divide-y divide-slate-100 text-sm">
-                        {linhas.map((t, i) => {
-                          const isOrigemSelecionada =
-                            swapOrigem?.equipe === t.equipe &&
-                            swapOrigem?.viatura === t.viatura &&
-                            swapOrigem?.funcao === t.funcao;
-                          const swapDisabled =
-                            !!swapOrigem && swapOrigem.equipe !== t.equipe;
-                          return (
-                            <li
-                              key={i}
-                              className={`flex items-baseline justify-between gap-2 py-1 ${
-                                t.isFiscal ? 'rounded bg-cbmes-red/5 px-2' : ''
-                              } ${isOrigemSelecionada ? 'rounded bg-cbmes-blue/10 px-2' : ''}`}
-                            >
-                              <span className="text-xs uppercase text-slate-500">
-                                {t.funcao || '—'}
-                                {t.isFiscal && (
-                                  <span className="ml-2 rounded-full bg-cbmes-red px-2 py-0.5 text-[10px] font-bold text-white">
-                                    FISCAL
+                      <div className="mt-1 grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <div>
+                          <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-cbmes-blue">
+                            Próximo turno (XLSX)
+                          </p>
+                          <ul className="divide-y divide-slate-100 text-sm">
+                            {linhas.map((t, i) => {
+                              const isOrigemSelecionada =
+                                swapOrigem?.equipe === t.equipe &&
+                                swapOrigem?.viatura === t.viatura &&
+                                swapOrigem?.funcao === t.funcao;
+                              const swapDisabled =
+                                !!swapOrigem && swapOrigem.equipe !== t.equipe;
+                              return (
+                                <li
+                                  key={i}
+                                  className={`flex items-baseline justify-between gap-2 py-1 ${
+                                    t.isFiscal ? 'rounded bg-cbmes-red/5 px-2' : ''
+                                  } ${isOrigemSelecionada ? 'rounded bg-cbmes-blue/10 px-2' : ''}`}
+                                >
+                                  <span className="text-xs uppercase text-slate-500">
+                                    {t.funcao || '—'}
+                                    {t.isFiscal && (
+                                      <span className="ml-2 rounded-full bg-cbmes-red px-2 py-0.5 text-[10px] font-bold text-white">
+                                        FISCAL
+                                      </span>
+                                    )}
                                   </span>
-                                )}
-                              </span>
-                              <span className="flex items-baseline gap-2 text-right">
-                                <span>
-                                  {t.militarResolvido ? (
-                                    <>
-                                      <span className="font-medium">
-                                        {t.militarResolvido.posto}{' '}
-                                        {t.militarResolvido.nomeGuerra ??
-                                          t.militarResolvido.nome.split(' ')[0]}
-                                      </span>
-                                      <span className="ml-2 text-xs text-slate-500">
-                                        NF {t.militarResolvido.nf} · ANT{' '}
-                                        {t.militarResolvido.ant}
-                                      </span>
-                                    </>
-                                  ) : (
-                                    <span className="text-feedback-warn">
-                                      {t.militarRef.raw}{' '}
-                                      <span className="text-xs">(sem NF)</span>
+                                  <span className="flex items-baseline gap-2 text-right">
+                                    <span>
+                                      {t.militarResolvido ? (
+                                        <>
+                                          <span className="font-medium">
+                                            {t.militarResolvido.posto}{' '}
+                                            {t.militarResolvido.nomeGuerra ??
+                                              t.militarResolvido.nome.split(' ')[0]}
+                                          </span>
+                                          <span className="ml-2 text-xs text-slate-500">
+                                            NF {t.militarResolvido.nf} · ANT{' '}
+                                            {t.militarResolvido.ant}
+                                          </span>
+                                        </>
+                                      ) : (
+                                        <span className="text-feedback-warn">
+                                          {t.militarRef.raw}{' '}
+                                          <span className="text-xs">(sem NF)</span>
+                                        </span>
+                                      )}
                                     </span>
-                                  )}
-                                </span>
-                                {podeSwap && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      void handleSwapClick(t.equipe, t.viatura, t.funcao)
-                                    }
-                                    disabled={swapInflight || swapDisabled}
-                                    title={
-                                      swapDisabled
-                                        ? 'Swap apenas dentro da mesma equipe'
-                                        : isOrigemSelecionada
-                                          ? 'Cancelar swap'
-                                          : 'Trocar com outra posição'
-                                    }
-                                    className="rounded border border-slate-300 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-50 disabled:opacity-30"
-                                  >
-                                    {isOrigemSelecionada ? '×' : '🔄'}
-                                  </button>
-                                )}
-                              </span>
-                            </li>
-                          );
-                        })}
-                      </ul>
+                                    {podeSwap && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          void handleSwapClick(t.equipe, t.viatura, t.funcao)
+                                        }
+                                        disabled={swapInflight || swapDisabled}
+                                        title={
+                                          swapDisabled
+                                            ? 'Swap apenas dentro da mesma equipe'
+                                            : isOrigemSelecionada
+                                              ? 'Cancelar swap'
+                                              : 'Trocar com outra posição'
+                                        }
+                                        className="rounded border border-slate-300 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-50 disabled:opacity-30"
+                                      >
+                                        {isOrigemSelecionada ? '×' : '🔄'}
+                                      </button>
+                                    )}
+                                  </span>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                        <ComposicaoAtualMfPanel
+                          atual={mfAtualPorRecurso.get(viatura) ?? null}
+                        />
+                      </div>
                     </article>
                     );
                   })}
                 </div>
               </section>
             )}
+
+            <EscalaEspecialBox
+              data={data}
+              atos={previa.escalaEspecialAtos}
+              trocas={previa.trocasEscalaEspecial}
+              isReadOnly={isReadOnly}
+              onSaved={reload}
+            />
 
             {previa.ferias.length > 0 && (
               <section className="mt-4">
@@ -593,6 +682,13 @@ export function PreviaPage() {
                 </ul>
               </section>
             )}
+
+            <AtivarRecursoCard
+              data={data}
+              previa={previa}
+              isReadOnly={isReadOnly}
+              onSaved={reload}
+            />
 
             {previa.ideo.length > 0 && (
               <section className="mt-4">
@@ -654,7 +750,6 @@ export function PreviaPage() {
             <AjustesPreTurno
               data={data}
               initial={extractAjustes(previa)}
-              atosEspeciais={previa.escalaEspecialAtos}
               atestadosAtivos={previa.atestados}
               isReadOnly={isReadOnly}
               onSaved={reload}
@@ -679,17 +774,196 @@ function extractAjustes(previa: PreviaDoDia): AjustesPrevia {
     trocasEscalaEspecial: previa.trocasEscalaEspecial,
     swapsMilitares: previa.swapsMilitares,
     overridesMergulho: previa.overridesMergulho,
+    overridesParesRecursos: previa.overridesParesRecursos,
+    ativacoesRecurso: previa.ativacoesRecurso,
   };
+}
+
+/**
+ * Painel "Atual (MF)" exibido ao lado da tripulação do XLSX em cada card de
+ * recurso. Mostra chefe / motorista / operadores conforme o turno corrente
+ * (col E-J do Mapa Força). Quando o MF não tem nada para o recurso,
+ * mantém uma coluna placeholder para preservar o paralelo visual.
+ */
+function ComposicaoAtualMfPanel({
+  atual,
+}: {
+  atual: { recurso: string; chefe?: string; motorista?: string; operadores: string[] } | null;
+}) {
+  return (
+    <div className="rounded border border-slate-200 bg-slate-50 p-2">
+      <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">
+        Atual (MF)
+      </p>
+      {!atual || (!atual.chefe && !atual.motorista && atual.operadores.length === 0) ? (
+        <p className="text-xs italic text-slate-400">Sem registro no MF</p>
+      ) : (
+        <ul className="space-y-0.5 text-xs">
+          {atual.chefe && (
+            <li>
+              <span className="uppercase text-slate-500">Ch:</span>{' '}
+              <span className="font-medium">{atual.chefe}</span>
+            </li>
+          )}
+          {atual.motorista && (
+            <li>
+              <span className="uppercase text-slate-500">Mot:</span>{' '}
+              <span className="font-medium">{atual.motorista}</span>
+            </li>
+          )}
+          {atual.operadores.map((o, i) => (
+            <li key={i}>
+              <span className="uppercase text-slate-500">Op {i + 1}:</span>{' '}
+              <span className="font-medium">{o}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Reconhece se a viatura faz parte de um par operacional 01/02 reroteável
+ * pelo Fiscal (ABTS/RESGATE/SALVAMAR/QUADRICICLO). Mergulho tem botão próprio.
+ */
+function detectarParRecurso(
+  viatura: string,
+): { par: ParRecurso; v01: string; v02: string } | null {
+  const tabela: Array<{ par: ParRecurso; v01: string; v02: string }> = [
+    { par: 'ABTS', v01: 'ABTS_01', v02: 'ABTS_02' },
+    { par: 'RESGATE', v01: 'RESGATE 01', v02: 'RESGATE 02' },
+    { par: 'SALVAMAR', v01: 'SALVAMAR 01', v02: 'SALVAMAR 02' },
+    { par: 'QUADRICICLO', v01: 'QUADRICICLO 01', v02: 'QUADRICICLO 02' },
+  ];
+  return tabela.find((p) => p.v01 === viatura || p.v02 === viatura) ?? null;
 }
 
 function atoKey(a: EscalaEspecialAtoLight): string {
   return `${a.data}|${a.militarRaw}|${a.horario}|${a.funcao}`;
 }
 
+/**
+ * Box "Escala Especial" — antes vivia dentro de `AjustesPreTurno`. Promovido
+ * para seção própria (sempre visível, entre Tripulação e Férias) porque é
+ * informação operacional de leitura primária para o Fiscal. Os botões de
+ * troca acompanham os atos: o modal de registro segue o mesmo (`ModalTrocaEscalaEspecial`).
+ */
+function EscalaEspecialBox({
+  data,
+  atos,
+  trocas,
+  isReadOnly,
+  onSaved,
+}: {
+  data: string;
+  atos: EscalaEspecialAtoLight[];
+  trocas: TrocaEscalaEspecial[];
+  isReadOnly: boolean;
+  onSaved: () => void;
+}) {
+  const [modalAto, setModalAto] = useState<EscalaEspecialAtoLight | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const trocasPorAto = new Map<string, TrocaEscalaEspecial>();
+  for (const t of trocas) trocasPorAto.set(atoKey(t.atoOriginal), t);
+
+  const removerTrocaEspecial = async (ato: EscalaEspecialAtoLight) => {
+    try {
+      await api.previaRemoveTrocaEscalaEspecial(data, atoKey(ato));
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Erro ao remover troca');
+    }
+  };
+
+  return (
+    <>
+      <section className="mt-4">
+        <h3 className="mb-2 text-sm font-semibold text-slate-700">
+          Escala Especial{atos.length > 0 && ` (${atos.length} ato${atos.length === 1 ? '' : 's'})`}
+        </h3>
+        {err && (
+          <p
+            role="alert"
+            className="mb-2 rounded border border-feedback-error/30 bg-feedback-error/10 p-2 text-xs text-feedback-error"
+          >
+            {err}
+          </p>
+        )}
+        {atos.length === 0 ? (
+          <p className="rounded border border-dashed border-slate-300 bg-white p-3 text-xs text-slate-500">
+            Nenhum ato de Escala Especial importado para este dia. Importe o XLSM em{' '}
+            <Link to="/cadastros/escalas-especiais" className="text-cbmes-blue underline">
+              /cadastros/escalas-especiais
+            </Link>
+            .
+          </p>
+        ) : (
+          <ul className="divide-y divide-slate-100 rounded border border-slate-200 bg-white">
+            {atos.map((a) => {
+              const key = atoKey(a);
+              const troca = trocasPorAto.get(key);
+              return (
+                <li key={key} className="p-3 text-sm">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span>
+                      {troca ? (
+                        <>
+                          <s className="text-slate-400">{a.militarRaw}</s> →{' '}
+                          <strong className="text-cbmes-blue">{troca.substitutoRaw}</strong>
+                        </>
+                      ) : (
+                        <strong>{a.militarRaw}</strong>
+                      )}
+                      <span className="ml-2 text-xs text-slate-500">
+                        {a.horario} · {a.funcao}
+                      </span>
+                    </span>
+                    {!isReadOnly &&
+                      (troca ? (
+                        <button
+                          type="button"
+                          onClick={() => void removerTrocaEspecial(a)}
+                          className="rounded border border-feedback-error px-2 py-1 text-xs text-feedback-error"
+                        >
+                          Desfazer troca
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setModalAto(a)}
+                          className="rounded border border-cbmes-blue px-2 py-1 text-xs text-cbmes-blue"
+                        >
+                          Registrar Troca
+                        </button>
+                      ))}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      {modalAto && (
+        <ModalTrocaEscalaEspecial
+          ato={modalAto}
+          data={data}
+          onSaved={() => {
+            setModalAto(null);
+            onSaved();
+          }}
+          onCancel={() => setModalAto(null)}
+        />
+      )}
+    </>
+  );
+}
+
 function AjustesPreTurno({
   data,
   initial,
-  atosEspeciais,
   atestadosAtivos,
   isReadOnly,
   onSaved,
@@ -697,14 +971,12 @@ function AjustesPreTurno({
   data: string;
   isReadOnly: boolean;
   initial: AjustesPrevia;
-  atosEspeciais: EscalaEspecialAtoLight[];
   atestadosAtivos: PreviaDoDia['atestados'];
   onSaved: () => void;
 }) {
   const [state, setState] = useState<AjustesPrevia>(initial);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [modalAto, setModalAto] = useState<EscalaEspecialAtoLight | null>(null);
 
   // sincroniza quando a data muda
   useEffect(() => {
@@ -733,18 +1005,6 @@ function AjustesPreTurno({
       setSaving(false);
     }
   };
-
-  const removerTrocaEspecial = async (ato: EscalaEspecialAtoLight) => {
-    try {
-      await api.previaRemoveTrocaEscalaEspecial(data, atoKey(ato));
-      onSaved();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Erro ao remover troca');
-    }
-  };
-
-  const trocasPorAto = new Map<string, TrocaEscalaEspecial>();
-  for (const t of state.trocasEscalaEspecial) trocasPorAto.set(atoKey(t.atoOriginal), t);
 
   return (
     <>
@@ -863,62 +1123,6 @@ function AjustesPreTurno({
             </button>
           </fieldset>
 
-          <fieldset className="rounded border border-slate-200 p-2">
-            <legend className="px-1 font-medium text-slate-700">Escala Especial</legend>
-            {atosEspeciais.length === 0 ? (
-              <p className="mt-2 text-slate-500">
-                Nenhum ato de Escala Especial importado para este dia. Importe o XLSM em{' '}
-                <Link to="/cadastros/escalas-especiais" className="text-cbmes-blue underline">
-                  /cadastros/escalas-especiais
-                </Link>
-                .
-              </p>
-            ) : (
-              <ul className="mt-2 divide-y divide-slate-100">
-                {atosEspeciais.map((a) => {
-                  const key = atoKey(a);
-                  const troca = trocasPorAto.get(key);
-                  return (
-                    <li key={key} className="py-2">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span>
-                          {troca ? (
-                            <>
-                              <s className="text-slate-400">{a.militarRaw}</s> →{' '}
-                              <strong className="text-cbmes-blue">{troca.substitutoRaw}</strong>
-                            </>
-                          ) : (
-                            <strong>{a.militarRaw}</strong>
-                          )}
-                          <span className="ml-2 text-slate-500">
-                            {a.horario} · {a.funcao}
-                          </span>
-                        </span>
-                        {troca ? (
-                          <button
-                            type="button"
-                            onClick={() => removerTrocaEspecial(a)}
-                            className="rounded border border-feedback-error px-2 py-1 text-feedback-error"
-                          >
-                            Desfazer troca
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setModalAto(a)}
-                            className="rounded border border-cbmes-blue px-2 py-1 text-cbmes-blue"
-                          >
-                            Registrar Troca
-                          </button>
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </fieldset>
-
           <NotasServicoFieldset dataIso={data} existentes={state.notasServico} onSaved={onSaved} />
 
           <DispensasFieldset dataIso={data} existentes={state.dispensas} onSaved={onSaved} />
@@ -937,18 +1141,6 @@ function AjustesPreTurno({
           </button>
         </div>
       </details>
-
-      {modalAto && (
-        <ModalTrocaEscalaEspecial
-          ato={modalAto}
-          data={data}
-          onSaved={() => {
-            setModalAto(null);
-            onSaved();
-          }}
-          onCancel={() => setModalAto(null)}
-        />
-      )}
     </>
   );
 }
@@ -2275,5 +2467,275 @@ function NotasServicoFieldset({
         </button>
       )}
     </fieldset>
+  );
+}
+
+const RECURSOS_DISPONIVEIS_PARA_ATIVACAO = [
+  'CHEFE DE OPERAÇÕES',
+  'ABTS_01',
+  'ABTS_02',
+  'RESGATE 01',
+  'RESGATE 02',
+  'ATB',
+  'PLATAFORMA',
+  'GUARDA',
+  'MERGULHO 01',
+  'MERGULHO 02',
+  'SALVAMAR 01',
+  'SALVAMAR 02',
+  'QUADRICICLO 01',
+  'QUADRICICLO 02',
+];
+
+/**
+ * S0.x/Fix-AtivarRecurso — Card que permite ao Fiscal ativar um recurso
+ * do Mapa Força que não está na escala XLSX do dia. Mínimo: recurso +
+ * viatura disponível + Chefe. Motorista e operadores opcionais (podem
+ * ser adicionados depois). Persiste em `ajustes.ativacoesRecurso`.
+ */
+function AtivarRecursoCard({
+  data,
+  previa,
+  isReadOnly,
+  onSaved,
+}: {
+  data: string;
+  previa: PreviaDoDia;
+  isReadOnly: boolean;
+  onSaved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [viaturas, setViaturas] = useState<Viatura[]>([]);
+  const [recurso, setRecurso] = useState('');
+  const [vtrPrefixo, setVtrPrefixo] = useState('');
+  const [chefeRef, setChefeRef] = useState<{ nf: string; raw: string; postoAbreviado: string; nomeGuerra: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    api
+      .viaturasList()
+      .then(setViaturas)
+      .catch(() => setViaturas([]));
+  }, [open]);
+
+  // Recursos NÃO presentes na tripulação atual.
+  const recursosFaltando = RECURSOS_DISPONIVEIS_PARA_ATIVACAO.filter(
+    (r) => !previa.tripulacao.some((t) => t.viatura === r),
+  );
+
+  // Viaturas DISPONÍVEIS e não atribuídas a um recurso já ativo.
+  const vtrsEmUso = new Set(previa.tripulacao.map((t) => t.viatura));
+  const viaturasLivres = viaturas.filter(
+    (v) => v.status === 'DISPONIVEL' && !vtrsEmUso.has(v.prefixo),
+  );
+
+  const ativacoesDoDia = previa.ativacoesRecurso.filter((a) => a.data === data);
+
+  const reset = () => {
+    setRecurso('');
+    setVtrPrefixo('');
+    setChefeRef(null);
+    setError(null);
+  };
+
+  const handleAtivar = async () => {
+    if (!recurso || !vtrPrefixo || !chefeRef) {
+      setError('Recurso, viatura e Chefe são obrigatórios.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const ajustes = extractAjustes(previa);
+      const novas = [
+        ...ajustes.ativacoesRecurso,
+        {
+          data,
+          recurso,
+          vtrPrefixo,
+          chefe: {
+            raw: chefeRef.raw,
+            postoAbreviado: chefeRef.postoAbreviado,
+            nomeGuerra: chefeRef.nomeGuerra,
+            nf: chefeRef.nf,
+          },
+          operadores: [],
+        },
+      ];
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/previa/${data}/ajustes`,
+        {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...ajustes, ativacoesRecurso: novas }),
+        },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      reset();
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao ativar recurso');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDesfazer = async (idx: number) => {
+    setSaving(true);
+    setError(null);
+    try {
+      const ajustes = extractAjustes(previa);
+      const novas = ajustes.ativacoesRecurso.filter((_, i) => i !== idx);
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/previa/${data}/ajustes`,
+        {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...ajustes, ativacoesRecurso: novas }),
+        },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao desfazer');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (isReadOnly && ativacoesDoDia.length === 0) return null;
+
+  return (
+    <section className="mt-4 rounded border border-cbmes-blue/30 bg-white p-3">
+      <div className="flex items-baseline justify-between">
+        <h3 className="text-sm font-semibold text-cbmes-blue">
+          ➕ Ativar recurso adicional ({ativacoesDoDia.length} ativos)
+        </h3>
+        {!isReadOnly && (
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            className="text-[11px] font-medium text-cbmes-blue hover:underline"
+          >
+            {open ? 'Fechar' : 'Abrir'}
+          </button>
+        )}
+      </div>
+
+      {ativacoesDoDia.length > 0 && (
+        <ul className="mt-2 space-y-1 text-xs">
+          {ativacoesDoDia.map((a) => {
+            const idxOriginal = previa.ativacoesRecurso.indexOf(a);
+            return (
+              <li
+                key={`${a.recurso}-${a.vtrPrefixo}`}
+                className="flex items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50 p-2"
+              >
+                <span>
+                  <strong>{a.recurso}</strong> · {a.vtrPrefixo} · Ch:{' '}
+                  {a.chefe.postoAbreviado} {a.chefe.nomeGuerra}
+                </span>
+                {!isReadOnly && (
+                  <button
+                    type="button"
+                    onClick={() => void handleDesfazer(idxOriginal)}
+                    disabled={saving}
+                    className="rounded border border-slate-300 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                  >
+                    ↶ desfazer
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {open && !isReadOnly && (
+        <div className="mt-3 space-y-2">
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wide text-slate-500">Recurso</span>
+            <select
+              value={recurso}
+              onChange={(e) => setRecurso(e.target.value)}
+              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+            >
+              <option value="">Selecione…</option>
+              {recursosFaltando.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wide text-slate-500">
+              Viatura disponível
+            </span>
+            <select
+              value={vtrPrefixo}
+              onChange={(e) => setVtrPrefixo(e.target.value)}
+              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+            >
+              <option value="">Selecione…</option>
+              {viaturasLivres.map((v) => (
+                <option key={v.id} value={v.prefixo}>
+                  {v.prefixo} · {v.tipo}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div>
+            <span className="text-[10px] uppercase tracking-wide text-slate-500">
+              Chefe (obrigatório)
+            </span>
+            <MilitarSelect
+              value={chefeRef?.nf}
+              onChange={(nf, m) => {
+                if (nf && m) {
+                  setChefeRef({
+                    nf,
+                    raw: `${m.posto} ${m.nomeGuerra ?? m.nome}`,
+                    postoAbreviado: m.posto.replace(/\s+/g, '').toUpperCase(),
+                    nomeGuerra: m.nomeGuerra ?? m.nome,
+                  });
+                } else setChefeRef(null);
+              }}
+              placeholder="Buscar Chefe…"
+            />
+          </div>
+          {error && (
+            <p className="rounded border border-feedback-error/30 bg-feedback-error/10 p-2 text-xs text-feedback-error">
+              {error}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => void handleAtivar()}
+              disabled={saving}
+              className="flex-1 rounded-button bg-cbmes-red py-2 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {saving ? 'Ativando…' : 'Ativar'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                reset();
+                setOpen(false);
+              }}
+              disabled={saving}
+              className="flex-1 rounded-button border border-slate-300 bg-white py-2 text-sm text-slate-700"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }

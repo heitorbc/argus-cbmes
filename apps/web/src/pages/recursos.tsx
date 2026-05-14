@@ -5,10 +5,12 @@ import {
   type CategoriaRecurso,
   type CreateRecursoInput,
   type Recurso,
+  type RecursoMapaForca,
   type Unidade,
 } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { STATUS_VIATURA_BADGE } from '@/lib/status-viatura-style';
 
 interface FormState {
   unidadeId: string;
@@ -53,6 +55,7 @@ export function RecursosPage() {
   const [unidades, setUnidades] = useState<Unidade[]>([]);
   const [unidadeFiltro, setUnidadeFiltro] = useState<string>('');
   const [recursos, setRecursos] = useState<Recurso[]>([]);
+  const [mfRecursos, setMfRecursos] = useState<RecursoMapaForca[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showInativos, setShowInativos] = useState(true);
@@ -65,8 +68,15 @@ export function RecursosPage() {
   const reloadRecursos = async (unidadeId: string) => {
     setLoading(true);
     try {
-      const list = await api.recursosList({ unidadeId: unidadeId || undefined });
+      // Carrega cadastro + estado MF em paralelo. Se o MF falhar (offline,
+      // sync indisponível) o cadastro ainda renderiza — MF entra vazio e
+      // a página degrada graciosamente.
+      const [list, mf] = await Promise.all([
+        api.recursosList({ unidadeId: unidadeId || undefined }),
+        api.mapaForcaRecursos().catch(() => [] as RecursoMapaForca[]),
+      ]);
       setRecursos(list);
+      setMfRecursos(mf);
       setError(null);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Erro ao carregar recursos');
@@ -104,9 +114,26 @@ export function RecursosPage() {
     if (unidadeFiltro) void reloadRecursos(unidadeFiltro);
   }, [unidadeFiltro]);
 
+  const mfMap = useMemo(() => {
+    const m = new Map<string, RecursoMapaForca>();
+    for (const r of mfRecursos) m.set(r.recurso, r);
+    return m;
+  }, [mfRecursos]);
+
+  /**
+   * "Ativo efetivo": o recurso aparece operacional na Prévia se está marcado
+   * como ativo manualmente OU se o Mapa Força aponta uma viatura para ele
+   * (mesmo critério institucional descrito pelo Tech Lead).
+   */
+  const isAtivoEfetivo = (r: Recurso): boolean => {
+    if (r.ativo) return true;
+    const mf = mfMap.get(r.nome);
+    return mf?.vtrPrefixo !== null && mf?.vtrPrefixo !== undefined && mf.vtrPrefixo.length > 0;
+  };
+
   const recursosVisiveis = useMemo(
-    () => (showInativos ? recursos : recursos.filter((r) => r.ativo)),
-    [recursos, showInativos],
+    () => (showInativos ? recursos : recursos.filter(isAtivoEfetivo)),
+    [recursos, showInativos, mfMap],
   );
 
   const proximaOrdem = useMemo(() => {
@@ -189,7 +216,9 @@ export function RecursosPage() {
           ← Início
         </Link>
         <h1 className="mt-1 text-lg font-bold">Recursos</h1>
-        <p className="text-xs opacity-90">Configurações · Recursos por unidade (ABTS, ATB, …)</p>
+        <p className="text-xs opacity-90">
+          Logística · Recursos da unidade espelhados pelo Mapa Força
+        </p>
       </header>
 
       <section className="mx-auto max-w-3xl p-4">
@@ -384,57 +413,120 @@ export function RecursosPage() {
               {recursos.length === 0 ? 'Nenhum recurso cadastrado.' : 'Nenhum recurso visível.'}
             </p>
           )}
-          {recursosVisiveis.map((r) => (
-            <div
-              key={r.id}
-              className={`rounded border p-3 ${
-                r.ativo ? 'border-slate-200 bg-white' : 'border-slate-300 bg-slate-100 opacity-70'
-              }`}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-sm font-semibold text-cbmes-blue">
-                    <span className="text-xs text-slate-500">#{r.ordem}</span> {r.nome}
-                    <span
-                      className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${CATEGORIA_BADGE[r.categoria]}`}
-                    >
-                      {r.categoria}
-                    </span>
-                    {!r.ativo && (
-                      <span className="ml-1 rounded-full bg-slate-300 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-700">
-                        inativo
+          {recursosVisiveis.map((r) => {
+            const mf = mfMap.get(r.nome);
+            const ativoEfetivo = isAtivoEfetivo(r);
+            const showStatusBadge =
+              mf?.vtrStatus &&
+              (mf.vtrStatus === 'DISPONIVEL' ||
+                mf.vtrStatus === 'BAIXADA' ||
+                mf.vtrStatus === 'EMPRESTADA');
+            return (
+              <div
+                key={r.id}
+                className={`rounded border p-3 ${
+                  ativoEfetivo
+                    ? 'border-slate-200 bg-white'
+                    : 'border-slate-300 bg-slate-100 opacity-70'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-cbmes-blue">
+                      <span className="text-xs text-slate-500">#{r.ordem}</span> {r.nome}
+                      <span
+                        className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${CATEGORIA_BADGE[r.categoria]}`}
+                      >
+                        {r.categoria}
                       </span>
+                      {ativoEfetivo ? (
+                        <span className="ml-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-700">
+                          ativo
+                        </span>
+                      ) : (
+                        <span className="ml-1 rounded-full bg-slate-300 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-700">
+                          inativo
+                        </span>
+                      )}
+                      {!r.ativo && ativoEfetivo && (
+                        <span className="ml-1 rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-900">
+                          via MF
+                        </span>
+                      )}
+                    </p>
+                    {/* Estado MF — viatura + status + composição atual.
+                        Quando o MF não tem entrada para o recurso (ex.: cadastro
+                        manual fora da planilha), só renderiza o flag manual. */}
+                    {mf && (
+                      <div className="mt-1 space-y-0.5 text-xs">
+                        <div className="flex flex-wrap items-center gap-1">
+                          <span className="text-slate-500">Viatura (MF):</span>
+                          {mf.vtrPrefixo ? (
+                            <span className="font-mono text-slate-800">{mf.vtrPrefixo}</span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                          {showStatusBadge && (
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${STATUS_VIATURA_BADGE[mf.vtrStatus as 'DISPONIVEL' | 'BAIXADA' | 'EMPRESTADA']}`}
+                            >
+                              {mf.vtrStatus}
+                            </span>
+                          )}
+                          {mf.semEquipe && (
+                            <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-700">
+                              SEM EQUIPE
+                            </span>
+                          )}
+                        </div>
+                        {(mf.chefe || mf.motorista || mf.operadores.length > 0) && (
+                          <div className="text-[11px] text-slate-600">
+                            {mf.chefe && <span>Ch: {mf.chefe}</span>}
+                            {mf.motorista && (
+                              <span>
+                                {mf.chefe ? ' · ' : ''}Mot: {mf.motorista}
+                              </span>
+                            )}
+                            {mf.operadores.length > 0 && (
+                              <span>
+                                {mf.chefe || mf.motorista ? ' · ' : ''}
+                                Op: {mf.operadores.join(', ')}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )}
-                  </p>
-                  <p className="text-xs text-slate-600">
-                    {r.comportaViatura ? '🚒 viatura' : '— sem viatura'} ·{' '}
-                    {r.comportaEfetivo ? '👥 efetivo' : '— sem efetivo'}
-                  </p>
-                  <p className="mt-0.5 text-[10px] text-slate-400">{r.id}</p>
-                </div>
-                {isAdmin && (
-                  <div className="flex flex-col gap-1">
-                    <button
-                      type="button"
-                      onClick={() => startEdit(r)}
-                      className="rounded border border-cbmes-blue px-3 py-1 text-xs font-medium text-cbmes-blue hover:bg-cbmes-blue/10"
-                    >
-                      Editar
-                    </button>
-                    {r.ativo && (
+                    <p className="mt-1 text-xs text-slate-600">
+                      {r.comportaViatura ? '🚒 viatura' : '— sem viatura'} ·{' '}
+                      {r.comportaEfetivo ? '👥 efetivo' : '— sem efetivo'}
+                    </p>
+                    <p className="mt-0.5 text-[10px] text-slate-400">{r.id}</p>
+                  </div>
+                  {isAdmin && (
+                    <div className="flex flex-col gap-1">
                       <button
                         type="button"
-                        onClick={() => handleSoftDelete(r)}
-                        className="rounded border border-feedback-error px-3 py-1 text-xs font-medium text-feedback-error hover:bg-feedback-error/10"
+                        onClick={() => startEdit(r)}
+                        className="rounded border border-cbmes-blue px-3 py-1 text-xs font-medium text-cbmes-blue hover:bg-cbmes-blue/10"
                       >
-                        Desativar
+                        Editar
                       </button>
-                    )}
-                  </div>
-                )}
+                      {r.ativo && (
+                        <button
+                          type="button"
+                          onClick={() => handleSoftDelete(r)}
+                          className="rounded border border-feedback-error px-3 py-1 text-xs font-medium text-feedback-error hover:bg-feedback-error/10"
+                        >
+                          Desativar
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
     </main>
