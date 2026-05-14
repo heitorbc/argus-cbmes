@@ -3,6 +3,24 @@ import { ForbiddenException } from '@nestjs/common';
 import { ServicoService } from '../servico/servico.service';
 import { AjustesPreviaService, atoKey } from './ajustes-previa.service';
 
+const FISCAL_NF = '3037509';
+const VAZIO_INPUT = {
+  trocas: [],
+  escalaEspecial: {},
+  notasServico: [],
+  dispensas: [],
+  trocasEscalaEspecial: [],
+};
+
+/**
+ * Helper que coloca o serviço em PREVIA_INICIADA (estado em que edição é
+ * permitida) e retorna o NF de quem iniciou — para ser usado nos testes que
+ * exercitam edição.
+ */
+function iniciarPrevia(servico: ServicoService, dataIso: string, nf = FISCAL_NF): void {
+  servico.iniciarPrevia(dataIso, nf, nf, true); // isAdmin=true para bypassar gate de Fiscal escalado
+}
+
 describe('AjustesPreviaService — trocas de Escala Especial (S6a-fix)', () => {
   let service: AjustesPreviaService;
   let servico: ServicoService;
@@ -17,6 +35,7 @@ describe('AjustesPreviaService — trocas de Escala Especial (S6a-fix)', () => {
   beforeEach(() => {
     servico = new ServicoService();
     service = new AjustesPreviaService(servico);
+    iniciarPrevia(servico, dataIso);
   });
 
   it('add cria a primeira troca para um ato', () => {
@@ -28,11 +47,11 @@ describe('AjustesPreviaService — trocas de Escala Especial (S6a-fix)', () => {
         substitutoRaw: 'SGT BARCELLOS',
         substitutoNf: '3037509',
       },
-      '3037509',
+      FISCAL_NF,
     );
 
     expect(t.substitutoRaw).toBe('SGT BARCELLOS');
-    expect(t.registradoPorNf).toBe('3037509');
+    expect(t.registradoPorNf).toBe(FISCAL_NF);
     expect(t.registradoEm).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     const ajustes = service.get(dataIso);
     expect(ajustes.trocasEscalaEspecial).toHaveLength(1);
@@ -46,7 +65,7 @@ describe('AjustesPreviaService — trocas de Escala Especial (S6a-fix)', () => {
         substituidoRaw: 'SGT MARIANE',
         substitutoRaw: 'SGT BARCELLOS',
       },
-      '3037509',
+      FISCAL_NF,
     );
     service.addTrocaEscalaEspecial(
       dataIso,
@@ -55,7 +74,7 @@ describe('AjustesPreviaService — trocas de Escala Especial (S6a-fix)', () => {
         substituidoRaw: 'SGT MARIANE',
         substitutoRaw: 'SGT VICENTE',
       },
-      '3037509',
+      FISCAL_NF,
     );
     const ajustes = service.get(dataIso);
     expect(ajustes.trocasEscalaEspecial).toHaveLength(1);
@@ -71,7 +90,7 @@ describe('AjustesPreviaService — trocas de Escala Especial (S6a-fix)', () => {
           substituidoRaw: 'X',
           substitutoRaw: 'Y',
         },
-        '3037509',
+        FISCAL_NF,
       ),
     ).toThrow(/2026-05-10.*2026-05-09/);
   });
@@ -84,15 +103,15 @@ describe('AjustesPreviaService — trocas de Escala Especial (S6a-fix)', () => {
         substituidoRaw: 'SGT MARIANE',
         substitutoRaw: 'SGT BARCELLOS',
       },
-      '3037509',
+      FISCAL_NF,
     );
-    const ok = service.removeTrocaEscalaEspecial(dataIso, atoKey(ato));
+    const ok = service.removeTrocaEscalaEspecial(dataIso, atoKey(ato), FISCAL_NF);
     expect(ok).toBe(true);
     expect(service.get(dataIso).trocasEscalaEspecial).toHaveLength(0);
   });
 
   it('remove devolve false quando atoKey não existe', () => {
-    const ok = service.removeTrocaEscalaEspecial(dataIso, 'inexistente');
+    const ok = service.removeTrocaEscalaEspecial(dataIso, 'inexistente', FISCAL_NF);
     expect(ok).toBe(false);
   });
 
@@ -104,20 +123,14 @@ describe('AjustesPreviaService — trocas de Escala Especial (S6a-fix)', () => {
         substituidoRaw: 'SGT MARIANE',
         substitutoRaw: 'SGT BARCELLOS',
       },
-      '3037509',
+      FISCAL_NF,
     );
-    service.upsert(dataIso, {
-      trocas: [],
-      escalaEspecial: {},
-      notasServico: [],
-      dispensas: [],
-      trocasEscalaEspecial: [],
-    });
+    service.upsert(dataIso, VAZIO_INPUT, FISCAL_NF);
     expect(service.get(dataIso).trocasEscalaEspecial).toHaveLength(1);
   });
 });
 
-describe('AjustesPreviaService — read-only após Servico iniciado (S6b)', () => {
+describe('AjustesPreviaService — gate de edição (S0.x/rename-mapa-forca)', () => {
   let service: AjustesPreviaService;
   let servico: ServicoService;
   const dataIso = '2026-05-09';
@@ -127,48 +140,68 @@ describe('AjustesPreviaService — read-only após Servico iniciado (S6b)', () =
     horario: '07:10 ÀS 13:10',
     funcao: 'APOIO',
   };
-  const VAZIO_INPUT = {
-    trocas: [],
-    escalaEspecial: {},
-    notasServico: [],
-    dispensas: [],
-    trocasEscalaEspecial: [],
-  };
 
   beforeEach(() => {
     servico = new ServicoService();
     service = new AjustesPreviaService(servico);
   });
 
-  it('upsert rejeita após iniciar serviço (sem isAdmin)', () => {
-    servico.iniciar(dataIso, '3037509');
-    expect(() => service.upsert(dataIso, VAZIO_INPUT)).toThrow(ForbiddenException);
+  it('upsert rejeita em NAO_INICIADO (precisa "Iniciar Prévia do Mapa Força" primeiro)', () => {
+    expect(() => service.upsert(dataIso, VAZIO_INPUT, FISCAL_NF)).toThrow(ForbiddenException);
   });
 
-  it('upsert permitido com isAdmin=true mesmo após iniciado', () => {
-    servico.iniciar(dataIso, '3037509');
-    expect(() => service.upsert(dataIso, VAZIO_INPUT, true)).not.toThrow();
+  it('upsert rejeita em PREVIA_INICIADA quando NF não é o iniciador (não-admin)', () => {
+    servico.iniciarPrevia(dataIso, FISCAL_NF, FISCAL_NF, false);
+    expect(() => service.upsert(dataIso, VAZIO_INPUT, '0000000', false)).toThrow(
+      ForbiddenException,
+    );
+  });
+
+  it('upsert permitido em PREVIA_INICIADA quando NF é o iniciador', () => {
+    servico.iniciarPrevia(dataIso, FISCAL_NF, FISCAL_NF, false);
+    expect(() => service.upsert(dataIso, VAZIO_INPUT, FISCAL_NF, false)).not.toThrow();
+  });
+
+  it('upsert permitido para admin mesmo sem iniciar Prévia (override)', () => {
+    expect(() => service.upsert(dataIso, VAZIO_INPUT, '0000000', true)).not.toThrow();
+  });
+
+  it('upsert rejeita após iniciar serviço (estado INICIADO)', () => {
+    servico.iniciarPrevia(dataIso, FISCAL_NF, FISCAL_NF, false);
+    servico.iniciar(dataIso, FISCAL_NF);
+    expect(() => service.upsert(dataIso, VAZIO_INPUT, FISCAL_NF, false)).toThrow(
+      ForbiddenException,
+    );
+  });
+
+  it('upsert permitido com isAdmin=true mesmo após iniciado (admin override)', () => {
+    servico.iniciarPrevia(dataIso, FISCAL_NF, FISCAL_NF, false);
+    servico.iniciar(dataIso, FISCAL_NF);
+    expect(() => service.upsert(dataIso, VAZIO_INPUT, FISCAL_NF, true)).not.toThrow();
   });
 
   it('addTrocaEscalaEspecial rejeita após iniciar serviço (sem isAdmin)', () => {
-    servico.iniciar(dataIso, '3037509');
+    servico.iniciarPrevia(dataIso, FISCAL_NF, FISCAL_NF, false);
+    servico.iniciar(dataIso, FISCAL_NF);
     expect(() =>
       service.addTrocaEscalaEspecial(
         dataIso,
         { atoOriginal: ato, substituidoRaw: 'X', substitutoRaw: 'Y' },
-        '3037509',
+        FISCAL_NF,
+        false,
       ),
     ).toThrow(ForbiddenException);
   });
 
   it('removeTrocaEscalaEspecial rejeita após iniciar serviço (sem isAdmin)', () => {
+    iniciarPrevia(servico, dataIso);
     service.addTrocaEscalaEspecial(
       dataIso,
       { atoOriginal: ato, substituidoRaw: 'X', substitutoRaw: 'Y' },
-      '3037509',
+      FISCAL_NF,
     );
-    servico.iniciar(dataIso, '3037509');
-    expect(() => service.removeTrocaEscalaEspecial(dataIso, atoKey(ato))).toThrow(
+    servico.iniciar(dataIso, FISCAL_NF);
+    expect(() => service.removeTrocaEscalaEspecial(dataIso, atoKey(ato), FISCAL_NF, false)).toThrow(
       ForbiddenException,
     );
   });

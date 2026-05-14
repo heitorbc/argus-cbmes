@@ -41,6 +41,7 @@ import { IdeoStatusService } from '../ideo/ideo-status.service';
 import { IdeoService } from '../ideo/ideo.service';
 import { MapaForcaCiodesService } from '../mapa-forca-ciodes/mapa-forca-ciodes.service';
 import { ServicoService } from '../servico/servico.service';
+import { forwardRef, Inject } from '@nestjs/common';
 import { TrocasAutorizadasService } from '../trocas-autorizadas/trocas-autorizadas.service';
 import { ViaturasService } from '../viaturas/viaturas.service';
 import { parseMilitarCell } from '../escalas/escala-xlsx-parser';
@@ -72,6 +73,7 @@ export class MapaForcaService {
     private readonly ajustes: AjustesPreviaService,
     private readonly escalasEspeciais: EscalasEspeciaisService,
     private readonly chefesOperacoes: ChefesOperacoesService,
+    @Inject(forwardRef(() => ServicoService))
     private readonly servico: ServicoService,
     private readonly ideoStatus: IdeoStatusService,
     private readonly dispensasSvc: DispensasService,
@@ -472,6 +474,19 @@ export class MapaForcaService {
       militarResolvido: resolved,
       isFiscal: false,
     };
+  }
+
+  /**
+   * S0.x/rename-mapa-forca — Retorna o Fiscal escalado do dia sem carregar
+   * o payload completo do Mapa Força. Usado pelo controller `getFiscalDoDia`
+   * e pelo `ServicoService.iniciarPrevia` (permission gate).
+   *
+   * Em ambiente mock the full pipeline tem custo baixo; em S5b (Supabase)
+   * podemos otimizar com queries direcionadas.
+   */
+  async getFiscalDoDia(dataIso: string): Promise<FiscalDoDia | null> {
+    const payload = await this.getMapaForcaDoDia(dataIso);
+    return payload.fiscal;
   }
 
   private calcularFiscal(

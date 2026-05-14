@@ -17,13 +17,17 @@ import {
 } from '@argus/shared-types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { MapaForcaService } from '../mapa-forca/mapa-forca.service';
 import { ServicoService } from './servico.service';
 
 const dataParamRegex = /^\d{4}-\d{2}-\d{2}$/;
 
 @Controller('servico')
 export class ServicoController {
-  constructor(private readonly servico: ServicoService) {}
+  constructor(
+    private readonly servico: ServicoService,
+    private readonly mapaForca: MapaForcaService,
+  ) {}
 
   @Get(':data')
   get(@Param('data') data: string): ServicoEstado {
@@ -31,6 +35,43 @@ export class ServicoController {
       throw new BadRequestException('data inválida (esperado YYYY-MM-DD)');
     }
     return this.servico.get(data);
+  }
+
+  /**
+   * S0.x/rename-mapa-forca — Fiscal escalado (ou admin) inicia a Prévia
+   * do Mapa Força para edição. Permission gate por NF é feita no service.
+   */
+  @Roles('admin', 'fiscal', 'sargenteante')
+  @Post(':data/iniciar-previa')
+  @HttpCode(HttpStatus.OK)
+  async iniciarPrevia(
+    @Param('data') data: string,
+    @CurrentUser() user: UserSession,
+  ): Promise<ServicoEstado> {
+    if (!dataParamRegex.test(data)) {
+      throw new BadRequestException('data inválida (esperado YYYY-MM-DD)');
+    }
+    const fiscal = await this.mapaForca.getFiscalDoDia(data);
+    const isAdmin = user.papeis.includes('admin');
+    return this.servico.iniciarPrevia(data, user.nf, fiscal?.militarNf ?? null, isAdmin);
+  }
+
+  /**
+   * S0.x/rename-mapa-forca — Cancela a Prévia em edição, voltando o estado
+   * para NAO_INICIADO. Apenas quem iniciou ou admin podem cancelar.
+   */
+  @Roles('admin', 'fiscal', 'sargenteante')
+  @Post(':data/cancelar-previa')
+  @HttpCode(HttpStatus.OK)
+  cancelarPrevia(
+    @Param('data') data: string,
+    @CurrentUser() user: UserSession,
+  ): ServicoEstado {
+    if (!dataParamRegex.test(data)) {
+      throw new BadRequestException('data inválida (esperado YYYY-MM-DD)');
+    }
+    const isAdmin = user.papeis.includes('admin');
+    return this.servico.cancelarPrevia(data, user.nf, isAdmin);
   }
 
   @Roles('admin', 'fiscal', 'sargenteante')

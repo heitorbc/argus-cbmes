@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { AtestadosModule } from '../atestados/atestados.module';
 import { ChefesOperacoesModule } from '../chefes-operacoes/chefes-operacoes.module';
 import { DispensasModule } from '../dispensas/dispensas.module';
@@ -33,7 +33,7 @@ import { MapaForcaService } from './mapa-forca.service';
     IdeoModule,
     MapaForcaCiodesModule,
     NotasServicoModule,
-    ServicoModule,
+    forwardRef(() => ServicoModule),
     TrocasAutorizadasModule,
     ViaturasModule,
   ],

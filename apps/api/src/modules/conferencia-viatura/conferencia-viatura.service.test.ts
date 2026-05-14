@@ -86,7 +86,7 @@ describe('ConferenciaViaturaService', () => {
   });
 
   it('mudança de status durante serviço cria AlteracaoDiversa', async () => {
-    servico.iniciar(dataIso, motoristaNf);
+    servico.iniciarPrevia(dataIso, motoristaNf, motoristaNf, true); servico.iniciar(dataIso, motoristaNf);
     await svc.registrar(
       dataIso,
       'ABTS 011',
@@ -107,7 +107,7 @@ describe('ConferenciaViaturaService', () => {
   });
 
   it('NÃO cria AlteracaoDiversa se status não mudou', async () => {
-    servico.iniciar(dataIso, motoristaNf);
+    servico.iniciarPrevia(dataIso, motoristaNf, motoristaNf, true); servico.iniciar(dataIso, motoristaNf);
     await svc.registrar(
       dataIso,
       'ABTS 011',
@@ -136,7 +136,7 @@ describe('ConferenciaViaturaService', () => {
   it('S6h — bloqueia (409) registrar viatura cuja equipe ainda NÃO foi conferida', async () => {
     // Viatura associada ao recurso ABTS_01 via funcaoOperacional
     viaturaAtual = { ...viatura('ABTS 011'), funcaoOperacional: 'ABTS_01' };
-    servico.iniciar(dataIso, motoristaNf);
+    servico.iniciarPrevia(dataIso, motoristaNf, motoristaNf, true); servico.iniciar(dataIso, motoristaNf);
     // Equipe ABTS_01 ainda não foi conferida — gate deve bloquear
     await expect(
       svc.registrar(
@@ -150,7 +150,7 @@ describe('ConferenciaViaturaService', () => {
 
   it('S6h — permite registrar viatura quando equipe foi conferida', async () => {
     viaturaAtual = { ...viatura('ABTS 011'), funcaoOperacional: 'ABTS_01' };
-    servico.iniciar(dataIso, motoristaNf);
+    servico.iniciarPrevia(dataIso, motoristaNf, motoristaNf, true); servico.iniciar(dataIso, motoristaNf);
     // Confere a equipe ABTS_01 primeiro
     const conferenciaEquipe = new ConferenciaEquipeService(servico);
     conferenciaEquipe.bulkUpdate(

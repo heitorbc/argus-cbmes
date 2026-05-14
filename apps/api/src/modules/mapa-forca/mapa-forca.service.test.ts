@@ -328,6 +328,7 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
           },
         ],
       },
+      undefined,
       true, // admin override (sem servico iniciado)
     );
 
@@ -364,6 +365,7 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
           },
         ],
       },
+      undefined,
       true,
     );
 
@@ -592,6 +594,7 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
         swapsMilitares: [],
         overridesMergulho: [{ data: '2026-04-23', swap: true }],
       },
+      undefined,
       true,
     );
     const r = await previa.getMapaForcaDoDia('2026-04-23');
@@ -625,6 +628,7 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
           },
         ],
       },
+      undefined,
       true,
     );
     const r = await previa.getMapaForcaDoDia('2026-04-23');
@@ -658,6 +662,7 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
           },
         ],
       },
+      undefined,
       true,
     );
     const r = await previa.getMapaForcaDoDia('2026-04-23');
@@ -706,6 +711,7 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
         overridesMergulho: [],
         overridesParesRecursos: [{ data: '2026-04-23', par: 'RESGATE', swap: true }],
       },
+      undefined,
       true,
     );
     const r = await previa.getMapaForcaDoDia('2026-04-23');

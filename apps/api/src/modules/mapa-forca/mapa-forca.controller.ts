@@ -17,6 +17,7 @@ import {
   addTrocaEscalaEspecialSchema,
   upsertAjustesPreviaSchema,
   type AjustesPrevia,
+  type FiscalDoDia,
   type MapaForcaDoDia,
   type TrocaEscalaEspecial,
   type UserSession,
@@ -35,21 +36,34 @@ const dataParamRegex = /^\d{4}-\d{2}-\d{2}$/;
 @Controller('mapa-forca')
 export class MapaForcaController {
   constructor(
-    private readonly previa: MapaForcaService,
+    private readonly mapaForca: MapaForcaService,
     private readonly ajustes: AjustesPreviaService,
   ) {}
 
   /**
-   * Retorna a Prévia do Mapa Força para a data informada.
-   * Acesso aberto a qualquer usuário autenticado.
+   * Retorna o Mapa Força do dia informado.
+   * Acesso aberto a qualquer usuário autenticado (visualização read-only).
    */
   @Get()
-  async getPrevia(@Query() query: unknown): Promise<MapaForcaDoDia> {
+  async getMapaForca(@Query() query: unknown): Promise<MapaForcaDoDia> {
     const parsed = querySchema.safeParse(query);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     }
-    return this.previa.getMapaForcaDoDia(parsed.data.data);
+    return this.mapaForca.getMapaForcaDoDia(parsed.data.data);
+  }
+
+  /**
+   * S0.x/rename-mapa-forca — Retorna apenas o Fiscal escalado do dia, sem
+   * carregar o payload completo. Usado pelo frontend para decidir se o usuário
+   * atual pode clicar em "Iniciar Prévia do Mapa Força".
+   */
+  @Get(':data/fiscal')
+  async getFiscalDoDia(@Param('data') data: string): Promise<{ fiscal: FiscalDoDia | null }> {
+    if (!dataParamRegex.test(data)) {
+      throw new BadRequestException('data inválida (esperado YYYY-MM-DD)');
+    }
+    return { fiscal: await this.mapaForca.getFiscalDoDia(data) };
   }
 
   /** F7a — Lê os ajustes pré-turno persistidos para uma data. */
@@ -61,7 +75,12 @@ export class MapaForcaController {
     return this.ajustes.get(data);
   }
 
-  /** F7a — Substitui completamente os ajustes pré-turno (overwrite atômico). */
+  /**
+   * F7a — Substitui completamente os ajustes pré-turno (overwrite atômico).
+   *
+   * S0.x/rename-mapa-forca: gate granular agora exige estado PREVIA_INICIADA
+   * + NF do iniciador (ou admin) — validado dentro do service.
+   */
   @Roles('admin', 'fiscal', 'sargenteante')
   @Put(':data/ajustes')
   @HttpCode(HttpStatus.OK)
@@ -77,7 +96,7 @@ export class MapaForcaController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     }
-    return this.ajustes.upsert(data, parsed.data, user.papeis.includes('admin'));
+    return this.ajustes.upsert(data, parsed.data, user.nf, user.papeis.includes('admin'));
   }
 
   /** S6a-fix item 4 — registra uma troca de Escala Especial por ato. */
@@ -119,6 +138,7 @@ export class MapaForcaController {
     const removed = this.ajustes.removeTrocaEscalaEspecial(
       data,
       decodeURIComponent(atoKey),
+      user.nf,
       user.papeis.includes('admin'),
     );
     if (!removed) {

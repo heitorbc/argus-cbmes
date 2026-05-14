@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, forwardRef, Inject, Injectable } from '@nestjs/common';
 import type {
   AddTrocaEscalaEspecialInput,
   AjustesPrevia,
@@ -37,23 +37,50 @@ const VAZIO: AjustesPrevia = {
 export class AjustesPreviaService {
   private readonly byData: Map<string, AjustesPrevia> = new Map();
 
-  constructor(private readonly servico: ServicoService) {}
+  constructor(
+    @Inject(forwardRef(() => ServicoService))
+    private readonly servico: ServicoService,
+  ) {}
 
   get(dataIso: string): AjustesPrevia {
     return this.byData.get(dataIso) ?? VAZIO;
   }
 
-  private ensureEditable(dataIso: string, isAdmin: boolean): void {
+  /**
+   * S0.x/rename-mapa-forca — Edição da Prévia exige:
+   *   - Estado do serviço em PREVIA_INICIADA
+   *   - Usuário admin OU NF == previaIniciadaPorNf (quem clicou em "Iniciar Prévia")
+   *
+   * `nf` opcional para retrocompat com chamadas internas que não passam usuário;
+   * nesse caso fallback para admin-only.
+   */
+  private ensureEditable(dataIso: string, nf: string | undefined, isAdmin: boolean): void {
     if (isAdmin) return;
-    if (this.servico.isReadOnly(dataIso)) {
+    if (!nf || !this.servico.podeEditarAjustes(dataIso, nf, false)) {
+      const estado = this.servico.get(dataIso).estado;
+      if (estado === 'NAO_INICIADO') {
+        throw new ForbiddenException(
+          `Edição da Prévia de ${dataIso} bloqueada — clique em "Iniciar Prévia do Mapa Força" primeiro.`,
+        );
+      }
+      if (estado === 'PREVIA_INICIADA') {
+        throw new ForbiddenException(
+          `Edição da Prévia de ${dataIso} restrita ao Fiscal que iniciou a Prévia (ou admin).`,
+        );
+      }
       throw new ForbiddenException(
         `Edição da Prévia de ${dataIso} bloqueada — serviço já iniciado. Use as Conferências e Alterações Diversas.`,
       );
     }
   }
 
-  upsert(dataIso: string, input: UpsertAjustesPreviaInput, isAdmin = false): AjustesPrevia {
-    this.ensureEditable(dataIso, isAdmin);
+  upsert(
+    dataIso: string,
+    input: UpsertAjustesPreviaInput,
+    nf?: string,
+    isAdmin = false,
+  ): AjustesPrevia {
+    this.ensureEditable(dataIso, nf, isAdmin);
     const ajustes: AjustesPrevia = {
       trocas: input.trocas,
       escalaEspecial: input.escalaEspecial,
@@ -85,7 +112,7 @@ export class AjustesPreviaService {
     registradoPorNf: string,
     isAdmin = false,
   ): TrocaEscalaEspecial {
-    this.ensureEditable(dataIso, isAdmin);
+    this.ensureEditable(dataIso, registradoPorNf, isAdmin);
     if (input.atoOriginal.data !== dataIso) {
       throw new BadRequestException(
         `Ato é do dia ${input.atoOriginal.data} mas troca está sendo registrada para ${dataIso}.`,
@@ -112,8 +139,13 @@ export class AjustesPreviaService {
   }
 
   /** Remove uma troca pelo identificador do ato original. */
-  removeTrocaEscalaEspecial(dataIso: string, atoKeyEncoded: string, isAdmin = false): boolean {
-    this.ensureEditable(dataIso, isAdmin);
+  removeTrocaEscalaEspecial(
+    dataIso: string,
+    atoKeyEncoded: string,
+    nf?: string,
+    isAdmin = false,
+  ): boolean {
+    this.ensureEditable(dataIso, nf, isAdmin);
     const current = this.byData.get(dataIso);
     if (!current) return false;
     const before = current.trocasEscalaEspecial.length;

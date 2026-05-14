@@ -27,14 +27,84 @@ export class ServicoService {
     return this.byData.get(dataIso) ?? { data: dataIso, estado: DEFAULT_ESTADO };
   }
 
+  /**
+   * Indica se a UI deve renderizar a Prévia em modo SOMENTE LEITURA.
+   * S0.x/rename-mapa-forca: a edição é liberada APENAS quando o serviço
+   * está em PREVIA_INICIADA. Demais estados (NAO_INICIADO, INICIADO+) são
+   * read-only — NAO_INICIADO porque o Fiscal ainda não abriu a Prévia;
+   * INICIADO+ porque os ajustes pré-turno já foram congelados.
+   */
   isReadOnly(dataIso: string): boolean {
-    return this.get(dataIso).estado !== DEFAULT_ESTADO;
+    return this.get(dataIso).estado !== 'PREVIA_INICIADA';
+  }
+
+  /**
+   * S0.x/rename-mapa-forca — Fiscal escalado (ou admin) abre a Prévia para
+   * edição. Permission gate por NF é responsabilidade do caller (controller
+   * recebe `nf` do `@CurrentUser`); aqui apenas verificamos `isAdminOrFiscal`
+   * já validado pelo `iniciadoPorNf` esperado.
+   *
+   * Recebe `expectedFiscalNf` (o Fiscal escalado do dia, computado pelo
+   * MapaForcaService). Aceita se `nf === expectedFiscalNf` ou se `isAdmin`.
+   */
+  iniciarPrevia(
+    dataIso: string,
+    nf: string,
+    expectedFiscalNf: string | null,
+    isAdmin: boolean,
+  ): ServicoEstado {
+    const current = this.get(dataIso);
+    if (current.estado !== 'NAO_INICIADO') {
+      throw new BadRequestException(
+        `Prévia de ${dataIso} só pode ser iniciada a partir de NAO_INICIADO. Estado atual: "${current.estado}".`,
+      );
+    }
+    if (!isAdmin && (expectedFiscalNf === null || nf !== expectedFiscalNf)) {
+      throw new ForbiddenException(
+        `Apenas o Fiscal escalado do dia ou admin podem iniciar a Prévia do Mapa Força.`,
+      );
+    }
+    const updated: ServicoEstado = {
+      ...current,
+      estado: 'PREVIA_INICIADA',
+      previaIniciadaEm: new Date().toISOString(),
+      previaIniciadaPorNf: nf,
+    };
+    this.byData.set(dataIso, updated);
+    return updated;
+  }
+
+  /**
+   * S0.x/rename-mapa-forca — Cancelamento da Prévia. Volta o estado para
+   * NAO_INICIADO. Permitido apenas para quem iniciou a Prévia ou admin.
+   */
+  cancelarPrevia(dataIso: string, nf: string, isAdmin: boolean): ServicoEstado {
+    const current = this.get(dataIso);
+    if (current.estado !== 'PREVIA_INICIADA') {
+      throw new BadRequestException(
+        `Cancelar Prévia só é possível a partir de PREVIA_INICIADA. Estado atual: "${current.estado}".`,
+      );
+    }
+    if (!isAdmin && current.previaIniciadaPorNf !== nf) {
+      throw new ForbiddenException(
+        `Apenas quem iniciou a Prévia ou admin podem cancelá-la.`,
+      );
+    }
+    const updated: ServicoEstado = {
+      data: current.data,
+      estado: 'NAO_INICIADO',
+    };
+    this.byData.set(dataIso, updated);
+    return updated;
   }
 
   iniciar(dataIso: string, nf: string): ServicoEstado {
     const current = this.get(dataIso);
-    if (current.estado !== 'NAO_INICIADO') {
-      throw new BadRequestException(`Serviço de ${dataIso} já está em estado "${current.estado}".`);
+    if (current.estado !== 'PREVIA_INICIADA') {
+      throw new BadRequestException(
+        `Iniciar Serviço exige Prévia iniciada antes. Estado atual: "${current.estado}". ` +
+          `Clique em "Iniciar Prévia do Mapa Força" primeiro.`,
+      );
     }
     const updated: ServicoEstado = {
       ...current,
@@ -46,9 +116,22 @@ export class ServicoService {
     return updated;
   }
 
+  /**
+   * Indica se o usuário identificado pode editar os ajustes pré-turno
+   * (`PUT /mapa-forca/:data/ajustes`). Edição requer:
+   *   - Estado PREVIA_INICIADA
+   *   - User é admin OU é quem iniciou a Prévia (`previaIniciadaPorNf`)
+   */
+  podeEditarAjustes(dataIso: string, nf: string, isAdmin: boolean): boolean {
+    const estado = this.get(dataIso);
+    if (estado.estado !== 'PREVIA_INICIADA') return false;
+    if (isAdmin) return true;
+    return estado.previaIniciadaPorNf === nf;
+  }
+
   marcarEquipeConferida(dataIso: string): ServicoEstado {
     const current = this.get(dataIso);
-    if (current.estado === 'NAO_INICIADO') {
+    if (current.estado === 'NAO_INICIADO' || current.estado === 'PREVIA_INICIADA') {
       throw new BadRequestException(
         `Serviço de ${dataIso} ainda não foi iniciado — não pode marcar equipe conferida.`,
       );
@@ -68,7 +151,7 @@ export class ServicoService {
 
   marcarViaturaConferida(dataIso: string): ServicoEstado {
     const current = this.get(dataIso);
-    if (current.estado === 'NAO_INICIADO') {
+    if (current.estado === 'NAO_INICIADO' || current.estado === 'PREVIA_INICIADA') {
       throw new BadRequestException(
         `Serviço de ${dataIso} ainda não foi iniciado — não pode marcar viaturas conferidas.`,
       );
@@ -119,7 +202,7 @@ export class ServicoService {
    */
   encerrar(dataIso: string, nf: string, force = false): ServicoEstado {
     const current = this.get(dataIso);
-    if (current.estado === 'NAO_INICIADO') {
+    if (current.estado === 'NAO_INICIADO' || current.estado === 'PREVIA_INICIADA') {
       throw new BadRequestException(
         `Serviço de ${dataIso} ainda não foi iniciado — não pode encerrar.`,
       );
@@ -149,7 +232,8 @@ export class ServicoService {
     input: AddAlteracaoDiversaInput,
     registradoPorNf: string,
   ): AlteracaoDiversa {
-    if (this.get(dataIso).estado === 'NAO_INICIADO') {
+    const estado = this.get(dataIso).estado;
+    if (estado === 'NAO_INICIADO' || estado === 'PREVIA_INICIADA') {
       throw new BadRequestException(
         `Não é possível registrar alteração diversa antes de iniciar o serviço de ${dataIso}.`,
       );

@@ -62,14 +62,14 @@ describe('ConferenciaEquipeService', () => {
   });
 
   it('promove Servico para EQUIPE_CONFERIDA quando todas != pendente', () => {
-    servico.iniciar(dataIso, fiscalNf);
+    servico.iniciarPrevia(dataIso, fiscalNf, fiscalNf, true); servico.iniciar(dataIso, fiscalNf);
     expect(servico.get(dataIso).estado).toBe('INICIADO');
     svc.bulkUpdate(dataIso, { entries: [e1, e2] }, chefeEquipeNf);
     expect(servico.get(dataIso).estado).toBe('EQUIPE_CONFERIDA');
   });
 
   it('NÃO promove se ainda houver pendentes', () => {
-    servico.iniciar(dataIso, fiscalNf);
+    servico.iniciarPrevia(dataIso, fiscalNf, fiscalNf, true); servico.iniciar(dataIso, fiscalNf);
     svc.bulkUpdate(dataIso, { entries: [e1, e3] }, chefeEquipeNf);
     expect(servico.get(dataIso).estado).toBe('INICIADO');
   });
