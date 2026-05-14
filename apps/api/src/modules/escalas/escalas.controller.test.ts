@@ -28,33 +28,66 @@ describe('EscalasController.confirm (homologação fix)', () => {
       origemArquivo: '05 MAIO DE 2026.xlsx',
       importadoEm: '2026-05-08T00:00:00.000Z',
       diaEquipe: { '2026-05-01': 'C' },
-      composicao: [
-        {
-          equipe: 'C',
-          viatura: 'ABTS_01',
-          funcao: 'Ch',
-          militar: { raw: '2º SGT BARCELLOS', postoAbreviado: '2ºSGT', nomeGuerra: 'BARCELLOS' },
-        },
-      ],
-      mergulho: {
-        equipes: {
-          A: {
-            letra: 'A',
-            chefe: { raw: '2º SGT ALEXANDRE', postoAbreviado: '2ºSGT', nomeGuerra: 'ALEXANDRE' },
-            motorista: null,
-            mergulhadores: [],
+      composicaoPorQuinzena: {
+        q1: [
+          {
+            equipe: 'C',
+            viatura: 'ABTS_01',
+            funcao: 'Ch',
+            militar: { raw: '2º SGT BARCELLOS', postoAbreviado: '2ºSGT', nomeGuerra: 'BARCELLOS' },
           },
+        ],
+        q2: [
+          {
+            equipe: 'C',
+            viatura: 'ABTS_01',
+            funcao: 'Ch',
+            militar: { raw: '2º SGT BARCELLOS', postoAbreviado: '2ºSGT', nomeGuerra: 'BARCELLOS' },
+          },
+        ],
+        ultimoDiaQ1: 14,
+      },
+      mergulho: {
+        equipesPorQuinzena: {
+          q1: {
+            A: {
+              letra: 'A',
+              chefe: { raw: '2º SGT ALEXANDRE', postoAbreviado: '2ºSGT', nomeGuerra: 'ALEXANDRE' },
+              motorista: null,
+              mergulhadores: [],
+            },
+          },
+          q2: {
+            A: {
+              letra: 'A',
+              chefe: { raw: '2º SGT ALEXANDRE', postoAbreviado: '2ºSGT', nomeGuerra: 'ALEXANDRE' },
+              motorista: null,
+              mergulhadores: [],
+            },
+          },
+          ultimoDiaQ1: 14,
         },
         porDia: { '2026-05-01': { mergulho01: 'A' } },
       },
       salvamar: {
-        equipes: {
-          E: {
-            letra: 'E',
-            supervisores: [
-              { raw: '3º SGT DAN', postoAbreviado: '3ºSGT', nomeGuerra: 'DAN' },
-            ],
+        equipesPorQuinzena: {
+          q1: {
+            E: {
+              letra: 'E',
+              supervisores: [
+                { raw: '3º SGT DAN', postoAbreviado: '3ºSGT', nomeGuerra: 'DAN' },
+              ],
+            },
           },
+          q2: {
+            E: {
+              letra: 'E',
+              supervisores: [
+                { raw: '3º SGT DAN', postoAbreviado: '3ºSGT', nomeGuerra: 'DAN' },
+              ],
+            },
+          },
+          ultimoDiaQ1: 14,
         },
         porDia: { '2026-05-01': 'E' },
       },
@@ -68,10 +101,11 @@ describe('EscalasController.confirm (homologação fix)', () => {
     const got = service.get(2026, 5);
     expect(got).toBeDefined();
     expect(got!.mergulho).toBeDefined();
-    expect(got!.mergulho!.equipes.A?.chefe?.nomeGuerra).toBe('ALEXANDRE');
+    expect(got!.mergulho!.equipesPorQuinzena.q1.A?.chefe?.nomeGuerra).toBe('ALEXANDRE');
+    expect(got!.mergulho!.equipesPorQuinzena.q2.A?.chefe?.nomeGuerra).toBe('ALEXANDRE');
     expect(got!.mergulho!.porDia['2026-05-01']?.mergulho01).toBe('A');
     expect(got!.salvamar).toBeDefined();
-    expect(got!.salvamar!.equipes.E?.supervisores[0]?.nomeGuerra).toBe('DAN');
+    expect(got!.salvamar!.equipesPorQuinzena.q1.E?.supervisores[0]?.nomeGuerra).toBe('DAN');
     expect(got!.salvamar!.porDia['2026-05-01']).toBe('E');
   });
 

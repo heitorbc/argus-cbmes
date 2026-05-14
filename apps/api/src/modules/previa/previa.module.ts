@@ -8,6 +8,7 @@ import { EscalasEspeciaisModule } from '../escalas-especiais/escalas-especiais.m
 import { FeriasModule } from '../ferias/ferias.module';
 import { FiscaisModule } from '../fiscais/fiscais.module';
 import { IdeoModule } from '../ideo/ideo.module';
+import { MapaForcaModule } from '../mapa-forca/mapa-forca.module';
 import { NotasServicoModule } from '../notas-servico/notas-servico.module';
 import { ServicoModule } from '../servico/servico.module';
 import { TrocasAutorizadasModule } from '../trocas-autorizadas/trocas-autorizadas.module';
@@ -16,9 +17,9 @@ import { AjustesPreviaService } from './ajustes-previa.service';
 import { PreviaController } from './previa.controller';
 import { PreviaService } from './previa.service';
 
-// S6g (2026-05-10) — `MapaForcaModule` e `RecursosModule` removidos dos imports:
-// PreviaService não consome mais militares do MF nem categorias de Recurso
-// (status de viatura vem indireto via ViaturasModule, que importa MapaForcaModule).
+// MapaForcaModule reincorporado para expor `composicaoAtualMf` no response —
+// snapshot do turno corrente (col E-J), exibido lado-a-lado com a tripulação
+// do próximo turno (XLSX). Militares da tripulação continuam vindo SÓ do XLSX.
 @Module({
   imports: [
     AtestadosModule,
@@ -30,6 +31,7 @@ import { PreviaService } from './previa.service';
     FeriasModule,
     FiscaisModule,
     IdeoModule,
+    MapaForcaModule,
     NotasServicoModule,
     ServicoModule,
     TrocasAutorizadasModule,

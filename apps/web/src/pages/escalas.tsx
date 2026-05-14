@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   LETRA_EQUIPE_LABEL,
   LETRA_EQUIPE_ROTATIVA,
+  type ComposicaoEntry,
   type EscalaDiff,
   type EscalaMensal,
   type LetraEquipe,
@@ -208,92 +209,13 @@ export function EscalasPage() {
         )}
 
         {preview && (
-          <div className="mt-4 rounded border-2 border-cbmes-blue bg-white p-4">
-            <h2 className="text-base font-semibold text-cbmes-blue">
-              Preview: {MES_LABEL[preview.mes]} / {preview.ano}
-            </h2>
-            <p className="mt-1 text-xs text-slate-600">
-              Origem: <span className="font-mono">{preview.origemArquivo}</span> ·{' '}
-              {Object.keys(preview.diaEquipe).length} dias mapeados · {preview.composicao.length}{' '}
-              posições
-            </p>
-
-            {preview.avisos.length > 0 && (
-              <details className="mt-3 rounded bg-amber-50 p-3 text-xs text-amber-900">
-                <summary className="cursor-pointer font-semibold">
-                  ⚠️ {preview.avisos.length} aviso(s) durante o parse
-                </summary>
-                <ul className="mt-2 list-inside list-disc space-y-1">
-                  {preview.avisos.map((a, i) => (
-                    <li key={i}>{a}</li>
-                  ))}
-                </ul>
-              </details>
-            )}
-
-            {diff && (diff.diasAlterados.length > 0 || diff.composicaoAlterada.length > 0) && (
-              <div className="mt-3 rounded border border-amber-300 bg-amber-50 p-3 text-xs">
-                <p className="font-semibold text-amber-900">
-                  Reupload — diferenças em relação à escala vigente
-                </p>
-                {diff.diasAlterados.length > 0 && (
-                  <div className="mt-2">
-                    <p className="font-medium">Dias com mudança de equipe:</p>
-                    <ul className="mt-1 list-inside list-disc">
-                      {diff.diasAlterados.map((d) => (
-                        <li key={d.data}>
-                          {d.data}: {d.equipeAntes ?? '∅'} →{' '}
-                          <strong>{d.equipeDepois ?? '∅'}</strong>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {diff.composicaoAlterada.length > 0 && (
-                  <div className="mt-2">
-                    <p className="font-medium">Composição alterada:</p>
-                    <ul className="mt-1 list-inside list-disc">
-                      {diff.composicaoAlterada.slice(0, 20).map((c, i) => (
-                        <li key={i}>
-                          {c.equipe}/{c.viatura}/{c.funcao}: {c.antes ?? '∅'} →{' '}
-                          <strong>{c.depois ?? '∅'}</strong>
-                        </li>
-                      ))}
-                      {diff.composicaoAlterada.length > 20 && (
-                        <li className="italic">+ {diff.composicaoAlterada.length - 20} outras</li>
-                      )}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <CalendarioMensal diaEquipe={preview.diaEquipe} />
-
-            <ComposicaoTable composicao={preview.composicao} />
-
-            {preview.mergulho && <MergulhoSection mergulho={preview.mergulho} />}
-            {preview.salvamar && <SalvamarSection salvamar={preview.salvamar} />}
-
-            <div className="mt-4 flex gap-2">
-              <button
-                type="button"
-                onClick={handleConfirm}
-                disabled={confirming}
-                className="flex-1 rounded-button bg-cbmes-red py-2 text-base font-semibold text-white disabled:opacity-60"
-              >
-                {confirming ? 'Salvando…' : 'Confirmar e salvar'}
-              </button>
-              <button
-                type="button"
-                onClick={handleCancel}
-                disabled={confirming}
-                className="flex-1 rounded-button border border-slate-300 bg-white py-2 text-base text-slate-700"
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
+          <PreviewPanel
+            preview={preview}
+            diff={diff}
+            confirming={confirming}
+            onConfirm={handleConfirm}
+            onCancel={handleCancel}
+          />
         )}
 
         <h2 className="mt-6 text-base font-semibold text-slate-700">Escalas vigentes</h2>
@@ -366,6 +288,7 @@ function DetalheEscala({
   const [editing, setEditing] = useState(false);
   const [savingDay, setSavingDay] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [quinzenaAtiva, setQuinzenaAtiva] = useState<1 | 2>(1);
 
   const updateDay = async (data: string, equipe: LetraEquipeRotativa | null) => {
     setSavingDay(data);
@@ -392,7 +315,7 @@ function DetalheEscala({
         raw.trim().length === 0
           ? null
           : { raw: raw.trim(), postoAbreviado: '', nomeGuerra: raw.trim().toUpperCase() };
-      const r = await api.escalasUpsertComposicao(escala.ano, escala.mes, {
+      const r = await api.escalasUpsertComposicao(escala.ano, escala.mes, quinzenaAtiva, {
         equipe,
         viatura,
         funcao,
@@ -404,6 +327,7 @@ function DetalheEscala({
     }
   };
 
+  const bucket = quinzenaAtiva === 1 ? 'q1' : 'q2';
   return (
     <div>
       {canEdit && (
@@ -438,30 +362,228 @@ function DetalheEscala({
         savingDay={savingDay}
         onUpdateDay={updateDay}
       />
+      <QuinzenaTabs
+        ativa={quinzenaAtiva}
+        onChange={setQuinzenaAtiva}
+        ultimoDiaQ1={escala.composicaoPorQuinzena.ultimoDiaQ1}
+        ultimoDiaMes={ultimoDiaDoMes(escala.ano, escala.mes)}
+      />
       <ComposicaoTable
-        composicao={escala.composicao}
+        composicao={escala.composicaoPorQuinzena[bucket]}
         editing={editing}
         onUpsert={upsertComposicao}
       />
-      {escala.mergulho && <MergulhoSection mergulho={escala.mergulho} />}
-      {escala.salvamar && <SalvamarSection salvamar={escala.salvamar} />}
+      {escala.mergulho && (
+        <MergulhoSection mergulho={escala.mergulho} ano={escala.ano} mes={escala.mes} />
+      )}
+      {escala.salvamar && (
+        <SalvamarSection salvamar={escala.salvamar} ano={escala.ano} mes={escala.mes} />
+      )}
+    </div>
+  );
+}
+
+function ultimoDiaDoMes(ano: number, mes: number): number {
+  return new Date(ano, mes, 0).getDate();
+}
+
+function QuinzenaTabs({
+  ativa,
+  onChange,
+  ultimoDiaQ1,
+  ultimoDiaMes,
+}: {
+  ativa: 1 | 2;
+  onChange: (q: 1 | 2) => void;
+  ultimoDiaQ1: number;
+  ultimoDiaMes: number;
+}) {
+  const inicioQ2 = ultimoDiaQ1 + 1;
+  const baseBtn =
+    'flex-1 min-h-[44px] rounded-button text-xs font-semibold transition-colors';
+  return (
+    <div className="mt-3 flex gap-1 rounded-button bg-slate-100 p-1">
+      <button
+        type="button"
+        onClick={() => onChange(1)}
+        className={`${baseBtn} ${
+          ativa === 1 ? 'bg-cbmes-blue text-white' : 'text-cbmes-blue hover:bg-cbmes-blue/10'
+        }`}
+      >
+        1ª quinzena · dias 1–{ultimoDiaQ1}
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange(2)}
+        className={`${baseBtn} ${
+          ativa === 2 ? 'bg-cbmes-blue text-white' : 'text-cbmes-blue hover:bg-cbmes-blue/10'
+        }`}
+      >
+        2ª quinzena · dias {inicioQ2}–{ultimoDiaMes}
+      </button>
+    </div>
+  );
+}
+
+function PreviewPanel({
+  preview,
+  diff,
+  confirming,
+  onConfirm,
+  onCancel,
+}: {
+  preview: EscalaMensal;
+  diff: EscalaDiff | null;
+  confirming: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const [quinzenaAtiva, setQuinzenaAtiva] = useState<1 | 2>(1);
+  const bucket = quinzenaAtiva === 1 ? 'q1' : 'q2';
+  const totalPosicoes =
+    preview.composicaoPorQuinzena.q1.length + preview.composicaoPorQuinzena.q2.length;
+  const diffQ1 = diff?.composicaoAlteradaPorQuinzena.q1 ?? [];
+  const diffQ2 = diff?.composicaoAlteradaPorQuinzena.q2 ?? [];
+  const hasDiff = diff !== null && (diff.diasAlterados.length > 0 || diffQ1.length > 0 || diffQ2.length > 0);
+
+  return (
+    <div className="mt-4 rounded border-2 border-cbmes-blue bg-white p-4">
+      <h2 className="text-base font-semibold text-cbmes-blue">
+        Preview: {MES_LABEL[preview.mes]} / {preview.ano}
+      </h2>
+      <p className="mt-1 text-xs text-slate-600">
+        Origem: <span className="font-mono">{preview.origemArquivo}</span> ·{' '}
+        {Object.keys(preview.diaEquipe).length} dias mapeados · {totalPosicoes} posições (
+        {preview.composicaoPorQuinzena.q1.length} na 1ª, {preview.composicaoPorQuinzena.q2.length} na 2ª)
+      </p>
+
+      {preview.avisos.length > 0 && (
+        <details className="mt-3 rounded bg-amber-50 p-3 text-xs text-amber-900">
+          <summary className="cursor-pointer font-semibold">
+            ⚠️ {preview.avisos.length} aviso(s) durante o parse
+          </summary>
+          <ul className="mt-2 list-inside list-disc space-y-1">
+            {preview.avisos.map((a, i) => (
+              <li key={i}>{a}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {hasDiff && (
+        <div className="mt-3 rounded border border-amber-300 bg-amber-50 p-3 text-xs">
+          <p className="font-semibold text-amber-900">
+            Reupload — diferenças em relação à escala vigente
+          </p>
+          {diff!.diasAlterados.length > 0 && (
+            <div className="mt-2">
+              <p className="font-medium">Dias com mudança de equipe:</p>
+              <ul className="mt-1 list-inside list-disc">
+                {diff!.diasAlterados.map((d) => (
+                  <li key={d.data}>
+                    {d.data}: {d.equipeAntes ?? '∅'} →{' '}
+                    <strong>{d.equipeDepois ?? '∅'}</strong>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <DiffComposicaoBlock titulo="Composição 1ª quinzena alterada" entries={diffQ1} />
+          <DiffComposicaoBlock titulo="Composição 2ª quinzena alterada" entries={diffQ2} />
+        </div>
+      )}
+
+      <CalendarioMensal diaEquipe={preview.diaEquipe} />
+
+      <QuinzenaTabs
+        ativa={quinzenaAtiva}
+        onChange={setQuinzenaAtiva}
+        ultimoDiaQ1={preview.composicaoPorQuinzena.ultimoDiaQ1}
+        ultimoDiaMes={ultimoDiaDoMes(preview.ano, preview.mes)}
+      />
+
+      <ComposicaoTable composicao={preview.composicaoPorQuinzena[bucket]} />
+
+      {preview.mergulho && (
+        <MergulhoSection mergulho={preview.mergulho} ano={preview.ano} mes={preview.mes} />
+      )}
+      {preview.salvamar && (
+        <SalvamarSection salvamar={preview.salvamar} ano={preview.ano} mes={preview.mes} />
+      )}
+
+      <div className="mt-4 flex gap-2">
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={confirming}
+          className="flex-1 rounded-button bg-cbmes-red py-2 text-base font-semibold text-white disabled:opacity-60"
+        >
+          {confirming ? 'Salvando…' : 'Confirmar e salvar'}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={confirming}
+          className="flex-1 rounded-button border border-slate-300 bg-white py-2 text-base text-slate-700"
+        >
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DiffComposicaoBlock({
+  titulo,
+  entries,
+}: {
+  titulo: string;
+  entries: EscalaDiff['composicaoAlteradaPorQuinzena']['q1'];
+}) {
+  if (entries.length === 0) return null;
+  return (
+    <div className="mt-2">
+      <p className="font-medium">{titulo}:</p>
+      <ul className="mt-1 list-inside list-disc">
+        {entries.slice(0, 20).map((c, i) => (
+          <li key={i}>
+            {c.equipe}/{c.viatura}/{c.funcao}: {c.antes ?? '∅'} →{' '}
+            <strong>{c.depois ?? '∅'}</strong>
+          </li>
+        ))}
+        {entries.length > 20 && (
+          <li className="italic">+ {entries.length - 20} outras</li>
+        )}
+      </ul>
     </div>
   );
 }
 
 function MergulhoSection({
   mergulho,
+  ano,
+  mes,
 }: {
   mergulho: NonNullable<EscalaMensal['mergulho']>;
+  ano: number;
+  mes: number;
 }) {
   const letras: Array<'A' | 'B' | 'C'> = ['A', 'B', 'C'];
   const datasComEscala = Object.keys(mergulho.porDia).sort();
+  const [quinzena, setQuinzena] = useState<1 | 2>(1);
+  const bucket = quinzena === 1 ? mergulho.equipesPorQuinzena.q1 : mergulho.equipesPorQuinzena.q2;
   return (
     <section className="mt-4 rounded border border-violet-200 bg-violet-50 p-3">
       <h3 className="text-sm font-semibold text-violet-900">🤿 Mergulho — cadastro das equipes</h3>
+      <QuinzenaTabs
+        ativa={quinzena}
+        onChange={setQuinzena}
+        ultimoDiaQ1={mergulho.equipesPorQuinzena.ultimoDiaQ1}
+        ultimoDiaMes={ultimoDiaDoMes(ano, mes)}
+      />
       <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-3">
         {letras.map((letra) => {
-          const eq = mergulho.equipes[letra];
+          const eq = bucket[letra];
           if (!eq) return null;
           return (
             <article key={letra} className="rounded border border-violet-200 bg-white p-2 text-xs">
@@ -599,17 +721,29 @@ function CalendarioRecurso({
 
 function SalvamarSection({
   salvamar,
+  ano,
+  mes,
 }: {
   salvamar: NonNullable<EscalaMensal['salvamar']>;
+  ano: number;
+  mes: number;
 }) {
   const letras: Array<'E' | 'F'> = ['E', 'F'];
   const datasComEscala = Object.keys(salvamar.porDia).sort();
+  const [quinzena, setQuinzena] = useState<1 | 2>(1);
+  const bucket = quinzena === 1 ? salvamar.equipesPorQuinzena.q1 : salvamar.equipesPorQuinzena.q2;
   return (
     <section className="mt-4 rounded border border-amber-200 bg-amber-50 p-3">
       <h3 className="text-sm font-semibold text-amber-900">🚒🤿 Salvamar — cadastro das equipes</h3>
+      <QuinzenaTabs
+        ativa={quinzena}
+        onChange={setQuinzena}
+        ultimoDiaQ1={salvamar.equipesPorQuinzena.ultimoDiaQ1}
+        ultimoDiaMes={ultimoDiaDoMes(ano, mes)}
+      />
       <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
         {letras.map((letra) => {
-          const eq = salvamar.equipes[letra];
+          const eq = bucket[letra];
           if (!eq) return null;
           return (
             <article key={letra} className="rounded border border-amber-200 bg-white p-2 text-xs">
@@ -717,12 +851,12 @@ function ComposicaoTable({
   editing = false,
   onUpsert,
 }: {
-  composicao: EscalaMensal['composicao'];
+  composicao: ComposicaoEntry[];
   editing?: boolean;
   onUpsert?: (equipe: LetraEquipe, viatura: string, funcao: string, raw: string) => void;
 }) {
   // Agrupa por equipe
-  const byEquipe = new Map<LetraEquipe, EscalaMensal['composicao']>();
+  const byEquipe = new Map<LetraEquipe, ComposicaoEntry[]>();
   for (const c of composicao) {
     if (!byEquipe.has(c.equipe)) byEquipe.set(c.equipe, []);
     byEquipe.get(c.equipe)!.push(c);

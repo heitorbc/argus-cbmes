@@ -87,9 +87,22 @@ export const equipeMergulhoSchema = z.object({
 });
 export type EquipeMergulho = z.infer<typeof equipeMergulhoSchema>;
 
+/**
+ * Cadastro de equipes de Mergulho segregado por quinzena. O Sargenteante
+ * monta uma matriz de cadastro independente para cada aba (1ª quinzena:
+ * dias 1 a 13/14; 2ª quinzena: 14/15 ao último dia do mês). `ultimoDiaQ1`
+ * é o último dia coberto pela 1ª aba.
+ */
+export const equipesMergulhoPorQuinzenaSchema = z.object({
+  q1: z.record(z.enum(LETRA_EQUIPE_MERGULHO), equipeMergulhoSchema),
+  q2: z.record(z.enum(LETRA_EQUIPE_MERGULHO), equipeMergulhoSchema),
+  ultimoDiaQ1: z.number().int().min(13).max(14),
+});
+export type EquipesMergulhoPorQuinzena = z.infer<typeof equipesMergulhoPorQuinzenaSchema>;
+
 export const escalaMergulhoMesSchema = z.object({
-  /** Cadastro fixo do mês (X16:AI20 da aba mensal). */
-  equipes: z.record(z.enum(LETRA_EQUIPE_MERGULHO), equipeMergulhoSchema),
+  /** Cadastro do mês, segregado por quinzena (X16:AI20 de cada aba). */
+  equipesPorQuinzena: equipesMergulhoPorQuinzenaSchema,
   /**
    * Para cada `YYYY-MM-DD`, qual equipe (A/B/C) está em MERGULHO 01 e MERGULHO
    * 02. Códigos do XLSX `A1`/`A2` representam dia 1/2 do plantão da equipe A
@@ -124,9 +137,20 @@ export const equipeSalvamarSchema = z.object({
 });
 export type EquipeSalvamar = z.infer<typeof equipeSalvamarSchema>;
 
+/**
+ * S0.4 — Cadastro de equipes de Salvamar segregado por quinzena. Mesma regra
+ * do Mergulho: cada aba do XLSX tem seu próprio cadastro.
+ */
+export const equipesSalvamarPorQuinzenaSchema = z.object({
+  q1: z.record(z.enum(LETRA_EQUIPE_SALVAMAR), equipeSalvamarSchema),
+  q2: z.record(z.enum(LETRA_EQUIPE_SALVAMAR), equipeSalvamarSchema),
+  ultimoDiaQ1: z.number().int().min(13).max(14),
+});
+export type EquipesSalvamarPorQuinzena = z.infer<typeof equipesSalvamarPorQuinzenaSchema>;
+
 export const escalaSalvamarMesSchema = z.object({
-  /** Cadastro fixo do mês (X23:AE25 da aba mensal). */
-  equipes: z.record(z.enum(LETRA_EQUIPE_SALVAMAR), equipeSalvamarSchema),
+  /** Cadastro do mês, segregado por quinzena (X23:AE25 de cada aba). */
+  equipesPorQuinzena: equipesSalvamarPorQuinzenaSchema,
   /**
    * Para cada `YYYY-MM-DD`, qual equipe (E/F) está de plantão em
    * SALVAMAR. Dia sem entrada significa sem SALVAMAR previsto.
@@ -134,6 +158,21 @@ export const escalaSalvamarMesSchema = z.object({
   porDia: z.record(z.string(), z.enum(LETRA_EQUIPE_SALVAMAR)),
 });
 export type EscalaSalvamarMes = z.infer<typeof escalaSalvamarMesSchema>;
+
+/**
+ * Composição segregada por quinzena. O XLSX da SOS tem uma aba por quinzena
+ * (1ª: dias 1 a 13/14; 2ª: 14/15 ao último dia do mês) e a composição de
+ * cada posição (equipe × viatura × função) pode mudar entre quinzenas
+ * (afastamentos, troca de função, escala especial). `ultimoDiaQ1` é o
+ * último dia coberto pela 1ª aba e define a fronteira para resolução
+ * dia→quinzena no service.
+ */
+export const composicaoPorQuinzenaSchema = z.object({
+  q1: z.array(composicaoEntrySchema),
+  q2: z.array(composicaoEntrySchema),
+  ultimoDiaQ1: z.number().int().min(13).max(14),
+});
+export type ComposicaoPorQuinzena = z.infer<typeof composicaoPorQuinzenaSchema>;
 
 export const escalaMensalSchema = z.object({
   /** 1-12 */
@@ -145,8 +184,8 @@ export const escalaMensalSchema = z.object({
   importadoPorNf: z.string().optional(),
   /** Mapa "YYYY-MM-DD" → letra da equipe rotativa (A/B/C/D) escalada nesse dia. */
   diaEquipe: z.record(z.string(), z.enum(LETRA_EQUIPE_ROTATIVA)),
-  /** Lista de posições na matriz (equipe × viatura × função). */
-  composicao: z.array(composicaoEntrySchema),
+  /** Lista de posições na matriz (equipe × viatura × função), segregada por quinzena. */
+  composicaoPorQuinzena: composicaoPorQuinzenaSchema,
   /**
    * Seção de Mergulho (cadastro fixo + schedule por dia). Opcional — XLSX
    * sem essa seção (ex.: testes legados, dia da mulher) deixa `undefined`.
@@ -166,6 +205,14 @@ export type EscalaMensal = z.infer<typeof escalaMensalSchema>;
  * Diff entre uma escala vigente e uma nova versão sendo importada.
  * Usado em reupload: dia/composição que mudou é apresentado para confirmação.
  */
+const composicaoDiffEntrySchema = z.object({
+  equipe: z.enum(LETRA_EQUIPE),
+  viatura: z.string(),
+  funcao: z.string(),
+  antes: z.string().nullable(),
+  depois: z.string().nullable(),
+});
+
 export const escalaDiffSchema = z.object({
   diasAlterados: z.array(
     z.object({
@@ -174,15 +221,10 @@ export const escalaDiffSchema = z.object({
       equipeDepois: z.enum(LETRA_EQUIPE_ROTATIVA).nullable(),
     }),
   ),
-  composicaoAlterada: z.array(
-    z.object({
-      equipe: z.enum(LETRA_EQUIPE),
-      viatura: z.string(),
-      funcao: z.string(),
-      antes: z.string().nullable(),
-      depois: z.string().nullable(),
-    }),
-  ),
+  composicaoAlteradaPorQuinzena: z.object({
+    q1: z.array(composicaoDiffEntrySchema),
+    q2: z.array(composicaoDiffEntrySchema),
+  }),
 });
 export type EscalaDiff = z.infer<typeof escalaDiffSchema>;
 

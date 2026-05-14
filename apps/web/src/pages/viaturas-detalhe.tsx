@@ -2,51 +2,49 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   STATUS_VIATURA_LABEL,
-  TIPOS_COMBUSTIVEL,
-  TIPO_COMBUSTIVEL_LABEL,
-  type TipoCombustivel,
+  type RecursoMapaForca,
   type UpdateViaturaInput,
   type ViaturaDetalhe,
 } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import { MilitarSelect } from '@/components/militar-select';
 import { STATUS_VIATURA_BADGE } from '@/lib/status-viatura-style';
 
 interface FormState {
-  funcaoOperacional: string;
   kmAtual: string;
   usaArla32: boolean;
   capacidadeTanqueArlaLitros: string;
-  tipoCombustivel: TipoCombustivel | '';
   capacidadeTanqueLitros: string;
   estadoTanquePercent: string;
   alturaMetros: string;
   larguraMetros: string;
-  militarResponsavelNf: string;
   observacoes: string;
 }
 
 function fromDetalhe(detalhe: ViaturaDetalhe): FormState {
   const i = detalhe.interno;
   return {
-    funcaoOperacional: i?.funcaoOperacional ?? '',
     kmAtual: i?.kmAtual !== undefined ? String(i.kmAtual) : '',
     usaArla32: i?.usaArla32 ?? false,
     capacidadeTanqueArlaLitros:
       i?.capacidadeTanqueArlaLitros !== undefined ? String(i.capacidadeTanqueArlaLitros) : '',
-    tipoCombustivel: i?.tipoCombustivel ?? '',
     capacidadeTanqueLitros:
       i?.capacidadeTanqueLitros !== undefined ? String(i.capacidadeTanqueLitros) : '',
     estadoTanquePercent:
       i?.estadoTanquePercent !== undefined ? String(i.estadoTanquePercent) : '',
     alturaMetros: i?.alturaMetros !== undefined ? String(i.alturaMetros) : '',
     larguraMetros: i?.larguraMetros !== undefined ? String(i.larguraMetros) : '',
-    militarResponsavelNf: i?.militarResponsavelNf ?? '',
     observacoes: i?.observacoes ?? '',
   };
 }
 
+/**
+ * Monta payload do PUT. NÃO inclui `funcaoOperacional` (vem do Mapa Força,
+ * read-only nesta tela), nem `tipoCombustivel` (já visível na seção QDV),
+ * nem `militarResponsavelNf` (responsável logístico já no cabeçalho via QDV).
+ * Os valores armazenados desses campos permanecem intocados — backend faz
+ * partial update (campos undefined não limpam o storage).
+ */
 function toPayload(form: FormState): UpdateViaturaInput {
   const num = (s: string): number | undefined => {
     const trimmed = s.trim();
@@ -55,16 +53,13 @@ function toPayload(form: FormState): UpdateViaturaInput {
     return Number.isFinite(n) ? n : undefined;
   };
   return {
-    funcaoOperacional: form.funcaoOperacional.trim() || undefined,
     kmAtual: num(form.kmAtual),
     usaArla32: form.usaArla32 || undefined,
     capacidadeTanqueArlaLitros: num(form.capacidadeTanqueArlaLitros),
-    tipoCombustivel: form.tipoCombustivel || undefined,
     capacidadeTanqueLitros: num(form.capacidadeTanqueLitros),
     estadoTanquePercent: num(form.estadoTanquePercent),
     alturaMetros: num(form.alturaMetros),
     larguraMetros: num(form.larguraMetros),
-    militarResponsavelNf: form.militarResponsavelNf.trim() || undefined,
     observacoes: form.observacoes.trim() || undefined,
   };
 }
@@ -82,6 +77,24 @@ export function ViaturasDetalhePage() {
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [historicoOpen, setHistoricoOpen] = useState(false);
+
+  // Recursos do Mapa Força — populam o select read-only "Recurso no Mapa Força".
+  // Falha silenciosa: select fica com placeholder "Sem dados do MF".
+  const [mfRecursos, setMfRecursos] = useState<RecursoMapaForca[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .mapaForcaRecursos()
+      .then((rs) => {
+        if (!cancelled) setMfRecursos(rs);
+      })
+      .catch(() => {
+        if (!cancelled) setMfRecursos([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const [reloadKey, setReloadKey] = useState(0);
   const reload = (): void => setReloadKey((k) => k + 1);
@@ -188,22 +201,30 @@ export function ViaturasDetalhePage() {
 
                 <div>
                   <label
-                    htmlFor="funcao"
+                    htmlFor="recurso-mf"
                     className="mb-1 block text-sm font-medium text-slate-700"
                   >
-                    Função operacional
+                    Recurso no Mapa Força
                   </label>
-                  <input
-                    id="funcao"
-                    type="text"
-                    disabled={!isAdmin}
-                    value={form.funcaoOperacional}
-                    onChange={(e) => setForm({ ...form, funcaoOperacional: e.target.value })}
-                    placeholder="ex.: RESGATE 01"
-                    className="w-full rounded border border-slate-300 px-3 py-2 text-base disabled:bg-slate-100"
-                  />
+                  <select
+                    id="recurso-mf"
+                    disabled
+                    value={
+                      mfRecursos.find((r) => r.vtrPrefixo === detalhe?.qdv.prefixo)?.recurso ?? ''
+                    }
+                    className="w-full rounded border border-slate-300 bg-slate-100 px-3 py-2 text-base"
+                  >
+                    <option value="">
+                      {mfRecursos.length === 0 ? 'Sem dados do MF' : '—'}
+                    </option>
+                    {mfRecursos.map((r) => (
+                      <option key={r.recurso} value={r.recurso}>
+                        {r.recurso}
+                      </option>
+                    ))}
+                  </select>
                   <p className="mt-0.5 text-[11px] text-slate-500">
-                    Liga o recurso (ex.: RESGATE 01, ABTS_01) à viatura física.
+                    (definido pelo Mapa Força — não editável)
                   </p>
                 </div>
 
@@ -246,27 +267,6 @@ export function ViaturasDetalhePage() {
                     Combustível e ARLA32
                   </legend>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <label className="block">
-                      <span className="text-sm font-medium text-slate-700">Combustível</span>
-                      <select
-                        disabled={!isAdmin}
-                        value={form.tipoCombustivel}
-                        onChange={(e) =>
-                          setForm({
-                            ...form,
-                            tipoCombustivel: e.target.value as TipoCombustivel | '',
-                          })
-                        }
-                        className="mt-1 w-full rounded border border-slate-300 px-3 py-2 disabled:bg-slate-100"
-                      >
-                        <option value="">—</option>
-                        {TIPOS_COMBUSTIVEL.map((t) => (
-                          <option key={t} value={t}>
-                            {TIPO_COMBUSTIVEL_LABEL[t]}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
                     <label className="block">
                       <span className="text-sm font-medium text-slate-700">
                         Capacidade combustível (litros)
@@ -350,18 +350,6 @@ export function ViaturasDetalhePage() {
                       />
                     </label>
                   </div>
-                </fieldset>
-
-                <fieldset className="rounded border border-slate-200 p-3">
-                  <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    Militar responsável
-                  </legend>
-                  <MilitarSelect
-                    disabled={!isAdmin}
-                    value={form.militarResponsavelNf || undefined}
-                    onChange={(nf) => setForm({ ...form, militarResponsavelNf: nf ?? '' })}
-                    placeholder="Digite NF ou nome (mín. 2 chars)"
-                  />
                 </fieldset>
 
                 <div>

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { viaturaSchema } from './viatura';
+import { viaturaSchema } from './viatura.js';
 
 /**
  * Item 3 — Viatura lida da planilha QDV (aba `1BBM_1CIA`).

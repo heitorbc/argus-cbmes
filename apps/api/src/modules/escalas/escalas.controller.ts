@@ -181,13 +181,15 @@ export class EscalasController {
   }
 
   /**
-   * F4 — Upsert/remove de uma posição da composição (equipe × viatura × função).
-   * Body: `{equipe, viatura, funcao, militar: MilitarRef | null}` (null = remove)
+   * F4 — Upsert/remove de uma posição da composição (equipe × viatura × função)
+   * em uma quinzena específica (1 ou 2).
+   * Body: `{quinzena: 1 | 2, equipe, viatura, funcao, militar: MilitarRef | null}` (null = remove)
    */
   @Roles('admin', 'sargenteante')
   @Put(':ano/:mes/composicao')
   upsertComposicao(@Param('ano') ano: string, @Param('mes') mes: string, @Body() body: unknown) {
     const schema = z.object({
+      quinzena: z.union([z.literal(1), z.literal(2)]),
       equipe: z.enum(['A', 'B', 'C', 'D', 'AQUATICAS', 'STAFF']),
       viatura: z.string(),
       funcao: z.string(),
@@ -206,8 +208,9 @@ export class EscalasController {
     }
     const a = Number.parseInt(ano, 10);
     const m = Number.parseInt(mes, 10);
+    const { quinzena, ...entry } = parsed.data;
     try {
-      return this.escalas.upsertComposicao(a, m, parsed.data);
+      return this.escalas.upsertComposicao(a, m, quinzena, entry);
     } catch (err) {
       throw new NotFoundException((err as Error).message);
     }

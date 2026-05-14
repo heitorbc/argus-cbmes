@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type {
+  ComposicaoEntry,
   EscalaDiff,
   EscalaMensal,
   LetraEquipe,
@@ -16,8 +17,40 @@ function key(k: EscalaKey): string {
 }
 
 /**
+ * Resolve a quinzena (1 ou 2) de um dia ISO usando a fronteira gravada na
+ * escala pelo parser. `ultimoDiaQ1` é 13 ou 14 conforme o nome da 1ª aba
+ * do XLSX original.
+ */
+export function quinzenaDoDia(diaIso: string, escala: EscalaMensal): 1 | 2 {
+  const dia = Number.parseInt(diaIso.slice(8, 10), 10);
+  return dia <= escala.composicaoPorQuinzena.ultimoDiaQ1 ? 1 : 2;
+}
+
+function diffComposicao(
+  antes: ComposicaoEntry[],
+  depois: ComposicaoEntry[],
+): EscalaDiff['composicaoAlteradaPorQuinzena']['q1'] {
+  const compKey = (e: { equipe: LetraEquipe; viatura: string; funcao: string }) =>
+    `${e.equipe}|${e.viatura}|${e.funcao}`;
+  const mapAntes = new Map(antes.map((e) => [compKey(e), e.militar.raw]));
+  const mapDepois = new Map(depois.map((e) => [compKey(e), e.militar.raw]));
+  const allKeys = new Set([...mapAntes.keys(), ...mapDepois.keys()]);
+  const out: EscalaDiff['composicaoAlteradaPorQuinzena']['q1'] = [];
+  for (const k of [...allKeys].sort()) {
+    const a = mapAntes.get(k) ?? null;
+    const b = mapDepois.get(k) ?? null;
+    if (a !== b) {
+      const [equipe, viatura, funcao] = k.split('|') as [LetraEquipe, string, string];
+      out.push({ equipe, viatura, funcao, antes: a, depois: b });
+    }
+  }
+  return out;
+}
+
+/**
  * Computa o diff entre duas escalas do mesmo mês/ano. Útil para reupload — antes de
- * sobrescrever uma escala vigente, mostra o que vai mudar.
+ * sobrescrever uma escala vigente, mostra o que vai mudar. Composição é comparada
+ * separadamente por quinzena.
  */
 export function computeDiff(antes: EscalaMensal, depois: EscalaMensal): EscalaDiff {
   const dias = new Set<string>([...Object.keys(antes.diaEquipe), ...Object.keys(depois.diaEquipe)]);
@@ -28,21 +61,13 @@ export function computeDiff(antes: EscalaMensal, depois: EscalaMensal): EscalaDi
     if (a !== b) diasAlterados.push({ data, equipeAntes: a, equipeDepois: b });
   }
 
-  const compKey = (e: { equipe: LetraEquipe; viatura: string; funcao: string }) =>
-    `${e.equipe}|${e.viatura}|${e.funcao}`;
-  const mapAntes = new Map(antes.composicao.map((e) => [compKey(e), e.militar.raw]));
-  const mapDepois = new Map(depois.composicao.map((e) => [compKey(e), e.militar.raw]));
-  const allKeys = new Set([...mapAntes.keys(), ...mapDepois.keys()]);
-  const composicaoAlterada: EscalaDiff['composicaoAlterada'] = [];
-  for (const k of [...allKeys].sort()) {
-    const a = mapAntes.get(k) ?? null;
-    const b = mapDepois.get(k) ?? null;
-    if (a !== b) {
-      const [equipe, viatura, funcao] = k.split('|') as [LetraEquipe, string, string];
-      composicaoAlterada.push({ equipe, viatura, funcao, antes: a, depois: b });
-    }
-  }
-  return { diasAlterados, composicaoAlterada };
+  return {
+    diasAlterados,
+    composicaoAlteradaPorQuinzena: {
+      q1: diffComposicao(antes.composicaoPorQuinzena.q1, depois.composicaoPorQuinzena.q1),
+      q2: diffComposicao(antes.composicaoPorQuinzena.q2, depois.composicaoPorQuinzena.q2),
+    },
+  };
 }
 
 /**
@@ -83,18 +108,22 @@ export class EscalasService {
 
   /**
    * Lista os escalados de uma equipe num dia específico (composição da equipe que
-   * está escalada nesse dia). Útil para Fiscais.getVigente e para a Prévia (S4).
+   * está escalada nesse dia). Resolve a quinzena pelo dia consultado — toda a
+   * tradução dia→quinzena fica encapsulada aqui, downstream (Prévia/Fiscais) não
+   * precisa conhecer o conceito de quinzena.
    */
   getEscaladosDoDia(
     ano: number,
     mes: number,
     diaIso: string,
-  ): { equipe: LetraEquipeRotativa | null; entries: EscalaMensal['composicao'] } {
+  ): { equipe: LetraEquipeRotativa | null; entries: ComposicaoEntry[] } {
     const escala = this.get(ano, mes);
     if (!escala) return { equipe: null, entries: [] };
     const equipe = escala.diaEquipe[diaIso] ?? null;
     if (!equipe) return { equipe: null, entries: [] };
-    const entries = escala.composicao.filter((c) => c.equipe === equipe);
+    const q = quinzenaDoDia(diaIso, escala);
+    const bucket = q === 1 ? escala.composicaoPorQuinzena.q1 : escala.composicaoPorQuinzena.q2;
+    const entries = bucket.filter((c) => c.equipe === equipe);
     return { equipe, entries };
   }
 
@@ -124,14 +153,16 @@ export class EscalasService {
   }
 
   /**
-   * F4 — Upsert/delete de uma posição da composição. Quando `militar=null`, remove.
-   * Quando preenchido, sobrescreve por chave (equipe, viatura, funcao).
+   * F4 — Upsert/delete de uma posição da composição em uma quinzena específica.
+   * Quando `militar=null`, remove. Quando preenchido, sobrescreve por chave
+   * (equipe, viatura, funcao). A outra quinzena não é afetada.
    */
   upsertComposicao(
     ano: number,
     mes: number,
+    quinzena: 1 | 2,
     entry:
-      | EscalaMensal['composicao'][number]
+      | ComposicaoEntry
       | { equipe: LetraEquipe; viatura: string; funcao: string; militar: null },
   ): EscalaMensal {
     const escala = this.get(ano, mes);
@@ -141,11 +172,20 @@ export class EscalasService {
     const matchKey = (c: { equipe: string; viatura: string; funcao: string }) =>
       `${c.equipe}|${c.viatura}|${c.funcao}`;
     const target = matchKey(entry);
-    const filtered = escala.composicao.filter((c) => matchKey(c) !== target);
+    const bucketKey = quinzena === 1 ? 'q1' : 'q2';
+    const filtered = escala.composicaoPorQuinzena[bucketKey].filter(
+      (c) => matchKey(c) !== target,
+    );
     if (entry.militar !== null) {
-      filtered.push(entry as EscalaMensal['composicao'][number]);
+      filtered.push(entry as ComposicaoEntry);
     }
-    const atualizada: EscalaMensal = { ...escala, composicao: filtered };
+    const atualizada: EscalaMensal = {
+      ...escala,
+      composicaoPorQuinzena: {
+        ...escala.composicaoPorQuinzena,
+        [bucketKey]: filtered,
+      },
+    };
     this.byMes.set(key(escala), atualizada);
     return atualizada;
   }

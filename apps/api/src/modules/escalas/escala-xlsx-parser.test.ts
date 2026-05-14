@@ -101,7 +101,7 @@ describe('parseEscalaXlsx (fixture: 05 MAIO 2026)', () => {
     const buffer = loadFixture('05 MAIO DE 2026.xlsx');
     const escala = await parseEscalaXlsx({ buffer, filename: '05 MAIO DE 2026.xlsx' });
 
-    const charlie = escala.composicao.filter((c) => c.equipe === 'C');
+    const charlie = escala.composicaoPorQuinzena.q1.filter((c) => c.equipe === 'C');
     expect(charlie.length).toBeGreaterThan(0);
 
     const chAbts = charlie.find((c) => /ABTS/i.test(c.viatura) && /^Ch$/i.test(c.funcao.trim()));
@@ -113,21 +113,23 @@ describe('parseEscalaXlsx (fixture: 05 MAIO 2026)', () => {
     const buffer = loadFixture('05 MAIO DE 2026.xlsx');
     const escala = await parseEscalaXlsx({ buffer, filename: '05 MAIO DE 2026.xlsx' });
 
-    const alfa = escala.composicao.filter((c) => c.equipe === 'A');
+    const alfa = escala.composicaoPorQuinzena.q1.filter((c) => c.equipe === 'A');
     const op1 = alfa.find((c) => /ABTS/i.test(c.viatura) && /Op\s*1/i.test(c.funcao));
     expect(op1).toBeDefined();
     expect(op1!.militar.nomeGuerra).toBe('FABRE');
   });
 
   // F3a (S5) — Bug fix: 3 sentinelas da GUARDA têm a mesma funcao "Sent." no XLSX, e
-  // o mergeComposicao colapsava por chave equipe|viatura|funcao. Solução: renumerar
+  // o parser colapsava por chave equipe|viatura|funcao. Solução: renumerar
   // como "Sent. 1", "Sent. 2", "Sent. 3" durante o parse.
   it('preserva 3 sentinelas distintos por equipe (Sent. 1/2/3) — F3a', async () => {
     const buffer = loadFixture('05 MAIO DE 2026.xlsx');
     const escala = await parseEscalaXlsx({ buffer, filename: '05 MAIO DE 2026.xlsx' });
 
     for (const equipe of ['A', 'B', 'C', 'D'] as const) {
-      const guarda = escala.composicao.filter((c) => c.equipe === equipe && c.viatura === 'GUARDA');
+      const guarda = escala.composicaoPorQuinzena.q1.filter(
+        (c) => c.equipe === equipe && c.viatura === 'GUARDA',
+      );
       expect(guarda.length, `${equipe} deveria ter 3 sentinelas`).toBe(3);
       const funcoes = new Set(guarda.map((g) => g.funcao));
       expect(funcoes.size, `${equipe} deveria ter 3 funções únicas`).toBe(3);
@@ -144,7 +146,7 @@ describe('parseEscalaXlsx (fixture: 04 ABRIL 2026)', () => {
     expect(escala.mes).toBe(4);
     expect(escala.ano).toBe(2026);
     expect(Object.keys(escala.diaEquipe).length).toBeGreaterThanOrEqual(20);
-    expect(escala.composicao.length).toBeGreaterThan(20);
+    expect(escala.composicaoPorQuinzena.q1.length).toBeGreaterThan(20);
   });
 });
 
@@ -155,6 +157,34 @@ describe('parseEscalaXlsx (fixture: 06 JUNHO 2026)', () => {
     expect(escala.mes).toBe(6);
     expect(escala.ano).toBe(2026);
     expect(Object.keys(escala.diaEquipe).length).toBeGreaterThanOrEqual(20);
+  });
+
+  // Regressão da separação por quinzena: junho/2026 tem composições diferentes
+  // entre 1ª e 2ª quinzena. Antes esses 11 casos emitiam
+  // "Composição diverge entre quinzenas… Mantendo 1ª quinzena." e a 2ª era
+  // perdida. Agora as duas quinzenas são preservadas. `ultimoDiaQ1` deve ser
+  // 13 ou 14 conforme o nome da aba 1 do XLSX original.
+  it('preserva quinzenas separadamente, sem avisos de divergência', async () => {
+    const buffer = loadFixture('06 JUNHO DE 2026.xlsx');
+    const escala = await parseEscalaXlsx({ buffer, filename: '06 JUNHO DE 2026.xlsx' });
+
+    const avisosDivergencia = escala.avisos.filter((a) => /diverge entre quinzenas/i.test(a));
+    expect(avisosDivergencia).toEqual([]);
+
+    expect([13, 14]).toContain(escala.composicaoPorQuinzena.ultimoDiaQ1);
+    expect(escala.composicaoPorQuinzena.q1.length).toBeGreaterThan(0);
+    expect(escala.composicaoPorQuinzena.q2.length).toBeGreaterThan(0);
+
+    // Pelo menos 11 posições têm militar diferente entre as duas quinzenas
+    const key = (c: { equipe: string; viatura: string; funcao: string }) =>
+      `${c.equipe}|${c.viatura}|${c.funcao}`;
+    const q1Map = new Map(escala.composicaoPorQuinzena.q1.map((c) => [key(c), c.militar.raw]));
+    let divergencias = 0;
+    for (const c of escala.composicaoPorQuinzena.q2) {
+      const raw1 = q1Map.get(key(c));
+      if (raw1 !== undefined && raw1 !== c.militar.raw) divergencias += 1;
+    }
+    expect(divergencias).toBeGreaterThanOrEqual(11);
   });
 });
 
@@ -236,7 +266,8 @@ describe('parseEscalaXlsx — Mergulho (S0.3, fixture 01 JANEIRO 2026)', () => {
       filename: '01 JANEIRO DE 2026.xlsx',
     });
     expect(escala.mergulho).toBeDefined();
-    const equipes = escala.mergulho!.equipes;
+    // O cadastro do Mergulho é segregado por quinzena — verifica a 1ª.
+    const equipes = escala.mergulho!.equipesPorQuinzena.q1;
     expect(Object.keys(equipes).sort()).toEqual(['A', 'B', 'C']);
 
     // Equipe A: 2º SGT ALEXANDRE (chefe), CB BEATRIZ (mot), CB VINICIUS + CB JACQUES (mergulhadores)
@@ -251,6 +282,10 @@ describe('parseEscalaXlsx — Mergulho (S0.3, fixture 01 JANEIRO 2026)', () => {
     // Equipe C: SGT RAFAEL (chefe), CB ALVARENGA (mot), SD PELICIONI + CB FABRE
     expect(equipes.C!.chefe?.nomeGuerra).toContain('RAFAEL');
     expect(equipes.C!.motorista?.nomeGuerra).toContain('ALVARENGA');
+
+    // 2ª quinzena também populada (ultimoDiaQ1 ∈ {13, 14}).
+    expect([13, 14]).toContain(escala.mergulho!.equipesPorQuinzena.ultimoDiaQ1);
+    expect(Object.keys(escala.mergulho!.equipesPorQuinzena.q2).length).toBeGreaterThan(0);
   });
 
   it('preenche porDia para os dias do mês com schedule de mergulho', async () => {
@@ -292,16 +327,19 @@ describe('parseEscalaXlsx — Salvamar (S0.4, fixture 01 JANEIRO 2026)', () => {
       filename: '01 JANEIRO DE 2026.xlsx',
     });
     expect(escala.salvamar).toBeDefined();
-    const equipes = escala.salvamar!.equipes;
+    // Cadastro do Salvamar é segregado por quinzena — verifica a 1ª.
+    const equipes = escala.salvamar!.equipesPorQuinzena.q1;
     expect(Object.keys(equipes).sort()).toEqual(['E', 'F']);
 
     // Equipe E: 3º SGT DAN (sup1, sup2 vazio na fixture)
     expect(equipes.E!.supervisores.length).toBeGreaterThanOrEqual(1);
     expect(equipes.E!.supervisores[0]!.nomeGuerra).toContain('DAN');
 
-    // Equipe F: ao menos 1 supervisor cadastrado (CHAGAS na 1ª quinzena
-    // / PAGANOTTO na 2ª — mergeSalvamar mantém a 1ª).
+    // Equipe F na 1ª quinzena: CHAGAS (na 2ª é PAGANOTTO — agora preservados
+    // separadamente em vez de descartados).
     expect(equipes.F!.supervisores.length).toBeGreaterThanOrEqual(1);
+    expect([13, 14]).toContain(escala.salvamar!.equipesPorQuinzena.ultimoDiaQ1);
+    expect(Object.keys(escala.salvamar!.equipesPorQuinzena.q2).length).toBeGreaterThan(0);
   });
 
   it('preenche porDia para dias do mês com letra E ou F', async () => {
@@ -322,6 +360,30 @@ describe('parseEscalaXlsx — Salvamar (S0.4, fixture 01 JANEIRO 2026)', () => {
     for (const data of datas) {
       expect(['E', 'F']).toContain(porDia[data]);
     }
+  });
+
+  // Regressão: 1ª quinzena tem CHAGAS na equipe F, 2ª tem PAGANOTTO. Antes o
+  // parser fazia merge silencioso e descartava PAGANOTTO. Agora as duas
+  // composições convivem em equipesPorQuinzena.q1 e .q2.
+  it('preserva cadastro divergente da equipe F entre quinzenas', async () => {
+    let buffer: Buffer;
+    try {
+      buffer = loadFixture('01 JANEIRO DE 2026.xlsx');
+    } catch {
+      return;
+    }
+    const escala = await parseEscalaXlsx({
+      buffer,
+      filename: '01 JANEIRO DE 2026.xlsx',
+    });
+    const fQ1 = escala.salvamar!.equipesPorQuinzena.q1.F;
+    const fQ2 = escala.salvamar!.equipesPorQuinzena.q2.F;
+    expect(fQ1).toBeDefined();
+    expect(fQ2).toBeDefined();
+    const nomesQ1 = fQ1!.supervisores.map((s) => s.nomeGuerra.toUpperCase());
+    const nomesQ2 = fQ2!.supervisores.map((s) => s.nomeGuerra.toUpperCase());
+    expect(nomesQ1.some((n) => n.includes('CHAGAS'))).toBe(true);
+    expect(nomesQ2.some((n) => n.includes('PAGANOTTO'))).toBe(true);
   });
 });
 
@@ -364,7 +426,7 @@ describe('parseEscalaXlsx — ordem canônica de recursos (Fix-3 homologação)'
     // Pega a primeira equipe que tem ATB e PLATAFORMA
     const equipes = ['A', 'B', 'C', 'D'] as const;
     for (const eq of equipes) {
-      const viaturasDaEq = escala.composicao
+      const viaturasDaEq = escala.composicaoPorQuinzena.q1
         .filter((e) => e.equipe === eq)
         .map((e) => e.viatura);
       const idxAtb = viaturasDaEq.indexOf('ATB');
@@ -390,7 +452,7 @@ describe('parseEscalaXlsx — fixture 01 JANEIRO 2026 com normalização (S6n-fi
       buffer,
       filename: '01 JANEIRO DE 2026.xlsx',
     });
-    const viaturas = new Set(escala.composicao.map((e) => e.viatura));
+    const viaturas = new Set(escala.composicaoPorQuinzena.q1.map((e) => e.viatura));
 
     expect(viaturas.has('ABTS_01')).toBe(true);
     expect(viaturas.has('RESGATE 01')).toBe(true);
@@ -416,7 +478,7 @@ describe('parseEscalaXlsx — fixture 01 JANEIRO 2026 com normalização (S6n-fi
       buffer,
       filename: '01 JANEIRO DE 2026.xlsx',
     });
-    const atbEntries = escala.composicao.filter((e) => e.viatura === 'ATB');
+    const atbEntries = escala.composicaoPorQuinzena.q1.filter((e) => e.viatura === 'ATB');
     // Cada equipe deve ter no máximo 1 entry para ATB (mesmo com 2 rows no XLSX).
     const byEquipe = new Map<string, number>();
     for (const e of atbEntries) byEquipe.set(e.equipe, (byEquipe.get(e.equipe) ?? 0) + 1);
