@@ -6,7 +6,7 @@ import {
   STATUS_CONFERENCIA_LABEL,
   type ComposicaoMfMilitar,
   type ConferenciaEquipeEntry,
-  type PreviaDoDia,
+  type MapaForcaDoDia,
   type StatusConferencia,
   type StatusConferenciaEquipe,
 } from '@argus/shared-types';
@@ -45,7 +45,7 @@ export function ConferenciaEquipePage() {
   const { data } = useParams<{ data: string }>();
   const navigate = useNavigate();
 
-  const [previa, setPrevia] = useState<PreviaDoDia | null>(null);
+  const [previa, setPrevia] = useState<MapaForcaDoDia | null>(null);
   const [marcacoes, setMarcacoes] = useState<MarcacaoForm[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -387,7 +387,7 @@ function EquipeModal({
 }
 
 function buildMarcacoesFromPrevia(
-  previa: PreviaDoDia,
+  previa: MapaForcaDoDia,
   existing: ConferenciaEquipeEntry[],
 ): MarcacaoForm[] {
   const existingByKey = new Map(

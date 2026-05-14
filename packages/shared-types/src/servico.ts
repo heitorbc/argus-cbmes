@@ -2,10 +2,12 @@ import { z } from 'zod';
 import { STATUS_VIATURA } from './viatura.js';
 
 /**
- * Estados do Serviço do dia (S6b).
+ * Estados do Serviço do dia (S6b + S0.x/rename-mapa-forca).
  *
  * Transições válidas:
- *   NAO_INICIADO  → INICIADO  (Fiscal aperta "Iniciar Serviço")
+ *   NAO_INICIADO  → PREVIA_INICIADA  (Fiscal escalado/admin abre a edição da Prévia)
+ *   PREVIA_INICIADA → NAO_INICIADO  (cancelamento pelo iniciador ou admin)
+ *   PREVIA_INICIADA → INICIADO  (Fiscal aperta "Iniciar Serviço" após ajustes)
  *   INICIADO      → EQUIPE_CONFERIDA  (todas presenças marcadas)
  *   EQUIPE_CONFERIDA → VIATURA_CONFERIDA  (todas viaturas conferidas)
  *   VIATURA_CONFERIDA → PREENCHENDO_MF  (Fiscal abre escrita do MF — S9)
@@ -13,9 +15,14 @@ import { STATUS_VIATURA } from './viatura.js';
  *
  * Atalho permitido apenas para `admin`/`sargenteante`:
  *   {qualquer} → ENCERRADO  (override de emergência)
+ *
+ * A "Prévia do Mapa Força" designa exclusivamente o estado PREVIA_INICIADA —
+ * o ato do Fiscal escalado revisar e editar os dados do dia (composição,
+ * trocas, dispensas, ativações, etc.) antes do início do serviço.
  */
 export const ESTADO_SERVICO = [
   'NAO_INICIADO',
+  'PREVIA_INICIADA',
   'INICIADO',
   'EQUIPE_CONFERIDA',
   'VIATURA_CONFERIDA',
@@ -26,6 +33,7 @@ export type EstadoServico = (typeof ESTADO_SERVICO)[number];
 
 export const ESTADO_SERVICO_LABEL: Record<EstadoServico, string> = {
   NAO_INICIADO: 'Não iniciado',
+  PREVIA_INICIADA: 'Prévia em edição',
   INICIADO: 'Iniciado',
   EQUIPE_CONFERIDA: 'Equipe conferida',
   VIATURA_CONFERIDA: 'Viaturas conferidas',
@@ -36,6 +44,8 @@ export const ESTADO_SERVICO_LABEL: Record<EstadoServico, string> = {
 export const servicoEstadoSchema = z.object({
   data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   estado: z.enum(ESTADO_SERVICO),
+  previaIniciadaEm: z.string().optional(),
+  previaIniciadaPorNf: z.string().optional(),
   iniciadoEm: z.string().optional(),
   iniciadoPorNf: z.string().optional(),
   conferenciaEquipeEm: z.string().optional(),

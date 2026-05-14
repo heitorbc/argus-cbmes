@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { parseMapaForcaCsv } from './mapa-forca-csv-parser';
+import { parseMapaForcaCsv } from './mapa-forca-ciodes-csv-parser';
 
 const FIXTURE = resolve(__dirname, '__fixtures__', 'mapa-forca-2026-05-08.csv');
 

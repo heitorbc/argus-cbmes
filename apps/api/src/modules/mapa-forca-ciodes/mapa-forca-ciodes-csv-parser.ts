@@ -79,7 +79,7 @@ export interface ParseMapaForcaResult {
 export interface ParseMapaForcaOptions {
   /**
    * Whitelist de recursos válidos (col A). Quando ausente, usa fallback hardcoded
-   * (compat com tests legados). S6d/F3 — em produção, MapaForcaService injeta
+   * (compat com tests legados). S6d/F3 — em produção, MapaForcaCiodesService injeta
    * o set vindo de `RecursosService.nomesValidos(unidadeId)`.
    */
   recursosValidos?: ReadonlySet<string>;

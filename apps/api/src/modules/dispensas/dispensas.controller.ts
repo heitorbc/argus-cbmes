@@ -24,7 +24,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { EfetivoService } from '../efetivo/efetivo.service';
 import { parseMilitarCell } from '../escalas/escala-xlsx-parser';
-import { NomeMatcher } from '../previa/nome-matching';
+import { NomeMatcher } from '../mapa-forca/nome-matching';
 import { DispensasService } from './dispensas.service';
 import { DispensasSheetService } from './dispensas-sheet.service';
 

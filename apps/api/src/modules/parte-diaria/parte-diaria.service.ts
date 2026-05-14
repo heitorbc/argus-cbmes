@@ -11,19 +11,19 @@ import {
   type ParteDiariaOverride,
   type PreviaAtestado,
   type PreviaDispensa,
-  type PreviaDoDia,
+  type MapaForcaDoDia,
   type PreviaNotaServico,
   type PreviaTroca,
   type TrocaEscalaEspecial,
   type AlteracaoDiversa,
 } from '@argus/shared-types';
 import { MateriaisService } from '../materiais/materiais.service';
-import { PreviaService } from '../previa/previa.service';
+import { MapaForcaService } from '../mapa-forca/mapa-forca.service';
 
 /**
  * S10 — Parte Diária.
  *
- * Composição do documento institucional a partir de tudo que a PreviaService
+ * Composição do documento institucional a partir de tudo que a MapaForcaService
  * já agrega (composicaoMf, fiscal, dispensas, atestados, NS, ideoStatus,
  * alterações diversas) + override editável persistido in-memory por data.
  *
@@ -44,7 +44,7 @@ export class ParteDiariaService {
     new Map();
 
   constructor(
-    private readonly previa: PreviaService,
+    private readonly previa: MapaForcaService,
     private readonly materiais: MateriaisService,
   ) {}
 
@@ -108,7 +108,7 @@ export class ParteDiariaService {
   }
 
   private async gerarRascunho(dataIso: string): Promise<ParteDiaria> {
-    const previa = await this.previa.getPreviaDoDia(dataIso);
+    const previa = await this.previa.getMapaForcaDoDia(dataIso);
     const proximoDia = diaSeguinteIso(dataIso);
 
     const fiscalQueAssume = previa.fiscal?.militarResolvido
@@ -170,7 +170,7 @@ function toMilitarRef(m: Militar): ParteDiariaMilitarRef {
 }
 
 function mapEscalaOperacional(
-  entry: PreviaDoDia['composicaoMf'][number],
+  entry: MapaForcaDoDia['composicaoMf'][number],
 ): ParteDiariaEscalaOperacionalEntry {
   const militares: ParteDiariaEscalaOperacionalMilitar[] = [];
 
@@ -201,7 +201,7 @@ function mapEscalaOperacional(
 
 function mapMilitar(
   funcao: string,
-  m: PreviaDoDia['composicaoMf'][number]['chefe'] & {},
+  m: MapaForcaDoDia['composicaoMf'][number]['chefe'] & {},
 ): ParteDiariaEscalaOperacionalMilitar {
   return {
     funcao,
@@ -260,7 +260,7 @@ function formatPeriodoTroca(p: PreviaTroca['periodo']): string {
 }
 
 function gerarTextoEscalaEspecial(
-  atos: readonly PreviaDoDia['escalaEspecialAtos'][number][],
+  atos: readonly MapaForcaDoDia['escalaEspecialAtos'][number][],
   trocas: readonly TrocaEscalaEspecial[],
 ): string {
   if (atos.length === 0 && trocas.length === 0) return 'Não houve.';
@@ -295,7 +295,7 @@ function gerarTextoCumprimentoNs(notas: readonly PreviaNotaServico[]): string {
 }
 
 function gerarTextoAlteracoesDiversas(
-  alteracoes: readonly PreviaDoDia['alteracoesDiversas'][number][],
+  alteracoes: readonly MapaForcaDoDia['alteracoesDiversas'][number][],
   dispensas: readonly PreviaDispensa[],
   atestados: readonly PreviaAtestado[],
 ): string {

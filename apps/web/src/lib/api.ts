@@ -45,7 +45,7 @@ import type {
   NotaServico,
   ParteDiaria,
   UpsertParteDiariaInput,
-  PreviaDoDia,
+  MapaForcaDoDia,
   PreviewEscalaEspecialResponse,
   PreviewEscalaResponse,
   Recurso,
@@ -313,7 +313,7 @@ export const api = {
     }),
 
   // Prévia do Mapa Força (S4)
-  previaDoDia: (data: string) => request<PreviaDoDia>(`/previa?data=${data}`),
+  previaDoDia: (data: string) => request<MapaForcaDoDia>(`/previa?data=${data}`),
 
   // Trocas de Escala Especial (S6a-fix item 4)
   previaAddTrocaEscalaEspecial: (

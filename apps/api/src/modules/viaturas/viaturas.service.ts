@@ -15,7 +15,7 @@ import type {
   UpsertConferenciaViaturaInput,
   Viatura,
 } from '@argus/shared-types';
-import { MapaForcaService } from '../mapa-forca/mapa-forca.service';
+import { MapaForcaCiodesService } from '../mapa-forca-ciodes/mapa-forca-ciodes.service';
 
 /** Mapeia o prefixo da viatura (ABTS_011, AR_044) para o tipo institucional. */
 function tipoFromPrefixo(prefixo: string): TipoViatura {
@@ -63,7 +63,7 @@ function viaturaFromRecurso(r: RecursoMapaForca): Viatura | null {
 }
 
 /**
- * Source of truth: aba "1º BBM" do Mapa Força (via `MapaForcaService`).
+ * Source of truth: aba "1º BBM" do Mapa Força (via `MapaForcaCiodesService`).
  * Overrides locais ficam em memória (Fase 1) e sobrepõem por `prefixo`.
  *
  * S6a/ADR-009 — nova regra:
@@ -77,7 +77,7 @@ export class ViaturasService {
   /** Storage in-memory de overrides (admin criou/editou). Key = prefixo. */
   private readonly overrides: Map<string, Viatura> = new Map();
 
-  constructor(private readonly mapaForca: MapaForcaService) {}
+  constructor(private readonly mapaForca: MapaForcaCiodesService) {}
 
   async list(): Promise<Viatura[]> {
     const recursos = await this.mapaForca.getRecursos().catch(() => []);

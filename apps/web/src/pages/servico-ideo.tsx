@@ -4,7 +4,7 @@ import {
   TIPO_IDEO,
   gerarTextoFiscalAtestadoIdeo,
   type IdeoStatusDoDia,
-  type PreviaDoDia,
+  type MapaForcaDoDia,
   type TipoIdeo,
 } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
@@ -21,7 +21,7 @@ export function ServicoIdeoPage() {
   const { data } = useParams<{ data: string }>();
   const { user } = useAuth();
 
-  const [previa, setPrevia] = useState<PreviaDoDia | null>(null);
+  const [previa, setPrevia] = useState<MapaForcaDoDia | null>(null);
   const [statusByTipo, setStatusByTipo] = useState<Record<TipoIdeo, IdeoStatusForm>>(emptyForm());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<TipoIdeo | null>(null);

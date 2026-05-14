@@ -74,7 +74,7 @@ export type MarkIdeoChecklistInput = z.infer<typeof markIdeoChecklistInputSchema
  *
  * Consumido por:
  *  - Tela `/servico/:data/ideo` (S6i): toggle + textarea de motivo.
- *  - PreviaService.getPreviaDoDia: campo `ideoStatus[]` no payload.
+ *  - MapaForcaService.getMapaForcaDoDia: campo `ideoStatus[]` no payload.
  *  - Helper `gerarTextoFiscalAtestadoIdeo()`: gera texto institucional para a PD.
  */
 export const ideoStatusDoDiaSchema = z.object({

@@ -13,7 +13,7 @@ import {
   type PeriodoTrocaPredefinido,
   type PreviaAtestado,
   type PreviaDispensa,
-  type PreviaDoDia,
+  type MapaForcaDoDia,
   type PreviaNotaServico,
   type Viatura,
   type TipoDispensa,
@@ -70,7 +70,7 @@ export function PreviaPage() {
     false;
 
   const [data, setData] = useState<string>(todayIso());
-  const [previa, setPrevia] = useState<PreviaDoDia | null>(null);
+  const [previa, setPrevia] = useState<MapaForcaDoDia | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -299,8 +299,8 @@ export function PreviaPage() {
   }, [data]);
 
   const tripulacaoPorViatura = useMemo(() => {
-    if (!previa) return new Map<string, PreviaDoDia['tripulacao']>();
-    const map = new Map<string, PreviaDoDia['tripulacao']>();
+    if (!previa) return new Map<string, MapaForcaDoDia['tripulacao']>();
+    const map = new Map<string, MapaForcaDoDia['tripulacao']>();
     for (const t of previa.tripulacao) {
       const key = t.viatura || '(sem viatura)';
       const arr = map.get(key) ?? [];
@@ -316,7 +316,7 @@ export function PreviaPage() {
    * RESGATE 01, etc.) — o parser do MF normaliza os nomes para a mesma forma.
    */
   const mfAtualPorRecurso = useMemo(() => {
-    const m = new Map<string, PreviaDoDia['composicaoAtualMf'][number]>();
+    const m = new Map<string, MapaForcaDoDia['composicaoAtualMf'][number]>();
     if (!previa) return m;
     for (const r of previa.composicaoAtualMf) m.set(r.recurso, r);
     return m;
@@ -765,7 +765,7 @@ export function PreviaPage() {
   );
 }
 
-function extractAjustes(previa: PreviaDoDia): AjustesPrevia {
+function extractAjustes(previa: MapaForcaDoDia): AjustesPrevia {
   return {
     trocas: previa.trocas,
     escalaEspecial: previa.escalaEspecial,
@@ -971,7 +971,7 @@ function AjustesPreTurno({
   data: string;
   isReadOnly: boolean;
   initial: AjustesPrevia;
-  atestadosAtivos: PreviaDoDia['atestados'];
+  atestadosAtivos: MapaForcaDoDia['atestados'];
   onSaved: () => void;
 }) {
   const [state, setState] = useState<AjustesPrevia>(initial);
@@ -1274,7 +1274,7 @@ function ServicoCard({
   onEncerrar,
   onSaved,
 }: {
-  previa: PreviaDoDia;
+  previa: MapaForcaDoDia;
   podeIniciar: boolean;
   inflight: boolean;
   onIniciar: () => Promise<void>;
@@ -1440,7 +1440,7 @@ function ConferenciaViaturasMenu({
   composicaoMf,
 }: {
   data: string;
-  composicaoMf: PreviaDoDia['composicaoMf'];
+  composicaoMf: MapaForcaDoDia['composicaoMf'];
 }) {
   const viaturas = composicaoMf
     .filter((c) => c.vtrPrefixo && c.vtrStatus === 'DISPONIVEL')
@@ -1478,7 +1478,7 @@ function AlteracoesDiversasCard({
 }: {
   data: string;
   alteracoes: AlteracaoDiversa[];
-  composicaoMf: PreviaDoDia['composicaoMf'];
+  composicaoMf: MapaForcaDoDia['composicaoMf'];
   canRegistrar: boolean;
   onSaved: () => void;
 }) {
@@ -1559,7 +1559,7 @@ function ModalAlteracaoDiversa({
   onCancel,
 }: {
   data: string;
-  composicaoMf: PreviaDoDia['composicaoMf'];
+  composicaoMf: MapaForcaDoDia['composicaoMf'];
   onSaved: () => void;
   onCancel: () => void;
 }) {
@@ -2500,7 +2500,7 @@ function AtivarRecursoCard({
   onSaved,
 }: {
   data: string;
-  previa: PreviaDoDia;
+  previa: MapaForcaDoDia;
   isReadOnly: boolean;
   onSaved: () => void;
 }) {
