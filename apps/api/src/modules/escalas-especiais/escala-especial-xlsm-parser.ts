@@ -156,6 +156,27 @@ export interface ParseEscalaEspecialInput {
   importadoPorNf?: string;
 }
 
+/**
+ * Divide um `militarRaw` em múltiplos militares quando o Sargenteante coloca
+ * dois ou mais nomes na mesma célula separados por "/" (ex.:
+ * `"SGT HEVERTON/ CB GODOY"` → `["SGT HEVERTON", "CB GODOY"]`).
+ *
+ * Regras:
+ * - Sem "/" no input → devolve `[raw.trim()]` (1 entrada).
+ * - Com "/" e todas as partes preenchidas (após trim) → devolve N entradas.
+ * - Com "/" mas alguma parte vazia ("A//", "/A", "A/  /B") → devolve `[]`
+ *   sinalizando malformação; o parser mantém o raw original e registra aviso.
+ */
+export function splitMilitaresRaw(raw: string): string[] {
+  if (!raw.includes('/')) {
+    const t = raw.trim();
+    return t ? [t] : [];
+  }
+  const parts = raw.split('/').map((p) => p.trim());
+  if (parts.some((p) => p.length === 0)) return [];
+  return parts;
+}
+
 export async function parseEscalaEspecialXlsm(
   input: ParseEscalaEspecialInput,
 ): Promise<{ escala: EscalaEspecialMensal; descartados: number }> {
@@ -239,12 +260,22 @@ export async function parseEscalaEspecialXlsm(
       continue;
     }
 
-    atos.push({
-      data: dataIso,
-      militarRaw,
-      horario,
-      funcao,
-    });
+    // Sargenteante às vezes coloca 2+ militares na mesma célula separados por
+    // "/" (ex.: "SGT HEVERTON/ CB GODOY"). Cada um gera um ato individual com
+    // mesmo horário/data/função para permitir resolução no efetivo e
+    // geração de linha própria na Parte Diária.
+    const militares = splitMilitaresRaw(militarRaw);
+    if (militares.length === 0) {
+      // Split malformado (ex.: "A//", "/A") — mantém raw original e avisa.
+      avisos.push(
+        `Linha ${r}: célula militar "${militarRaw}" com separador "/" malformado — mantida como única entrada.`,
+      );
+      atos.push({ data: dataIso, militarRaw, horario, funcao });
+      continue;
+    }
+    for (const m of militares) {
+      atos.push({ data: dataIso, militarRaw: m, horario, funcao });
+    }
   }
 
   return {

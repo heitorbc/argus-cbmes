@@ -62,3 +62,5 @@ data/
 *.pem
 *.key
 google-service-account*.json
+.vercel
+.env*.local

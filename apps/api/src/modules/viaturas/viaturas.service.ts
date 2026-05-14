@@ -56,6 +56,7 @@ function viaturaFromRecurso(r: RecursoMapaForca): Viatura | null {
     composicaoFuncoes: [],
     funcaoOperacional: r.recurso,
     observacoesDataDas: [],
+    historicoKm: [],
     criadoEm: now,
     atualizadoEm: now,
   };
@@ -107,6 +108,11 @@ export class ViaturasService {
           alturaMetros: v.alturaMetros ?? baseDoMf.alturaMetros,
           larguraMetros: v.larguraMetros ?? baseDoMf.larguraMetros,
           militarResponsavelNf: v.militarResponsavelNf ?? baseDoMf.militarResponsavelNf,
+          funcaoOperacional: v.funcaoOperacional ?? baseDoMf.funcaoOperacional,
+          capacidadeTanqueArlaLitros:
+            v.capacidadeTanqueArlaLitros ?? baseDoMf.capacidadeTanqueArlaLitros,
+          observacoesDataDas: v.observacoesDataDas ?? baseDoMf.observacoesDataDas,
+          historicoKm: v.historicoKm ?? baseDoMf.historicoKm,
           atualizadoEm: v.atualizadoEm,
         });
       } else {
@@ -140,6 +146,7 @@ export class ViaturasService {
       origem: 'override_admin',
       composicaoFuncoes: input.composicaoFuncoes ?? [],
       observacoesDataDas: [],
+      historicoKm: [],
       criadoEm: now,
       atualizadoEm: now,
     };
@@ -147,7 +154,12 @@ export class ViaturasService {
     return viatura;
   }
 
-  async update(id: string, input: UpdateViaturaInput): Promise<Viatura> {
+  /**
+   * `registradoPorNf` é usado quando o admin edita `kmAtual` na tela de
+   * detalhe — gera entrada em `historicoKm` (origem=`manual_admin`).
+   * Opcional para chamadas internas legadas que não tocam KM.
+   */
+  async update(id: string, input: UpdateViaturaInput, registradoPorNf?: string): Promise<Viatura> {
     const current = await this.findById(id);
 
     // S6a/ADR-009 — viaturas do MF: bloqueia edição de status e prefixo
@@ -170,19 +182,97 @@ export class ViaturasService {
         throw new ConflictException(`Viatura com prefixo "${input.prefixo}" já existe`);
       }
     }
+    const now = new Date().toISOString();
+
+    // S0.x — histórico de KM: cresce quando kmAtual muda. Requer registradoPorNf;
+    // sem ele a entrada não é criada (chamadas legadas continuam funcionando, mas
+    // o admin sempre passa o NF via controller).
+    const kmMudou =
+      input.kmAtual !== undefined &&
+      input.kmAtual !== current.kmAtual &&
+      registradoPorNf !== undefined;
+    const historicoKm = kmMudou
+      ? [
+          ...(current.historicoKm ?? []),
+          {
+            kmRegistrado: input.kmAtual as number,
+            registradoEm: now,
+            registradoPorNf: registradoPorNf as string,
+            origem: 'manual_admin' as const,
+          },
+        ]
+      : current.historicoKm;
+
     const updated: Viatura = {
       ...current,
       ...input,
       composicaoFuncoes: input.composicaoFuncoes ?? current.composicaoFuncoes,
+      historicoKm,
       id: current.id,
       origem: current.origem, // não muda via update
       criadoEm: current.criadoEm,
-      atualizadoEm: new Date().toISOString(),
+      atualizadoEm: now,
     };
     // Override sempre por prefixo (mesmo para mapa_forca, guarda os campos extras)
     this.overrides.delete(current.prefixo);
     this.overrides.set(updated.prefixo, updated);
     return updated;
+  }
+
+  /**
+   * S0.x — Upsert por prefixo: usado pela tela de detalhe QDV quando a
+   * viatura listada (QDV) ainda não tem override interno. Cria override
+   * inicial com defaults derivados (tipo a partir do prefixo, status
+   * DISPONIVEL) ou atualiza o existente. Gera `historicoKm` na criação
+   * se `kmAtual` for informado.
+   */
+  async upsertByPrefixo(
+    prefixo: string,
+    input: UpdateViaturaInput,
+    registradoPorNf?: string,
+  ): Promise<Viatura> {
+    const existing = await this.findByPrefixo(prefixo);
+    if (existing) return this.update(existing.id, input, registradoPorNf);
+
+    const now = new Date().toISOString();
+    const historicoKm =
+      input.kmAtual !== undefined && registradoPorNf !== undefined
+        ? [
+            {
+              kmRegistrado: input.kmAtual,
+              registradoEm: now,
+              registradoPorNf,
+              origem: 'manual_admin' as const,
+            },
+          ]
+        : [];
+    const created: Viatura = {
+      id: randomUUID(),
+      prefixo,
+      tipo: input.tipo ?? tipoFromPrefixo(prefixo),
+      status: input.status ?? 'DISPONIVEL',
+      origem: 'override_admin',
+      composicaoFuncoes: input.composicaoFuncoes ?? [],
+      observacoesDataDas: [],
+      historicoKm,
+      placa: input.placa,
+      anoModelo: input.anoModelo,
+      funcaoOperacional: input.funcaoOperacional,
+      observacoes: input.observacoes,
+      kmAtual: input.kmAtual,
+      tipoCombustivel: input.tipoCombustivel,
+      usaArla32: input.usaArla32,
+      capacidadeTanqueLitros: input.capacidadeTanqueLitros,
+      capacidadeTanqueArlaLitros: input.capacidadeTanqueArlaLitros,
+      estadoTanquePercent: input.estadoTanquePercent,
+      alturaMetros: input.alturaMetros,
+      larguraMetros: input.larguraMetros,
+      militarResponsavelNf: input.militarResponsavelNf,
+      criadoEm: now,
+      atualizadoEm: now,
+    };
+    this.overrides.set(prefixo, created);
+    return created;
   }
 
   /** Soft delete: muda status para BAIXADA. Bloqueado para origem=mapa_forca. */

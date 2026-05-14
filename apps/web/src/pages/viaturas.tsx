@@ -1,211 +1,112 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  STATUS_VIATURA,
   STATUS_VIATURA_LABEL,
-  TIPOS_COMBUSTIVEL,
-  TIPOS_VIATURA,
-  TIPO_COMBUSTIVEL_LABEL,
-  TIPO_VIATURA_LABEL,
   type ContatoLogistico,
   type StatusViatura,
-  type TipoCombustivel,
   type Viatura,
   type ViaturaEnriquecida,
 } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
-import { useAuth } from '@/lib/auth-context';
-import { MilitarSelect } from '@/components/militar-select';
 import { STATUS_VIATURA_BADGE } from '@/lib/status-viatura-style';
 
-interface FormState {
-  prefixo: string;
-  tipo: (typeof TIPOS_VIATURA)[number];
-  status: StatusViatura;
-  funcaoOperacional: string;
-  observacoes: string;
-  kmAtual: string;
-  tipoCombustivel: TipoCombustivel | '';
-  usaArla32: boolean;
-  capacidadeTanqueLitros: string;
-  alturaMetros: string;
-  larguraMetros: string;
-  militarResponsavelNf: string;
-  militarResponsavelNome: string;
-}
-
-const EMPTY_FORM: FormState = {
-  prefixo: '',
-  tipo: 'AU',
-  status: 'DISPONIVEL',
-  funcaoOperacional: '',
-  observacoes: '',
-  kmAtual: '',
-  tipoCombustivel: '',
-  usaArla32: false,
-  capacidadeTanqueLitros: '',
-  alturaMetros: '',
-  larguraMetros: '',
-  militarResponsavelNf: '',
-  militarResponsavelNome: '',
-};
-
-// S6c/F3 — paleta movida para `lib/status-viatura-style.ts`
-const STATUS_BADGE_CLASS = STATUS_VIATURA_BADGE;
-
+/**
+ * S0.x — Página unificada de viaturas: lista vem do QDV/1BBM_1CIA
+ * (fonte de verdade), enriquecida com BASE_LISTA + BASE_VTR_LISTA_PRINCIPAL
+ * + Mapa Força. Clique na linha → `/cadastros/viaturas/:prefixo` para
+ * detalhe completo + edição dos campos operacionais.
+ */
 export function ViaturasPage() {
-  const { user } = useAuth();
-  const isAdmin = user?.papeis.includes('admin') ?? false;
-
-  const [viaturas, setViaturas] = useState<Viatura[]>([]);
   const [enriquecidas, setEnriquecidas] = useState<ViaturaEnriquecida[]>([]);
+  const [internas, setInternas] = useState<Viatura[]>([]);
   const [contatoResponsavel, setContatoResponsavel] = useState<ContatoLogistico | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
-
-  const editingFromMf =
-    editingId !== null && viaturas.find((v) => v.id === editingId)?.origem === 'mapa_forca';
-
-  const reload = async () => {
-    setLoading(true);
-    try {
-      const [list, enr] = await Promise.all([
-        api.viaturasList(),
-        api.viaturasEnriquecidas().catch(() => ({ items: [], contatoResponsavel: null })),
-      ]);
-      setViaturas(list);
-      setEnriquecidas(enr.items);
-      setContatoResponsavel(enr.contatoResponsavel);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Erro ao carregar viaturas');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [filtro, setFiltro] = useState('');
 
   useEffect(() => {
-    void reload();
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([api.viaturasEnriquecidas(), api.viaturasList().catch(() => [])])
+      .then(([enr, list]) => {
+        if (cancelled) return;
+        setEnriquecidas(enr.items);
+        setContatoResponsavel(enr.contatoResponsavel);
+        setInternas(list);
+        setError(null);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e instanceof ApiError ? e.message : 'Erro ao carregar viaturas');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const openCreate = () => {
-    setEditingId(null);
-    setForm(EMPTY_FORM);
-    setFormError(null);
-    setShowForm(true);
-  };
+  // KM Atual: override interno tem precedência sobre QDV
+  const kmByPrefixo = new Map(
+    internas
+      .filter((v) => v.kmAtual !== undefined)
+      .map((v) => [normalizePrefixo(v.prefixo), v.kmAtual as number]),
+  );
 
-  const openEdit = (v: Viatura) => {
-    setEditingId(v.id);
-    setForm({
-      prefixo: v.prefixo,
-      tipo: v.tipo,
-      status: v.status,
-      funcaoOperacional: v.funcaoOperacional ?? '',
-      observacoes: v.observacoes ?? '',
-      kmAtual: v.kmAtual !== undefined ? String(v.kmAtual) : '',
-      tipoCombustivel: v.tipoCombustivel ?? '',
-      usaArla32: v.usaArla32 ?? false,
-      capacidadeTanqueLitros:
-        v.capacidadeTanqueLitros !== undefined ? String(v.capacidadeTanqueLitros) : '',
-      alturaMetros: v.alturaMetros !== undefined ? String(v.alturaMetros) : '',
-      larguraMetros: v.larguraMetros !== undefined ? String(v.larguraMetros) : '',
-      militarResponsavelNf: v.militarResponsavelNf ?? '',
-      militarResponsavelNome: '',
-    });
-    setFormError(null);
-    setShowForm(true);
-  };
-
-  const closeForm = () => {
-    setShowForm(false);
-    setEditingId(null);
-    setFormError(null);
-  };
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    setFormError(null);
-    try {
-      const num = (s: string) => (s.trim() === '' ? undefined : Number(s));
-      const payload = {
-        prefixo: form.prefixo.trim(),
-        tipo: form.tipo,
-        status: form.status,
-        funcaoOperacional: form.funcaoOperacional.trim() || undefined,
-        observacoes: form.observacoes.trim() || undefined,
-        composicaoFuncoes: [],
-        kmAtual: num(form.kmAtual),
-        tipoCombustivel: form.tipoCombustivel || undefined,
-        usaArla32: form.usaArla32 || undefined,
-        capacidadeTanqueLitros: num(form.capacidadeTanqueLitros),
-        alturaMetros: num(form.alturaMetros),
-        larguraMetros: num(form.larguraMetros),
-        militarResponsavelNf: form.militarResponsavelNf.trim() || undefined,
-      };
-      if (editingId) {
-        await api.viaturasUpdate(editingId, payload);
-      } else {
-        await api.viaturasCreate(payload);
-      }
-      await reload();
-      closeForm();
-    } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Erro ao salvar');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSoftDelete = async (v: Viatura) => {
-    if (v.origem === 'mapa_forca') {
-      setError('Viatura do Mapa Força — baixa só via Conferência da Viatura (S6b).');
-      return;
-    }
-    if (!confirm(`Marcar ${v.prefixo} como BAIXADA?`)) return;
-    try {
-      await api.viaturasSoftDelete(v.id);
-      await reload();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Erro ao baixar viatura');
-    }
-  };
+  const termo = filtro.trim().toLowerCase();
+  const items = termo
+    ? enriquecidas.filter(
+        (v) =>
+          v.prefixo.toLowerCase().includes(termo) ||
+          (v.nomenclatura ?? '').toLowerCase().includes(termo) ||
+          (v.placa ?? '').toLowerCase().includes(termo),
+      )
+    : enriquecidas;
 
   return (
     <main className="min-h-screen bg-slate-50">
       <header className="bg-cbmes-red px-4 py-4 text-white">
-        <div className="flex items-center gap-3">
-          <Link to="/" className="text-sm opacity-90 hover:opacity-100">
-            ← Início
-          </Link>
-        </div>
-        <h1 className="mt-1 text-lg font-bold">Viaturas</h1>
+        <Link to="/" className="text-sm opacity-90 hover:opacity-100">
+          ← Início
+        </Link>
+        <h1 className="mt-1 text-lg font-bold">Viaturas — 1ºBBM/1ªCIA</h1>
         <p className="text-xs opacity-90">
-          Cadastros Mestre · status sincronizado com Mapa Força (col C)
+          Frota da unidade · dados da QDV enriquecidos com Mapa Força
         </p>
+        {contatoResponsavel && (
+          <div className="mt-3 rounded border border-white/20 bg-white/10 p-2 text-xs">
+            <p className="font-semibold uppercase tracking-wide opacity-80">
+              Responsável logístico
+            </p>
+            <p className="mt-0.5">
+              <strong>{contatoResponsavel.militarResponsavel}</strong>
+              {contatoResponsavel.nomeCompleto && ` · ${contatoResponsavel.nomeCompleto}`}
+            </p>
+            {(contatoResponsavel.telefone || contatoResponsavel.email) && (
+              <p className="mt-0.5 opacity-90">
+                {contatoResponsavel.telefone && `📞 ${contatoResponsavel.telefone}`}
+                {contatoResponsavel.telefone && contatoResponsavel.email && ' · '}
+                {contatoResponsavel.email && `✉️ ${contatoResponsavel.email}`}
+              </p>
+            )}
+          </div>
+        )}
       </header>
 
-      <section className="mx-auto max-w-3xl p-4">
-        <div className="flex items-center justify-between">
+      <section className="mx-auto max-w-4xl p-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-slate-600">
-            {viaturas.length} viatura{viaturas.length === 1 ? '' : 's'}
+            {items.length} viatura{items.length === 1 ? '' : 's'}
+            {termo && enriquecidas.length !== items.length && ` (de ${enriquecidas.length})`}
           </p>
-          {isAdmin && !showForm && (
-            <button
-              type="button"
-              onClick={openCreate}
-              className="rounded-button bg-cbmes-red px-4 py-2 text-sm font-semibold text-white transition hover:bg-cbmes-red/90"
-            >
-              + Nova viatura (override)
-            </button>
-          )}
+          <input
+            type="search"
+            value={filtro}
+            onChange={(e) => setFiltro(e.target.value)}
+            placeholder="Filtrar por prefixo, nomenclatura ou placa"
+            className="w-full rounded border border-slate-300 px-3 py-2 text-sm sm:w-72"
+          />
         </div>
 
         {error && (
@@ -217,432 +118,90 @@ export function ViaturasPage() {
           </div>
         )}
 
-        {showForm && isAdmin && (
-          <ViaturaForm
-            form={form}
-            setForm={setForm}
-            editingFromMf={editingFromMf}
-            saving={saving}
-            formError={formError}
-            onSave={handleSave}
-            onCancel={closeForm}
-          />
-        )}
-
-        {loading && viaturas.length === 0 && (
+        {loading && items.length === 0 && (
           <p className="mt-6 text-center text-sm text-slate-500">Carregando viaturas…</p>
         )}
 
-        {enriquecidas.length > 0 && (
-          <ViaturasQdvSection
-            items={enriquecidas}
-            contatoResponsavel={contatoResponsavel}
-          />
+        {!loading && items.length === 0 && !error && (
+          <p className="mt-6 text-center text-sm text-slate-500">
+            Nenhuma viatura encontrada.
+          </p>
         )}
 
-        <h2 className="mt-6 text-sm font-semibold text-slate-700">
-          Cadastro auxiliar (overrides admin · Mapa Força)
-        </h2>
-        <ul className="mt-2 divide-y divide-slate-200 rounded border border-slate-200 bg-white">
-          {viaturas.map((v) => (
-            <li key={v.id} className="p-3 text-sm">
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="font-medium text-cbmes-blue">
-                  {v.prefixo}
-                  {v.origem === 'mapa_forca' && (
-                    <span
-                      className="ml-2 rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-bold text-amber-900"
-                      title="Viatura gerenciada pelo Mapa Força"
+        {items.length > 0 && (
+          <div className="mt-4 overflow-x-auto rounded border border-slate-200 bg-white">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-600">
+                <tr>
+                  <th className="px-3 py-2 text-left">Prefixo</th>
+                  <th className="px-3 py-2 text-left">Nomenclatura</th>
+                  <th className="px-3 py-2 text-left">Status</th>
+                  <th className="px-3 py-2 text-right">KM Atual</th>
+                  <th className="px-3 py-2 text-left">Placa</th>
+                  <th className="px-3 py-2 text-left">Tipo veículo</th>
+                  <th className="px-3 py-2 text-left">Emprego</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((v) => {
+                  const kmInterno = kmByPrefixo.get(normalizePrefixo(v.prefixo));
+                  const km = kmInterno ?? v.kmAtual;
+                  const statusEfetivo: StatusViatura | null = v.statusMf ?? null;
+                  return (
+                    <tr
+                      key={v.prefixo}
+                      className="cursor-pointer border-t border-slate-100 hover:bg-cbmes-blue/5"
                     >
-                      MF
-                    </span>
-                  )}
-                </span>
-                <StatusBadge status={v.status} />
-              </div>
-              <div className="mt-1 text-xs text-slate-500">
-                {TIPO_VIATURA_LABEL[v.tipo]}
-                {v.funcaoOperacional && ` · ${v.funcaoOperacional}`}
-              </div>
-              {(v.kmAtual !== undefined || v.tipoCombustivel || v.militarResponsavelNf) && (
-                <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-500">
-                  {v.kmAtual !== undefined && (
-                    <span>🛞 {v.kmAtual.toLocaleString('pt-BR')} km</span>
-                  )}
-                  {v.tipoCombustivel && <span>⛽ {TIPO_COMBUSTIVEL_LABEL[v.tipoCombustivel]}</span>}
-                  {v.usaArla32 && <span>💧 ARLA32</span>}
-                  {v.militarResponsavelNf && <span>👤 NF {v.militarResponsavelNf}</span>}
-                </div>
-              )}
-              {v.observacoes && (
-                <p className="mt-1 text-xs italic text-slate-500">{v.observacoes}</p>
-              )}
-              {isAdmin && !showForm && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => openEdit(v)}
-                    className="rounded-button border border-cbmes-blue px-3 py-1 text-xs font-medium text-cbmes-blue hover:bg-cbmes-blue/10"
-                  >
-                    {v.origem === 'mapa_forca' ? 'Editar (campos auxiliares)' : 'Editar'}
-                  </button>
-                  {v.origem === 'override_admin' && v.status !== 'BAIXADA' && (
-                    <button
-                      type="button"
-                      onClick={() => handleSoftDelete(v)}
-                      className="rounded-button border border-feedback-error px-3 py-1 text-xs font-medium text-feedback-error hover:bg-feedback-error/10"
-                    >
-                      Baixar
-                    </button>
-                  )}
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
+                      <td className="px-3 py-2">
+                        <Link
+                          to={`/cadastros/viaturas/${encodeURIComponent(v.prefixo)}`}
+                          className="font-medium text-cbmes-blue hover:underline"
+                        >
+                          {v.prefixo}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-2">{v.nomenclatura ?? '—'}</td>
+                      <td className="px-3 py-2">
+                        {statusEfetivo ? (
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_VIATURA_BADGE[statusEfetivo]}`}
+                          >
+                            {STATUS_VIATURA_LABEL[statusEfetivo]}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">{v.statusQdv ?? '—'}</span>
+                        )}
+                        {v.emprestadaA && (
+                          <span className="ml-1 text-[10px] italic text-amber-700">
+                            → {v.emprestadaA}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono">
+                        {km !== undefined ? km.toLocaleString('pt-BR') : '—'}
+                      </td>
+                      <td className="px-3 py-2 font-mono">{v.placa ?? '—'}</td>
+                      <td className="px-3 py-2">{v.tipoVeiculo ?? '—'}</td>
+                      <td className="px-3 py-2 text-xs text-slate-600">
+                        {v.empregoPrimario ?? '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <p className="mt-3 text-[11px] italic text-slate-500">
+          Dados de identificação da viatura vêm da planilha QDV (read-only).
+          Clique em uma linha para ver o detalhe completo e editar campos operacionais.
+        </p>
       </section>
     </main>
   );
 }
 
-function StatusBadge({ status }: { status: StatusViatura }) {
-  return (
-    <span
-      className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE_CLASS[status]}`}
-    >
-      {STATUS_VIATURA_LABEL[status]}
-    </span>
-  );
-}
-
-interface ViaturaFormProps {
-  form: FormState;
-  setForm: (f: FormState | ((prev: FormState) => FormState)) => void;
-  editingFromMf: boolean;
-  saving: boolean;
-  formError: string | null;
-  onSave: (e: React.FormEvent) => void;
-  onCancel: () => void;
-}
-
-function ViaturaForm({
-  form,
-  setForm,
-  editingFromMf,
-  saving,
-  formError,
-  onSave,
-  onCancel,
-}: ViaturaFormProps) {
-  return (
-    <form
-      onSubmit={onSave}
-      className="mt-4 space-y-3 rounded border border-cbmes-blue/30 bg-white p-4"
-    >
-      <h2 className="text-base font-semibold text-cbmes-blue">
-        {form.prefixo ? `Editar ${form.prefixo}` : 'Nova viatura'}
-      </h2>
-
-      {editingFromMf && (
-        <div className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
-          ⚠️ Esta viatura é gerenciada pelo <strong>Mapa Força</strong>. Status e prefixo são{' '}
-          travados — só mudam via <em>Conferência da Viatura</em> (S6b). Campos auxiliares (KM,
-          combustível, militar responsável, etc.) podem ser editados.
-        </div>
-      )}
-
-      <div>
-        <label htmlFor="prefixo" className="mb-1 block text-sm font-medium text-slate-700">
-          Prefixo
-        </label>
-        <input
-          id="prefixo"
-          type="text"
-          required
-          disabled={editingFromMf}
-          value={form.prefixo}
-          onChange={(e) => setForm({ ...form, prefixo: e.target.value })}
-          placeholder="ABTS 011 ou AM_002"
-          pattern="[A-Z]{2,4}[ _]\d{3}"
-          title='Formato: "ABTS 011" ou "AM_002"'
-          className="w-full rounded border border-slate-300 px-3 py-2 text-base disabled:bg-slate-100"
-        />
-      </div>
-
-      <div className="flex gap-2">
-        <div className="flex-1">
-          <label htmlFor="tipo" className="mb-1 block text-sm font-medium text-slate-700">
-            Tipo
-          </label>
-          <select
-            id="tipo"
-            disabled={editingFromMf}
-            value={form.tipo}
-            onChange={(e) => setForm({ ...form, tipo: e.target.value as FormState['tipo'] })}
-            className="w-full rounded border border-slate-300 px-3 py-2 text-base disabled:bg-slate-100"
-          >
-            {TIPOS_VIATURA.map((t) => (
-              <option key={t} value={t}>
-                {t} — {TIPO_VIATURA_LABEL[t]}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex-1">
-          <label htmlFor="status" className="mb-1 block text-sm font-medium text-slate-700">
-            Status
-          </label>
-          <select
-            id="status"
-            disabled={editingFromMf}
-            value={form.status}
-            onChange={(e) => setForm({ ...form, status: e.target.value as StatusViatura })}
-            className="w-full rounded border border-slate-300 px-3 py-2 text-base disabled:bg-slate-100"
-          >
-            {STATUS_VIATURA.map((s) => (
-              <option key={s} value={s}>
-                {STATUS_VIATURA_LABEL[s]}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div>
-        <label htmlFor="funcao" className="mb-1 block text-sm font-medium text-slate-700">
-          Função operacional
-        </label>
-        <input
-          id="funcao"
-          type="text"
-          value={form.funcaoOperacional}
-          onChange={(e) => setForm({ ...form, funcaoOperacional: e.target.value })}
-          placeholder="ex.: Auto-Bomba Tanque-Salvamento"
-          className="w-full rounded border border-slate-300 px-3 py-2 text-base"
-        />
-      </div>
-
-      <fieldset className="grid grid-cols-1 gap-2 rounded border border-slate-200 p-2 sm:grid-cols-2">
-        <legend className="px-1 text-xs font-medium text-slate-700">Características</legend>
-        <label className="block">
-          <span className="text-xs text-slate-600">KM atual</span>
-          <input
-            type="number"
-            min={0}
-            value={form.kmAtual}
-            onChange={(e) => setForm({ ...form, kmAtual: e.target.value })}
-            className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
-          />
-        </label>
-        <label className="block">
-          <span className="text-xs text-slate-600">Combustível</span>
-          <select
-            value={form.tipoCombustivel}
-            onChange={(e) =>
-              setForm({ ...form, tipoCombustivel: e.target.value as TipoCombustivel | '' })
-            }
-            className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
-          >
-            <option value="">—</option>
-            {TIPOS_COMBUSTIVEL.map((t) => (
-              <option key={t} value={t}>
-                {TIPO_COMBUSTIVEL_LABEL[t]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex items-center gap-2 sm:col-span-2">
-          <input
-            type="checkbox"
-            checked={form.usaArla32}
-            onChange={(e) => setForm({ ...form, usaArla32: e.target.checked })}
-            className="h-5 w-5 rounded border-slate-300 text-cbmes-red focus:ring-cbmes-red"
-          />
-          <span className="text-sm text-slate-700">Utiliza ARLA32</span>
-        </label>
-        <label className="block">
-          <span className="text-xs text-slate-600">Capacidade do tanque (litros)</span>
-          <input
-            type="number"
-            min={0}
-            value={form.capacidadeTanqueLitros}
-            onChange={(e) => setForm({ ...form, capacidadeTanqueLitros: e.target.value })}
-            className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
-          />
-        </label>
-        <label className="block">
-          <span className="text-xs text-slate-600">Estado do tanque (%) — Conferência</span>
-          <input
-            type="number"
-            disabled
-            placeholder="preenchido na Conferência (S6b)"
-            className="mt-1 w-full rounded border border-slate-300 bg-slate-100 px-2 py-1.5"
-          />
-        </label>
-        <label className="block">
-          <span className="text-xs text-slate-600">Altura (m)</span>
-          <input
-            type="number"
-            min={0}
-            step={0.01}
-            value={form.alturaMetros}
-            onChange={(e) => setForm({ ...form, alturaMetros: e.target.value })}
-            className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
-          />
-        </label>
-        <label className="block">
-          <span className="text-xs text-slate-600">Largura (m)</span>
-          <input
-            type="number"
-            min={0}
-            step={0.01}
-            value={form.larguraMetros}
-            onChange={(e) => setForm({ ...form, larguraMetros: e.target.value })}
-            className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
-          />
-        </label>
-      </fieldset>
-
-      <fieldset className="rounded border border-slate-200 p-2">
-        <legend className="px-1 text-xs font-medium text-slate-700">Militar responsável</legend>
-        <MilitarSelect
-          value={form.militarResponsavelNf || undefined}
-          onChange={(nf, m) =>
-            setForm({
-              ...form,
-              militarResponsavelNf: nf ?? '',
-              militarResponsavelNome: m ? `${m.posto} ${m.nomeGuerra ?? m.nome.split(' ')[0]}` : '',
-            })
-          }
-          placeholder="Digite NF ou nome (mín. 2 chars)"
-        />
-      </fieldset>
-
-      <div>
-        <label htmlFor="obs" className="mb-1 block text-sm font-medium text-slate-700">
-          Observações
-        </label>
-        <textarea
-          id="obs"
-          rows={2}
-          value={form.observacoes}
-          onChange={(e) => setForm({ ...form, observacoes: e.target.value })}
-          className="w-full rounded border border-slate-300 px-3 py-2 text-base"
-        />
-      </div>
-
-      {formError && (
-        <p role="alert" className="text-sm text-feedback-error">
-          {formError}
-        </p>
-      )}
-
-      <div className="flex gap-2 pt-2">
-        <button
-          type="submit"
-          disabled={saving}
-          className="flex-1 rounded-button bg-cbmes-red py-2 text-base font-semibold text-white disabled:opacity-60"
-        >
-          {saving ? 'Salvando…' : 'Salvar'}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={saving}
-          className="flex-1 rounded-button border border-slate-300 bg-white py-2 text-base text-slate-700"
-        >
-          Cancelar
-        </button>
-      </div>
-    </form>
-  );
-}
-
-/**
- * S0.x — Visão consolidada das viaturas da unidade 1BBM/1ªCIA vinda
- * da QDV (1BBM_1CIA) enriquecida com BASE_LISTA + Mapa Força + contato
- * responsável da unidade. Read-only (a fonte de verdade é a planilha).
- */
-function ViaturasQdvSection({
-  items,
-  contatoResponsavel,
-}: {
-  items: ViaturaEnriquecida[];
-  contatoResponsavel: ContatoLogistico | null;
-}) {
-  return (
-    <section className="mt-2 rounded border border-cbmes-blue/30 bg-white p-3">
-      <h2 className="text-sm font-semibold text-cbmes-blue">
-        🚒 Frota da unidade 1BBM/1ªCIA · {items.length} viaturas (QDV)
-      </h2>
-      <p className="mt-1 text-[11px] text-slate-500">
-        Lista vinda da aba <code>1BBM_1CIA</code> da planilha QDV, enriquecida com BASE_LISTA
-        (renavam, modelo de pneu, ano, nomenclatura) e status diário do Mapa Força.
-      </p>
-      <div className="mt-3 overflow-x-auto">
-        <table className="min-w-full text-[11px]">
-          <thead className="bg-slate-50 text-slate-700">
-            <tr>
-              <th className="px-2 py-1 text-left">Prefixo</th>
-              <th className="px-2 py-1 text-left">Nomenclatura</th>
-              <th className="px-2 py-1 text-left">Status</th>
-              <th className="px-2 py-1 text-left">KM</th>
-              <th className="px-2 py-1 text-left">Marca/Modelo</th>
-              <th className="px-2 py-1 text-left">Placa</th>
-              <th className="px-2 py-1 text-left">Renavam</th>
-              <th className="px-2 py-1 text-left">CNH</th>
-              <th className="px-2 py-1 text-left">Pneu</th>
-              <th className="px-2 py-1 text-left">Combustível</th>
-              <th className="px-2 py-1 text-left">Empregos</th>
-              <th className="px-2 py-1 text-left">Obs.</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((v) => (
-              <tr key={v.prefixo} className="border-t border-slate-100">
-                <td className="px-2 py-1 font-medium text-cbmes-blue">{v.prefixo}</td>
-                <td className="px-2 py-1">{v.nomenclatura ?? '—'}</td>
-                <td className="px-2 py-1">
-                  {v.statusMf ? (
-                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_VIATURA_BADGE[v.statusMf]}`}>
-                      {STATUS_VIATURA_LABEL[v.statusMf]}
-                    </span>
-                  ) : (
-                    <span className="text-slate-500">{v.statusQdv ?? '—'}</span>
-                  )}
-                  {v.emprestadaA && (
-                    <span className="ml-1 text-[10px] italic text-amber-700">→ {v.emprestadaA}</span>
-                  )}
-                </td>
-                <td className="px-2 py-1">
-                  {v.kmAtual !== undefined ? v.kmAtual.toLocaleString('pt-BR') : '—'}
-                </td>
-                <td className="px-2 py-1">{v.marcaModelo ?? '—'}</td>
-                <td className="px-2 py-1 font-mono">{v.placa ?? '—'}</td>
-                <td className="px-2 py-1 font-mono text-slate-500">{v.renavam ?? '—'}</td>
-                <td className="px-2 py-1">{v.categoriaCnh ?? '—'}</td>
-                <td className="px-2 py-1 text-slate-500">{v.modeloPneu ?? '—'}</td>
-                <td className="px-2 py-1">{v.combustivel ?? '—'}</td>
-                <td className="px-2 py-1 text-[10px] text-slate-600">
-                  {[v.empregoPrimario, v.empregoSecundario].filter(Boolean).join(' / ') || '—'}
-                </td>
-                <td className="px-2 py-1 text-[10px] italic text-slate-500">
-                  {v.observacao ?? '—'}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {contatoResponsavel && (
-        <div className="mt-3 rounded border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-700">
-          <strong>Responsável logístico da unidade:</strong>{' '}
-          {contatoResponsavel.militarResponsavel}
-          {contatoResponsavel.nomeCompleto && ` (${contatoResponsavel.nomeCompleto})`}
-          {contatoResponsavel.telefone && ` · 📞 ${contatoResponsavel.telefone}`}
-          {contatoResponsavel.email && ` · ✉️ ${contatoResponsavel.email}`}
-        </div>
-      )}
-    </section>
-  );
+function normalizePrefixo(p: string): string {
+  return p.toUpperCase().replace(/[\s_]/g, '');
 }

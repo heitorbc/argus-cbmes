@@ -17,6 +17,20 @@ import {
 } from '@argus/shared-types';
 
 /**
+ * Forma intermediária per-aba das seções aquáticas. O cadastro do XLSX é
+ * único por aba; a estrutura final do mês (`EscalaMergulhoMes`/`EscalaSalvamarMes`)
+ * combina as duas abas via `combineMergulho`/`combineSalvamar`.
+ */
+type MergulhoAba = {
+  equipes: EscalaMergulhoMes['equipesPorQuinzena']['q1'];
+  porDia: EscalaMergulhoMes['porDia'];
+};
+type SalvamarAba = {
+  equipes: EscalaSalvamarMes['equipesPorQuinzena']['q1'];
+  porDia: EscalaSalvamarMes['porDia'];
+};
+
+/**
  * Erro de parse — distingue rejeições "esperadas" (não-escala) de erros de runtime.
  */
 export class EscalaXlsxParseError extends Error {
@@ -104,21 +118,29 @@ export function parseFilename(filename: string): { mes: number; ano: number } {
 /**
  * Identifica as duas abas mensais relevantes (1ª quinzena e 2ª quinzena).
  * Aceita variações: "01 A 14 MAI", "01 A 13 JUN", "15 A 29 MAI", "15 A 31 JUL", etc.
+ * `ultimoDiaQ1` é o número capturado no nome da 1ª aba (13 ou 14) — define
+ * a fronteira dia→quinzena consumida pelo service.
  */
 function findAbasMensais(wb: ExcelJS.Workbook): {
   aba1: ExcelJS.Worksheet;
   aba2: ExcelJS.Worksheet;
+  ultimoDiaQ1: 13 | 14;
 } {
   const norm = (s: string) =>
     s.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
   let aba1: ExcelJS.Worksheet | null = null;
   let aba2: ExcelJS.Worksheet | null = null;
+  let ultimoDiaQ1: 13 | 14 | null = null;
 
   for (const ws of wb.worksheets) {
     const n = norm(ws.name);
     // Primeira quinzena: "01 A 13/14 MES"
-    if (/^0?1\s*A\s*1[34]\b/.test(n)) {
-      aba1 = aba1 ?? ws;
+    const m1 = /^0?1\s*A\s*(1[34])\b/.exec(n);
+    if (m1) {
+      if (!aba1) {
+        aba1 = ws;
+        ultimoDiaQ1 = Number.parseInt(m1[1], 10) as 13 | 14;
+      }
       continue;
     }
     // Segunda quinzena: "15/14 A 29/30/31 MES"
@@ -127,14 +149,14 @@ function findAbasMensais(wb: ExcelJS.Workbook): {
     }
   }
 
-  if (!aba1 || !aba2) {
+  if (!aba1 || !aba2 || ultimoDiaQ1 === null) {
     const found = wb.worksheets.map((w) => `"${w.name}"`).join(', ');
     throw new EscalaXlsxParseError(
       `Abas mensais não encontradas. Esperado uma aba "01 A 14 [MES]" e outra "15 A 29/30/31 [MES]". Encontradas: ${found}.`,
       'ABAS_AUSENTES',
     );
   }
-  return { aba1, aba2 };
+  return { aba1, aba2, ultimoDiaQ1 };
 }
 
 /** Extrai texto plano de uma célula ExcelJS (suporta richText, hyperlink, fórmulas com result). */
@@ -475,7 +497,7 @@ function parseMergulhoSection(
   endCol: number,
   ano: number,
   mes: number,
-): EscalaMergulhoMes | null {
+): MergulhoAba | null {
   // Etapa A — cadastro (X16:AI20).
   // Coluna X = 24. Cada equipe ocupa 4 colunas redundantes.
   const cadastroPorLetra: Partial<Record<LetraEquipeMergulho, [number, number]>> = {
@@ -545,7 +567,7 @@ function parseMergulhoSection(
   }
 
   return {
-    equipes: equipes as EscalaMergulhoMes['equipes'],
+    equipes: equipes as MergulhoAba['equipes'],
     porDia,
   };
 }
@@ -570,7 +592,7 @@ function parseSalvamarSection(
   endCol: number,
   ano: number,
   mes: number,
-): EscalaSalvamarMes | null {
+): SalvamarAba | null {
   // Etapa A — cadastro (X24:AE25). Cada equipe ocupa 4 cols redundantes.
   const cadastroPorLetra: Record<LetraEquipeSalvamar, [number, number]> = {
     E: [24, 27], // X-AA
@@ -625,7 +647,7 @@ function parseSalvamarSection(
   }
 
   return {
-    equipes: equipes as EscalaSalvamarMes['equipes'],
+    equipes: equipes as SalvamarAba['equipes'],
     porDia,
   };
 }
@@ -641,8 +663,8 @@ function parseAba(
 ): {
   diaEquipe: Record<string, LetraEquipeRotativa>;
   composicao: ComposicaoEntry[];
-  mergulho: EscalaMergulhoMes | null;
-  salvamar: EscalaSalvamarMes | null;
+  mergulho: MergulhoAba | null;
+  salvamar: SalvamarAba | null;
   avisos: string[];
 } {
   const avisos: string[] = [];
@@ -707,32 +729,13 @@ function parseAba(
 }
 
 /**
- * Mescla composições das duas abas. Composição é constante por equipe×viatura×função
- * dentro do mesmo mês — se as duas abas divergirem, mantém a primeira e registra aviso.
+ * Ordena uma composição na ordem canônica de recursos (CHEFE DE OPERAÇÕES →
+ * ABTS → RESGATE → ATB → PLATAFORMA → GUARDA → AQUÁTICAS) — Tech Lead: ATB e
+ * PLATAFORMA adjacentes facilita conferência na Prévia. Aplicado por quinzena
+ * separadamente; a composição das duas quinzenas é independente.
  */
-function mergeComposicao(
-  a: ComposicaoEntry[],
-  b: ComposicaoEntry[],
-  avisos: string[],
-): ComposicaoEntry[] {
-  const map = new Map<string, ComposicaoEntry>();
-  const key = (e: ComposicaoEntry) => `${e.equipe}|${e.viatura}|${e.funcao}`;
-  for (const entry of a) map.set(key(entry), entry);
-  for (const entry of b) {
-    const k = key(entry);
-    const existing = map.get(k);
-    if (!existing) {
-      map.set(k, entry);
-    } else if (existing.militar.raw !== entry.militar.raw) {
-      avisos.push(
-        `Composição diverge entre quinzenas para ${entry.equipe}/${entry.viatura}/${entry.funcao}: 1ª quinzena "${existing.militar.raw}", 2ª quinzena "${entry.militar.raw}". Mantendo 1ª quinzena.`,
-      );
-    }
-  }
-  // S0.x — Ordem canônica de recursos (CHEFE DE OPERAÇÕES → ABTS → RESGATE
-  // → ATB → PLATAFORMA → GUARDA → AQUÁTICAS) garante que ATB e PLATAFORMA
-  // fiquem adjacentes na Prévia (Tech Lead: facilita conferência).
-  return [...map.values()].sort(
+function sortComposicao(entries: ComposicaoEntry[]): ComposicaoEntry[] {
+  return [...entries].sort(
     (x, y) =>
       x.equipe.localeCompare(y.equipe) ||
       recursoOrdemIndex(x.viatura) - recursoOrdemIndex(y.viatura) ||
@@ -768,7 +771,7 @@ export async function parseEscalaXlsx(input: ParseEscalaInput): Promise<EscalaMe
     );
   }
 
-  const { aba1, aba2 } = findAbasMensais(wb);
+  const { aba1, aba2, ultimoDiaQ1 } = findAbasMensais(wb);
   const avisos: string[] = [];
 
   const r1 = parseAba(aba1, ano, mes);
@@ -777,9 +780,13 @@ export async function parseEscalaXlsx(input: ParseEscalaInput): Promise<EscalaMe
   avisos.push(...r2.avisos.map((m) => `[${aba2.name}] ${m}`));
 
   const diaEquipe = { ...r1.diaEquipe, ...r2.diaEquipe };
-  const composicao = mergeComposicao(r1.composicao, r2.composicao, avisos);
-  const mergulho = mergeMergulho(r1.mergulho, r2.mergulho);
-  const salvamar = mergeSalvamar(r1.salvamar, r2.salvamar);
+  const composicaoPorQuinzena = {
+    q1: sortComposicao(r1.composicao),
+    q2: sortComposicao(r2.composicao),
+    ultimoDiaQ1,
+  };
+  const mergulho = combineMergulho(r1.mergulho, r2.mergulho, ultimoDiaQ1);
+  const salvamar = combineSalvamar(r1.salvamar, r2.salvamar, ultimoDiaQ1);
 
   if (Object.keys(diaEquipe).length === 0) {
     throw new EscalaXlsxParseError(
@@ -787,7 +794,7 @@ export async function parseEscalaXlsx(input: ParseEscalaInput): Promise<EscalaMe
       'LAYOUT_INVALIDO',
     );
   }
-  if (composicao.length === 0) {
+  if (composicaoPorQuinzena.q1.length + composicaoPorQuinzena.q2.length === 0) {
     throw new EscalaXlsxParseError(
       'Nenhuma composição de equipe foi encontrada.',
       'LAYOUT_INVALIDO',
@@ -801,7 +808,7 @@ export async function parseEscalaXlsx(input: ParseEscalaInput): Promise<EscalaMe
     importadoEm: new Date().toISOString(),
     importadoPorNf: input.importadoPorNf,
     diaEquipe,
-    composicao,
+    composicaoPorQuinzena,
     mergulho: mergulho ?? undefined,
     salvamar: salvamar ?? undefined,
     avisos,
@@ -809,36 +816,44 @@ export async function parseEscalaXlsx(input: ParseEscalaInput): Promise<EscalaMe
 }
 
 /**
- * Mescla a seção de mergulho entre as 2 quinzenas. Cadastro fixo da
- * primeira quinzena vence; `porDia` acumula (datas distintas).
+ * Combina as seções de Mergulho das duas abas em uma estrutura única do mês.
+ * Cadastro é **segregado por quinzena** (Sargenteante monta uma matriz por
+ * aba, militares podem rotacionar entre quinzenas). `porDia` acumula datas
+ * distintas de ambas as abas.
  */
-function mergeMergulho(
-  a: EscalaMergulhoMes | null,
-  b: EscalaMergulhoMes | null,
+function combineMergulho(
+  q1: { equipes: EscalaMergulhoMes['equipesPorQuinzena']['q1']; porDia: EscalaMergulhoMes['porDia'] } | null,
+  q2: { equipes: EscalaMergulhoMes['equipesPorQuinzena']['q2']; porDia: EscalaMergulhoMes['porDia'] } | null,
+  ultimoDiaQ1: 13 | 14,
 ): EscalaMergulhoMes | null {
-  if (!a && !b) return null;
-  if (!a) return b;
-  if (!b) return a;
+  if (!q1 && !q2) return null;
   return {
-    equipes: a.equipes, // 1ª quinzena vence — cadastro é imutável no mês
-    porDia: { ...a.porDia, ...b.porDia },
+    equipesPorQuinzena: {
+      q1: q1?.equipes ?? {},
+      q2: q2?.equipes ?? q1?.equipes ?? {},
+      ultimoDiaQ1,
+    },
+    porDia: { ...(q1?.porDia ?? {}), ...(q2?.porDia ?? {}) },
   };
 }
 
 /**
- * S0.4 — Mescla a seção de salvamar entre as 2 quinzenas. Mesma
- * regra do mergulho: cadastro da 1ª vence, `porDia` acumula.
+ * S0.4 — Mesma regra do Mergulho: cadastro segregado por quinzena,
+ * `porDia` acumula.
  */
-function mergeSalvamar(
-  a: EscalaSalvamarMes | null,
-  b: EscalaSalvamarMes | null,
+function combineSalvamar(
+  q1: { equipes: EscalaSalvamarMes['equipesPorQuinzena']['q1']; porDia: EscalaSalvamarMes['porDia'] } | null,
+  q2: { equipes: EscalaSalvamarMes['equipesPorQuinzena']['q2']; porDia: EscalaSalvamarMes['porDia'] } | null,
+  ultimoDiaQ1: 13 | 14,
 ): EscalaSalvamarMes | null {
-  if (!a && !b) return null;
-  if (!a) return b;
-  if (!b) return a;
+  if (!q1 && !q2) return null;
   return {
-    equipes: a.equipes,
-    porDia: { ...a.porDia, ...b.porDia },
+    equipesPorQuinzena: {
+      q1: q1?.equipes ?? {},
+      q2: q2?.equipes ?? q1?.equipes ?? {},
+      ultimoDiaQ1,
+    },
+    porDia: { ...(q1?.porDia ?? {}), ...(q2?.porDia ?? {}) },
   };
 }
 

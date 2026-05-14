@@ -12,6 +12,7 @@ import type {
   ConferenciaViaturaEntry,
   ContatoLogistico,
   ViaturaCbmes,
+  ViaturaDetalhe,
   ViaturaEnriquecida,
   ViaturaQdvBaseLista,
   Atestado,
@@ -173,6 +174,9 @@ export const api = {
       '/viaturas/enriquecidas',
     ),
 
+  viaturasEnriquecidasDetalhe: (prefixo: string) =>
+    request<ViaturaDetalhe>(`/viaturas/enriquecidas/${encodeURIComponent(prefixo)}`),
+
   viaturasFindById: (id: string) => request<Viatura>(`/viaturas/${id}`),
 
   viaturasCreate: (input: CreateViaturaInput) =>
@@ -183,6 +187,12 @@ export const api = {
 
   viaturasUpdate: (id: string, input: UpdateViaturaInput) =>
     request<Viatura>(`/viaturas/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+
+  viaturasUpsertByPrefixo: (prefixo: string, input: UpdateViaturaInput) =>
+    request<Viatura>(`/viaturas/by-prefixo/${encodeURIComponent(prefixo)}`, {
       method: 'PUT',
       body: JSON.stringify(input),
     }),
