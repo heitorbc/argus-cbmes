@@ -303,6 +303,25 @@ export const chefeOperacoesSchema = z.object({
 export type ChefeOperacoes = z.infer<typeof chefeOperacoesSchema>;
 
 /**
+ * S0.x/Fix-AtivarRecurso — Permite ao Fiscal ativar um recurso do MF
+ * que não estava na escala daquele dia, atribuindo viatura disponível
+ * + Chefe (mínimo). Motorista e operadores são opcionais. Aplicado
+ * pelo PreviaService antes do `buildComposicaoMf`.
+ */
+export const ativacaoRecursoSchema = z.object({
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  /** Nome canônico do recurso (ex.: 'RESGATE 02'). */
+  recurso: z.string().min(1),
+  vtrPrefixo: z.string().min(1),
+  chefe: militarRefSchema,
+  motorista: militarRefSchema.optional(),
+  operadores: z.array(militarRefSchema).default([]),
+  /** Equipe rotativa atribuída (default = equipe do dia). */
+  equipe: z.enum(LETRA_EQUIPE).optional(),
+});
+export type AtivacaoRecurso = z.infer<typeof ativacaoRecursoSchema>;
+
+/**
  * S0.x/Fix-Mergulho — Override do Fiscal: trocar a equipe que compõe
  * MERGULHO 01 com a que compõe MERGULHO 02 num dia específico.
  * Quando aplicado pelo `PreviaService`, equipe que estava em mergulho01
@@ -315,6 +334,28 @@ export const overrideMergulhoSchema = z.object({
   swap: z.literal(true),
 });
 export type OverrideMergulho = z.infer<typeof overrideMergulhoSchema>;
+
+/**
+ * Override do Fiscal para trocar a tripulação entre os pares 01/02 de
+ * recursos operacionais quando a viatura nominal do XLSX está indisponível
+ * no Mapa Força. Ex.: XLSX escala equipe em RESGATE 01 mas o MF mostra
+ * RESGATE 01 baixada e RESGATE 02 com AR_031 DISPONIVEL — o Fiscal aciona
+ * o swap e o `PreviaService` move a tripulação para RESGATE 02.
+ *
+ * Mergulho usa `overrideMergulhoSchema` próprio (semântica diferente:
+ * letras A/B/C de equipes paralelas).
+ */
+export const PARES_RECURSOS = ['ABTS', 'RESGATE', 'SALVAMAR', 'QUADRICICLO'] as const;
+export type ParRecurso = (typeof PARES_RECURSOS)[number];
+
+export const overrideParRecursoSchema = z.object({
+  /** Data ISO (YYYY-MM-DD). */
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  par: z.enum(PARES_RECURSOS),
+  /** Sempre true; deixa schema extensível. */
+  swap: z.literal(true),
+});
+export type OverrideParRecurso = z.infer<typeof overrideParRecursoSchema>;
 
 /**
  * S0.5 — Swap de 2 militares de MESMA equipe entre posições da
@@ -348,6 +389,10 @@ export const ajustesPreviaSchema = z.object({
   swapsMilitares: z.array(previaSwapMilitarSchema).default([]),
   /** S0.x/Fix-Mergulho — Por dia, troca M01↔M02. */
   overridesMergulho: z.array(overrideMergulhoSchema).default([]),
+  /** Por dia/par operacional, troca 01↔02 (ABTS, RESGATE, SALVAMAR, QUADRICICLO). */
+  overridesParesRecursos: z.array(overrideParRecursoSchema).default([]),
+  /** S0.x/Fix-AtivarRecurso — Recursos do MF ativados ad-hoc pelo Fiscal. */
+  ativacoesRecurso: z.array(ativacaoRecursoSchema).default([]),
 });
 export type AjustesPrevia = z.infer<typeof ajustesPreviaSchema>;
 
@@ -439,6 +484,29 @@ export const previaDoDiaSchema = z.object({
 
   /** S0.x/Fix-Mergulho — overrides M01↔M02 do Fiscal aplicados ao dia. */
   overridesMergulho: z.array(overrideMergulhoSchema).default([]),
+
+  /** Overrides 01↔02 do Fiscal (ABTS/RESGATE/SALVAMAR/QUADRICICLO) aplicados ao dia. */
+  overridesParesRecursos: z.array(overrideParRecursoSchema).default([]),
+
+  /** S0.x/Fix-AtivarRecurso — Recursos do MF ativados ad-hoc pelo Fiscal. */
+  ativacoesRecurso: z.array(ativacaoRecursoSchema).default([]),
+
+  /**
+   * Composição "atual" do turno corrente conforme o Mapa Força (col E-J da
+   * aba 1ºBBM). Lê só o snapshot mais recente — não é histórico. O front
+   * renderiza ao lado da tripulação do XLSX para o Fiscal comparar antes
+   * da rendição.
+   */
+  composicaoAtualMf: z
+    .array(
+      z.object({
+        recurso: z.string(),
+        chefe: z.string().optional(),
+        motorista: z.string().optional(),
+        operadores: z.array(z.string()),
+      }),
+    )
+    .default([]),
 
   /** S6a-fix item 6 — Chefes de Operações escalados no dia (planilha ChOp externa). */
   chefesOperacoes: z.array(chefeOperacoesSchema).default([]),

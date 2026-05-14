@@ -14,6 +14,7 @@ const PAPEL_LABEL: Record<string, string> = {
   dro: 'DRO',
   sentinela: 'Sentinela',
   sargenteante: 'Sargenteante',
+  almoxarife: 'Almoxarife',
   militar: 'Militar',
 };
 
@@ -110,21 +111,21 @@ export function HomePage() {
         {showLogistica && (
           <ModuloSection
             titulo="Logística"
-            descricao="Frota e equipamento: viaturas e seus dados operacionais."
+            descricao="Frota, recursos e estado do Mapa Força."
             accent="border-l-amber-500"
           >
             <CardLink to="/cadastros/viaturas" icon="🚒" label="Viaturas" />
+            <CardLink to="/logistica/recursos" icon="📦" label="Recursos" />
           </ModuloSection>
         )}
 
         {showConfiguracoes && (
           <ModuloSection
             titulo="Configurações"
-            descricao="Admin · Unidades e Recursos do sistema (whitelist do MF)."
+            descricao="Admin · Unidades e Integrações."
             accent="border-l-slate-600"
           >
             <CardLink to="/configuracoes/unidades" icon="🏛️" label="Unidades" />
-            <CardLink to="/configuracoes/recursos" icon="📦" label="Recursos" />
             <CardLink to="/configuracoes/integracoes" icon="🔗" label="Integrações" />
           </ModuloSection>
         )}

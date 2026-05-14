@@ -12,6 +12,7 @@ import type {
   ConferenciaViaturaEntry,
   ContatoLogistico,
   ViaturaCbmes,
+  ViaturaEnriquecida,
   ViaturaQdvBaseLista,
   Atestado,
   CreateAtestadoInput,
@@ -166,6 +167,12 @@ export const api = {
   viaturasQdvCbmes: () => request<ViaturaCbmes[]>('/viaturas/qdv/cbmes'),
   viaturasQdvContatos: () => request<ContatoLogistico[]>('/viaturas/qdv/contatos'),
 
+  // S0.x — Visão consolidada (1BBM_1CIA QDV + BASE_LISTA + MF + Contatos)
+  viaturasEnriquecidas: () =>
+    request<{ items: ViaturaEnriquecida[]; contatoResponsavel: ContatoLogistico | null }>(
+      '/viaturas/enriquecidas',
+    ),
+
   viaturasFindById: (id: string) => request<Viatura>(`/viaturas/${id}`),
 
   viaturasCreate: (input: CreateViaturaInput) =>
@@ -287,11 +294,12 @@ export const api = {
   escalasUpsertComposicao: (
     ano: number,
     mes: number,
+    quinzena: 1 | 2,
     entry: { equipe: LetraEquipe; viatura: string; funcao: string; militar: MilitarRef | null },
   ) =>
     request<EscalaMensal>(`/escalas/${ano}/${mes}/composicao`, {
       method: 'PUT',
-      body: JSON.stringify(entry),
+      body: JSON.stringify({ quinzena, ...entry }),
     }),
 
   // Prévia do Mapa Força (S4)

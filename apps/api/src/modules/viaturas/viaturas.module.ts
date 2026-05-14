@@ -4,11 +4,22 @@ import { ViaturasController } from './viaturas.controller';
 import { ViaturasService } from './viaturas.service';
 import { ViaturasQdvService } from './viaturas-qdv.service';
 import { ViaturasQdvExtrasService } from './viaturas-qdv-extras.service';
+import { ViaturasEnriquecidasService } from './viaturas-enriquecidas.service';
 
 @Module({
   imports: [MapaForcaModule],
   controllers: [ViaturasController],
-  providers: [ViaturasService, ViaturasQdvService, ViaturasQdvExtrasService],
-  exports: [ViaturasService, ViaturasQdvService, ViaturasQdvExtrasService],
+  providers: [
+    ViaturasService,
+    ViaturasQdvService,
+    ViaturasQdvExtrasService,
+    ViaturasEnriquecidasService,
+  ],
+  exports: [
+    ViaturasService,
+    ViaturasQdvService,
+    ViaturasQdvExtrasService,
+    ViaturasEnriquecidasService,
+  ],
 })
 export class ViaturasModule {}

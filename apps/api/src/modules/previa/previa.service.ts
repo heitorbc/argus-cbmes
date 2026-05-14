@@ -9,11 +9,13 @@ import {
   type LetraEquipe,
   type LetraEquipeRotativa,
   type Militar,
+  type AtivacaoRecurso,
   type MilitarRef,
   type PreviaDoDia,
   type PreviaFiscal,
   type PreviaIdeoEntry,
   type PreviaInconsistencia,
+  type ParRecurso,
   type PreviaSwapMilitar,
   type PreviaTripulacaoEntry,
   type StatusViatura,
@@ -37,6 +39,7 @@ import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.
 import { FiscaisService } from '../fiscais/fiscais.service';
 import { IdeoStatusService } from '../ideo/ideo-status.service';
 import { IdeoService } from '../ideo/ideo.service';
+import { MapaForcaService } from '../mapa-forca/mapa-forca.service';
 import { ServicoService } from '../servico/servico.service';
 import { TrocasAutorizadasService } from '../trocas-autorizadas/trocas-autorizadas.service';
 import { ViaturasService } from '../viaturas/viaturas.service';
@@ -76,6 +79,7 @@ export class PreviaService {
     private readonly notasServicoSvc: NotasServicoService,
     private readonly trocasAutorizadas: TrocasAutorizadasService,
     private readonly feriasSvc: FeriasService,
+    private readonly mapaForca: MapaForcaService,
   ) {}
 
   async getPreviaDoDia(dataIso: string): Promise<PreviaDoDia> {
@@ -151,6 +155,7 @@ export class PreviaService {
     // Inclui também as viaturas baixadas/emprestadas (com status), para que o WhatsApp
     // possa mostrar `***#BAIXADA#***` inline ao invés de omitir a viatura.
     const allViaturas = await this.viaturas.list();
+    const mfRecursos = await this.mapaForca.getRecursos();
     const viaturasOp = allViaturas.map((v) => ({
       id: v.id,
       codigo: v.prefixo,
@@ -222,12 +227,19 @@ export class PreviaService {
         const swap = ajustes.overridesMergulho.some((o) => o.data === dataIso && o.swap);
         const letraM01 = swap ? mergulhoDoDia.mergulho02 : mergulhoDoDia.mergulho01;
         const letraM02 = swap ? mergulhoDoDia.mergulho01 : mergulhoDoDia.mergulho02;
+        // Cadastro do Mergulho é independente por quinzena (Sargenteante monta uma
+        // matriz por aba): resolve pelo dia consultado.
+        const diaNum = Number.parseInt(dataIso.slice(8, 10), 10);
+        const equipesMergulho =
+          diaNum <= escala.mergulho.equipesPorQuinzena.ultimoDiaQ1
+            ? escala.mergulho.equipesPorQuinzena.q1
+            : escala.mergulho.equipesPorQuinzena.q2;
         if (letraM01) {
-          const eq = escala.mergulho.equipes[letraM01];
+          const eq = equipesMergulho[letraM01];
           if (eq) injetarMergulhoEmTripulacao('MERGULHO 01', eq, equipe, tripulacao, matcher);
         }
         if (letraM02) {
-          const eq = escala.mergulho.equipes[letraM02];
+          const eq = equipesMergulho[letraM02];
           if (eq) injetarMergulhoEmTripulacao('MERGULHO 02', eq, equipe, tripulacao, matcher);
         }
       }
@@ -236,10 +248,25 @@ export class PreviaService {
     if (escala?.salvamar && equipe) {
       const letra = escala.salvamar.porDia[dataIso];
       if (letra) {
-        const eq = escala.salvamar.equipes[letra];
+        const diaNum = Number.parseInt(dataIso.slice(8, 10), 10);
+        const equipesSalvamar =
+          diaNum <= escala.salvamar.equipesPorQuinzena.ultimoDiaQ1
+            ? escala.salvamar.equipesPorQuinzena.q1
+            : escala.salvamar.equipesPorQuinzena.q2;
+        const eq = equipesSalvamar[letra];
         if (eq && eq.supervisores.length > 0) {
           injetarSalvamarEmTripulacao(eq, equipe, tripulacao, matcher);
         }
+      }
+    }
+
+    // S0.x/Fix-AtivarRecurso — Fiscal pode ativar recursos do MF que não
+    // estão na escala XLSX do dia. Cada ativação vira entries em
+    // tripulacao (chefe + motorista? + operadores?), com a viatura
+    // atribuída e equipe rotativa do dia (default).
+    for (const ativ of ajustes.ativacoesRecurso) {
+      if (ativ.data === dataIso) {
+        injetarAtivacaoRecurso(ativ, equipe, tripulacao, matcher, inconsistencias);
       }
     }
 
@@ -249,6 +276,14 @@ export class PreviaService {
     // (célula não encontrada ou equipes diferentes) viram inconsistência.
     for (const swap of ajustes.swapsMilitares) {
       aplicarSwapMilitar(swap, tripulacao, inconsistencias);
+    }
+
+    // Override de pares 01↔02 (Logística): quando a viatura nominal de um
+    // recurso está indisponível no MF e o par tem viatura, o Fiscal pode
+    // realocar a tripulação. Aplicado ANTES de buildComposicaoMf para que
+    // o card no front e o WhatsApp reflitam o destino real.
+    for (const o of ajustes.overridesParesRecursos.filter((x) => x.data === dataIso)) {
+      aplicarOverrideParRecurso(o.par, tripulacao);
     }
 
     // S6b/F2 — composicaoMf espelhando o MF (1 entry por recurso).
@@ -384,6 +419,16 @@ export class PreviaService {
       trocasEscalaEspecial: ajustes.trocasEscalaEspecial,
       swapsMilitares: ajustes.swapsMilitares,
       overridesMergulho: ajustes.overridesMergulho,
+      overridesParesRecursos: ajustes.overridesParesRecursos,
+      ativacoesRecurso: ajustes.ativacoesRecurso,
+      composicaoAtualMf: mfRecursos
+        .filter((r) => r.chefe || r.motorista || r.operadores.length > 0)
+        .map((r) => ({
+          recurso: r.recurso,
+          chefe: r.chefe,
+          motorista: r.motorista,
+          operadores: r.operadores,
+        })),
       chefesOperacoes: chefes,
       estadoServico: estadoServico.estado,
       iniciadoEm: estadoServico.iniciadoEm,
@@ -613,6 +658,44 @@ function injetarSalvamarEmTripulacao(
 }
 
 /**
+ * S0.x/Fix-AtivarRecurso — Empurra entries em `tripulacao` para um recurso
+ * ativado ad-hoc pelo Fiscal. Detecta conflito quando o recurso já está
+ * presente em `tripulacao` (evita duplicação) — registra inconsistência
+ * e ignora a ativação.
+ */
+function injetarAtivacaoRecurso(
+  ativ: AtivacaoRecurso,
+  equipeDoDia: LetraEquipeRotativa | null,
+  tripulacao: PreviaTripulacaoEntry[],
+  matcher: NomeMatcher,
+  inconsistencias: PreviaInconsistencia[],
+): void {
+  const jaPresente = tripulacao.some((t) => t.viatura === ativ.recurso);
+  if (jaPresente) {
+    inconsistencias.push({
+      tipo: 'NF_NAO_RESOLVIDO',
+      mensagem: `Ativação ignorada: recurso "${ativ.recurso}" já está presente na tripulação do dia ${ativ.data}.`,
+      detalhe: { origem: 'ativacao-recurso', recurso: ativ.recurso, data: ativ.data },
+    });
+    return;
+  }
+  const equipe = (ativ.equipe ?? equipeDoDia ?? 'STAFF') as LetraEquipe;
+  const push = (ref: MilitarRef, funcao: string): void => {
+    tripulacao.push({
+      equipe,
+      viatura: ativ.recurso,
+      funcao,
+      militarRef: ref,
+      militarResolvido: matcher.resolve(ref).resolved,
+      isFiscal: false,
+    });
+  };
+  push(ativ.chefe, 'Ch');
+  if (ativ.motorista) push(ativ.motorista, 'Mot');
+  ativ.operadores.forEach((m, i) => push(m, `Op${i + 1}`));
+}
+
+/**
  * S0.5/PR1 — Converte uma `TrocaAutorizada` (planilha externa, 2 datas)
  * em uma `PreviaTroca` apropriada para a data alvo.
  *
@@ -764,6 +847,30 @@ function aplicarSwapMilitar(
   a.militarResolvido = b.militarResolvido;
   b.militarRef = tmpRef;
   b.militarResolvido = tmpResolvido;
+}
+
+/**
+ * Aplica o override de par 01↔02 no array de tripulação: toda entrada com
+ * viatura == "<RECURSO> 01" passa a "<RECURSO> 02" e vice-versa. Idempotente
+ * sob swap único (chamar duas vezes anula). ABTS usa underscore ("ABTS_01");
+ * os demais usam espaço.
+ */
+const PARES_VIATURA: Record<ParRecurso, [string, string]> = {
+  ABTS: ['ABTS_01', 'ABTS_02'],
+  RESGATE: ['RESGATE 01', 'RESGATE 02'],
+  SALVAMAR: ['SALVAMAR 01', 'SALVAMAR 02'],
+  QUADRICICLO: ['QUADRICICLO 01', 'QUADRICICLO 02'],
+};
+
+function aplicarOverrideParRecurso(
+  par: ParRecurso,
+  tripulacao: PreviaTripulacaoEntry[],
+): void {
+  const [v01, v02] = PARES_VIATURA[par];
+  for (const t of tripulacao) {
+    if (t.viatura === v01) t.viatura = v02;
+    else if (t.viatura === v02) t.viatura = v01;
+  }
 }
 
 /** Re-export para uso em tests/controller. */

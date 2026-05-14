@@ -16,6 +16,8 @@ const VAZIO: AjustesPrevia = {
   trocasEscalaEspecial: [],
   swapsMilitares: [],
   overridesMergulho: [],
+  overridesParesRecursos: [],
+  ativacoesRecurso: [],
 };
 
 /**
@@ -63,7 +65,11 @@ export class AjustesPreviaService {
       // S0.5 — cliente gerencia swapsMilitares via PUT inteiro (mesmo padrão de `trocas`).
       swapsMilitares: input.swapsMilitares,
       // S0.x/Fix-Mergulho — cliente gerencia overridesMergulho via PUT inteiro.
-      overridesMergulho: input.overridesMergulho,
+      overridesMergulho: input.overridesMergulho ?? [],
+      // Override 01↔02 de pares operacionais (gerenciado pelo cliente).
+      overridesParesRecursos: input.overridesParesRecursos ?? [],
+      // S0.x/Fix-AtivarRecurso — cliente gerencia ativacoesRecurso via PUT inteiro.
+      ativacoesRecurso: input.ativacoesRecurso ?? [],
     };
     this.byData.set(dataIso, ajustes);
     return ajustes;

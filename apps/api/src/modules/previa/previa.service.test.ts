@@ -87,6 +87,21 @@ class FakeChefesOperacoesService {
   }
 }
 
+class FakeMapaForcaService {
+  recursos: Array<{
+    recurso: string;
+    chefe?: string;
+    motorista?: string;
+    operadores: string[];
+    semEquipe: boolean;
+    vtrStatus: 'DISPONIVEL' | 'BAIXADA' | 'EMPRESTADA' | 'NAO_POSSUI' | null;
+    vtrPrefixo?: string;
+  }> = [];
+  async getRecursos(): Promise<typeof this.recursos> {
+    return this.recursos;
+  }
+}
+
 class FakeTrocasAutorizadasService {
   trocas: Array<{
     dataEscala: string;
@@ -157,7 +172,11 @@ const escalaAbril2026: EscalaMensal = {
   origemArquivo: '04 ABRIL DE 2026.xlsx',
   importadoEm: '2026-04-01T12:00:00Z',
   diaEquipe: { '2026-04-23': 'C' },
-  composicao: composicaoCharlie,
+  composicaoPorQuinzena: {
+    q1: composicaoCharlie,
+    q2: composicaoCharlie,
+    ultimoDiaQ1: 14,
+  },
   avisos: [],
 };
 
@@ -195,6 +214,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
       new NotasServicoService(),
       new FakeTrocasAutorizadasService() as unknown as never,
       new FeriasService(),
+      new FakeMapaForcaService() as unknown as never,
     );
 
     escalas.save(escalaAbril2026);
@@ -481,19 +501,36 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
     escalas.save({
       ...escalaAbril2026,
       mergulho: {
-        equipes: {
-          A: {
-            letra: 'A',
-            chefe: { raw: '2º SGT BARCELLOS', postoAbreviado: '2ºSGT', nomeGuerra: 'BARCELLOS' },
-            motorista: null,
-            mergulhadores: [],
+        equipesPorQuinzena: {
+          q1: {
+            A: {
+              letra: 'A',
+              chefe: { raw: '2º SGT BARCELLOS', postoAbreviado: '2ºSGT', nomeGuerra: 'BARCELLOS' },
+              motorista: null,
+              mergulhadores: [],
+            },
+            B: {
+              letra: 'B',
+              chefe: { raw: '3º SGT KARINA', postoAbreviado: '3ºSGT', nomeGuerra: 'KARINA' },
+              motorista: null,
+              mergulhadores: [],
+            },
           },
-          B: {
-            letra: 'B',
-            chefe: { raw: '3º SGT KARINA', postoAbreviado: '3ºSGT', nomeGuerra: 'KARINA' },
-            motorista: null,
-            mergulhadores: [],
+          q2: {
+            A: {
+              letra: 'A',
+              chefe: { raw: '2º SGT BARCELLOS', postoAbreviado: '2ºSGT', nomeGuerra: 'BARCELLOS' },
+              motorista: null,
+              mergulhadores: [],
+            },
+            B: {
+              letra: 'B',
+              chefe: { raw: '3º SGT KARINA', postoAbreviado: '3ºSGT', nomeGuerra: 'KARINA' },
+              motorista: null,
+              mergulhadores: [],
+            },
           },
+          ultimoDiaQ1: 14,
         },
         porDia: { '2026-04-23': { mergulho01: 'A', mergulho02: 'B' } },
       },
@@ -509,19 +546,36 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
     escalas.save({
       ...escalaAbril2026,
       mergulho: {
-        equipes: {
-          A: {
-            letra: 'A',
-            chefe: { raw: '2º SGT BARCELLOS', postoAbreviado: '2ºSGT', nomeGuerra: 'BARCELLOS' },
-            motorista: null,
-            mergulhadores: [],
+        equipesPorQuinzena: {
+          q1: {
+            A: {
+              letra: 'A',
+              chefe: { raw: '2º SGT BARCELLOS', postoAbreviado: '2ºSGT', nomeGuerra: 'BARCELLOS' },
+              motorista: null,
+              mergulhadores: [],
+            },
+            B: {
+              letra: 'B',
+              chefe: { raw: '3º SGT KARINA', postoAbreviado: '3ºSGT', nomeGuerra: 'KARINA' },
+              motorista: null,
+              mergulhadores: [],
+            },
           },
-          B: {
-            letra: 'B',
-            chefe: { raw: '3º SGT KARINA', postoAbreviado: '3ºSGT', nomeGuerra: 'KARINA' },
-            motorista: null,
-            mergulhadores: [],
+          q2: {
+            A: {
+              letra: 'A',
+              chefe: { raw: '2º SGT BARCELLOS', postoAbreviado: '2ºSGT', nomeGuerra: 'BARCELLOS' },
+              motorista: null,
+              mergulhadores: [],
+            },
+            B: {
+              letra: 'B',
+              chefe: { raw: '3º SGT KARINA', postoAbreviado: '3ºSGT', nomeGuerra: 'KARINA' },
+              motorista: null,
+              mergulhadores: [],
+            },
           },
+          ultimoDiaQ1: 14,
         },
         porDia: { '2026-04-23': { mergulho01: 'A', mergulho02: 'B' } },
       },
@@ -546,6 +600,122 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
     expect(m01?.militarRef.nomeGuerra).toBe('KARINA'); // antes era B em M02
     expect(m02?.militarRef.nomeGuerra).toBe('BARCELLOS'); // antes era A em M01
     expect(r.overridesMergulho).toHaveLength(1);
+  });
+
+  it('Fix-AtivarRecurso — Fiscal ativa RESGATE 02 ad-hoc, recurso aparece em tripulacao', async () => {
+    const previaAsAny = previa as unknown as { ajustes: AjustesPreviaService };
+    previaAsAny.ajustes.upsert(
+      '2026-04-23',
+      {
+        trocas: [],
+        escalaEspecial: {},
+        notasServico: [],
+        dispensas: [],
+        trocasEscalaEspecial: [],
+        swapsMilitares: [],
+        overridesMergulho: [],
+        overridesParesRecursos: [],
+        ativacoesRecurso: [
+          {
+            data: '2026-04-23',
+            recurso: 'RESGATE 02',
+            vtrPrefixo: 'AR_044',
+            chefe: { raw: '2º SGT BARCELLOS', postoAbreviado: '2ºSGT', nomeGuerra: 'BARCELLOS' },
+            operadores: [],
+          },
+        ],
+      },
+      true,
+    );
+    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r02 = r.tripulacao.find((t) => t.viatura === 'RESGATE 02' && t.funcao === 'Ch');
+    expect(r02).toBeDefined();
+    expect(r02!.militarRef.nomeGuerra).toBe('BARCELLOS');
+    expect(r.ativacoesRecurso).toHaveLength(1);
+  });
+
+  it('Fix-AtivarRecurso — ativação de recurso já presente na tripulação registra inconsistência', async () => {
+    // ABTS 01 já está na escala (tripulacao). Tentar ativar de novo deve falhar.
+    const previaAsAny = previa as unknown as { ajustes: AjustesPreviaService };
+    previaAsAny.ajustes.upsert(
+      '2026-04-23',
+      {
+        trocas: [],
+        escalaEspecial: {},
+        notasServico: [],
+        dispensas: [],
+        trocasEscalaEspecial: [],
+        swapsMilitares: [],
+        overridesMergulho: [],
+        overridesParesRecursos: [],
+        ativacoesRecurso: [
+          {
+            data: '2026-04-23',
+            recurso: 'ABTS 01',
+            vtrPrefixo: 'ABTS_011',
+            chefe: { raw: 'CB ELSON', postoAbreviado: 'CB', nomeGuerra: 'ELSON' },
+            operadores: [],
+          },
+        ],
+      },
+      true,
+    );
+    const r = await previa.getPreviaDoDia('2026-04-23');
+    const inc = r.inconsistencias.find(
+      (i) =>
+        (i.detalhe as Record<string, unknown> | undefined)?.origem === 'ativacao-recurso',
+    );
+    expect(inc).toBeDefined();
+  });
+
+  it('override de par RESGATE 01↔02 realoca a tripulação XLSX', async () => {
+    // Substitui a escala default por uma que use o nome canônico
+    // "RESGATE 01" (que é o que o parser do XLSX emite após normalização).
+    escalas.save({
+      ...escalaAbril2026,
+      composicaoPorQuinzena: {
+        q1: [
+          {
+            equipe: 'C',
+            viatura: 'RESGATE 01',
+            funcao: 'Ch',
+            militar: { raw: '3º SGT KARINA', postoAbreviado: '3ºSGT', nomeGuerra: 'KARINA' },
+          },
+        ],
+        q2: [
+          {
+            equipe: 'C',
+            viatura: 'RESGATE 01',
+            funcao: 'Ch',
+            militar: { raw: '3º SGT KARINA', postoAbreviado: '3ºSGT', nomeGuerra: 'KARINA' },
+          },
+        ],
+        ultimoDiaQ1: 14,
+      },
+    });
+    const previaAsAny = previa as unknown as { ajustes: AjustesPreviaService };
+    previaAsAny.ajustes.upsert(
+      '2026-04-23',
+      {
+        trocas: [],
+        escalaEspecial: {},
+        notasServico: [],
+        dispensas: [],
+        trocasEscalaEspecial: [],
+        swapsMilitares: [],
+        overridesMergulho: [],
+        overridesParesRecursos: [{ data: '2026-04-23', par: 'RESGATE', swap: true }],
+      },
+      true,
+    );
+    const r = await previa.getPreviaDoDia('2026-04-23');
+    // Tripulação que estava em RESGATE 01 agora aparece sob RESGATE 02.
+    const r01 = r.tripulacao.filter((t) => t.viatura === 'RESGATE 01' && t.equipe === 'C');
+    const r02 = r.tripulacao.filter((t) => t.viatura === 'RESGATE 02' && t.equipe === 'C');
+    expect(r01).toHaveLength(0);
+    expect(r02.length).toBeGreaterThan(0);
+    expect(r02.some((t) => t.funcao === 'Ch')).toBe(true);
+    expect(r.overridesParesRecursos).toHaveLength(1);
   });
 
   it('Fix-2 homologação — Chefe de Operações é injetado em tripulacao no mesmo card do motorista CHOP', async () => {
@@ -623,6 +793,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
       new NotasServicoService(),
       new FakeTrocasAutorizadasService() as unknown as never,
       new FeriasService(),
+      new FakeMapaForcaService() as unknown as never,
     );
     const r = await previa.getPreviaDoDia('2026-04-23');
     const ar044 = r.viaturasOperacionais.find((v) => v.codigo === 'AR 044');
@@ -677,6 +848,7 @@ describe('PreviaService — inconsistências', () => {
       new NotasServicoService(),
       new FakeTrocasAutorizadasService() as unknown as never,
       new FeriasService(),
+      new FakeMapaForcaService() as unknown as never,
     );
   });
 
@@ -709,16 +881,21 @@ describe('PreviaService — inconsistências', () => {
   });
 
   it('NF_NAO_RESOLVIDO quando militar do XLSX não está no QDI', async () => {
+    const composicaoQ: ComposicaoEntry[] = [
+      {
+        equipe: 'C',
+        viatura: 'ABTS 01',
+        funcao: 'Op 2',
+        militar: { raw: 'SD INEXISTENTE', postoAbreviado: 'SD', nomeGuerra: 'INEXISTENTE' },
+      },
+    ];
     escalas.save({
       ...escalaAbril2026,
-      composicao: [
-        {
-          equipe: 'C',
-          viatura: 'ABTS 01',
-          funcao: 'Op 2',
-          militar: { raw: 'SD INEXISTENTE', postoAbreviado: 'SD', nomeGuerra: 'INEXISTENTE' },
-        },
-      ],
+      composicaoPorQuinzena: {
+        q1: composicaoQ,
+        q2: composicaoQ,
+        ultimoDiaQ1: 14,
+      },
     });
     const r = await previa.getPreviaDoDia('2026-04-23');
     expect(r.tripulacao[0]!.militarResolvido).toBeNull();
@@ -734,16 +911,21 @@ describe('PreviaService — inconsistências', () => {
   });
 
   it('VIATURA_DESCONHECIDA quando composição usa viatura não cadastrada', async () => {
+    const composicaoQ: ComposicaoEntry[] = [
+      {
+        equipe: 'C',
+        viatura: 'ABTS 99',
+        funcao: 'Ch',
+        militar: { raw: '2º SGT BARCELLOS', postoAbreviado: '2ºSGT', nomeGuerra: 'BARCELLOS' },
+      },
+    ];
     escalas.save({
       ...escalaAbril2026,
-      composicao: [
-        {
-          equipe: 'C',
-          viatura: 'ABTS 99',
-          funcao: 'Ch',
-          militar: { raw: '2º SGT BARCELLOS', postoAbreviado: '2ºSGT', nomeGuerra: 'BARCELLOS' },
-        },
-      ],
+      composicaoPorQuinzena: {
+        q1: composicaoQ,
+        q2: composicaoQ,
+        ultimoDiaQ1: 14,
+      },
     });
     const r = await previa.getPreviaDoDia('2026-04-23');
     expect(r.inconsistencias.some((i) => i.tipo === 'VIATURA_DESCONHECIDA')).toBe(true);

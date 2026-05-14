@@ -15,6 +15,7 @@ import {
   updateViaturaSchema,
   type ContatoLogistico,
   type ViaturaCbmes,
+  type ViaturaEnriquecida,
   type ViaturaQdv,
   type ViaturaQdvBaseLista,
 } from '@argus/shared-types';
@@ -22,6 +23,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { ViaturasService } from './viaturas.service';
 import { ViaturasQdvService } from './viaturas-qdv.service';
 import { ViaturasQdvExtrasService } from './viaturas-qdv-extras.service';
+import { ViaturasEnriquecidasService } from './viaturas-enriquecidas.service';
 
 @Controller('viaturas')
 export class ViaturasController {
@@ -29,7 +31,25 @@ export class ViaturasController {
     private readonly viaturas: ViaturasService,
     private readonly viaturasQdv: ViaturasQdvService,
     private readonly viaturasQdvExtras: ViaturasQdvExtrasService,
+    private readonly viaturasEnriquecidas: ViaturasEnriquecidasService,
   ) {}
+
+  /**
+   * S0.x — Visão consolidada para `/cadastros/viaturas`. Lista de
+   * viaturas da unidade 1BBM_1CIA (vinda da QDV) enriquecida com
+   * BASE_LISTA + Mapa Força.
+   */
+  @Get('enriquecidas')
+  async listEnriquecidas(): Promise<{
+    items: ViaturaEnriquecida[];
+    contatoResponsavel: ContatoLogistico | null;
+  }> {
+    const [items, contatoResponsavel] = await Promise.all([
+      this.viaturasEnriquecidas.listEnriquecidas(),
+      this.viaturasEnriquecidas.getContatoResponsavel1aCia(),
+    ]);
+    return { items, contatoResponsavel };
+  }
 
   @Get()
   list() {

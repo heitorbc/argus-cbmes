@@ -84,3 +84,33 @@ export const contatoLogisticoSchema = z.object({
   email: z.string().optional(),
 });
 export type ContatoLogistico = z.infer<typeof contatoLogisticoSchema>;
+
+/**
+ * S0.x — Visão consolidada de uma viatura para a página
+ * `/cadastros/viaturas`. Lista vem da aba `1BBM_1CIA` da QDV
+ * (fonte de verdade), enriquecida com BASE_LISTA (renavam, modelo
+ * pneu, ano, nomenclatura, categoria CNH), Mapa Força (status diário)
+ * e Contatos_LOGISTICAS (responsável da unidade — único na footer).
+ */
+export const viaturaEnriquecidaSchema = z.object({
+  prefixo: z.string(),
+  obm: z.string(),
+  nomenclatura: z.string().optional(),
+  ano: z.string().optional(),
+  /** Status como string (label da QDV: "DISPONÍVEL"/"BAIXADA"/...). */
+  statusQdv: z.string().optional(),
+  /** Status enum oficial vindo do Mapa Força (StatusViatura). */
+  statusMf: z.enum(['DISPONIVEL', 'BAIXADA', 'EMPRESTADA']).nullable().optional(),
+  emprestadaA: z.string().optional(),
+  kmAtual: z.number().int().optional(),
+  observacao: z.string().optional(),
+  empregoPrimario: z.string().optional(),
+  empregoSecundario: z.string().optional(),
+  placa: z.string().optional(),
+  renavam: z.string().optional(),
+  categoriaCnh: z.string().optional(),
+  marcaModelo: z.string().optional(),
+  combustivel: z.string().optional(),
+  modeloPneu: z.string().optional(),
+});
+export type ViaturaEnriquecida = z.infer<typeof viaturaEnriquecidaSchema>;
