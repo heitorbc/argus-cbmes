@@ -90,23 +90,71 @@ describe('ServicoService — estado do dia', () => {
     expect(r2.estado).toBe('VIATURA_CONFERIDA');
   });
 
-  it('encerrar rejeita se não passou por VIATURA_CONFERIDA (sem force)', () => {
+  it('encerrar manual rejeita não-admin mesmo após VIATURA_CONFERIDA', () => {
     iniciarServicoCompleto(svc, data, fiscalNf);
+    svc.marcarEquipeConferida(data);
+    svc.marcarViaturaConferida(data);
     expect(() => svc.encerrar(data, fiscalNf, false)).toThrow(ForbiddenException);
   });
 
-  it('encerrar com force=true permite atalho (admin override)', () => {
+  it('encerrar manual como admin transita para ENCERRADO direto de INICIADO', () => {
     iniciarServicoCompleto(svc, data, fiscalNf);
     const r = svc.encerrar(data, fiscalNf, true);
     expect(r.estado).toBe('ENCERRADO');
     expect(r.encerradoPorNf).toBe(fiscalNf);
   });
 
-  it('encerrar do estado VIATURA_CONFERIDA passa', () => {
+  // S0.x — Auto-finalização na passagem de serviço
+  it('iniciar do dia D+1 encerra automaticamente o serviço D ainda aberto', () => {
+    iniciarServicoCompleto(svc, '2026-05-09', fiscalNf);
+    svc.marcarEquipeConferida('2026-05-09');
+    svc.marcarViaturaConferida('2026-05-09');
+    expect(svc.get('2026-05-09').estado).toBe('VIATURA_CONFERIDA');
+
+    // Passagem de serviço — fiscal do dia 10 inicia o serviço.
+    iniciarServicoCompleto(svc, '2026-05-10', '4750241');
+
+    // Dia anterior agora ENCERRADO automaticamente.
+    expect(svc.get('2026-05-09').estado).toBe('ENCERRADO');
+    expect(svc.get('2026-05-09').encerradoPorNf).toBe('4750241');
+    expect(svc.get('2026-05-10').estado).toBe('INICIADO');
+  });
+
+  it('iniciar do dia D+2 encerra dias D e D+1 ainda em INICIADO+', () => {
+    iniciarServicoCompleto(svc, '2026-05-09', fiscalNf);
+    iniciarServicoCompleto(svc, '2026-05-10', '4750241');
+    // Sanity: dia 09 já encerrou pelo iniciar do dia 10.
+    expect(svc.get('2026-05-09').estado).toBe('ENCERRADO');
+
+    iniciarServicoCompleto(svc, '2026-05-11', '3174824');
+    expect(svc.get('2026-05-10').estado).toBe('ENCERRADO');
+    expect(svc.get('2026-05-11').estado).toBe('INICIADO');
+  });
+
+  it('iniciar não toca dias futuros nem dias com estado NAO_INICIADO/PREVIA_INICIADA', () => {
+    // Dia D+1 em PREVIA_INICIADA
+    svc.iniciarPrevia('2026-05-10', fiscalNf, fiscalNf, true);
+    // Dia D em INICIADO+
+    iniciarServicoCompleto(svc, '2026-05-09', fiscalNf);
+    expect(svc.get('2026-05-10').estado).toBe('PREVIA_INICIADA');
+    // Inicia serviço D+2 — não deve afetar D+1 PREVIA_INICIADA.
+    iniciarServicoCompleto(svc, '2026-05-11', '3174824');
+    expect(svc.get('2026-05-10').estado).toBe('PREVIA_INICIADA');
+    expect(svc.get('2026-05-09').estado).toBe('ENCERRADO');
+  });
+
+  it('encerrar manual exige admin (não-admin → ForbiddenException)', () => {
     iniciarServicoCompleto(svc, data, fiscalNf);
     svc.marcarEquipeConferida(data);
     svc.marcarViaturaConferida(data);
-    const r = svc.encerrar(data, fiscalNf, false);
+    expect(() => svc.encerrar(data, fiscalNf, false)).toThrow(ForbiddenException);
+  });
+
+  it('encerrar como admin transita para ENCERRADO em qualquer estado pós-INICIADO', () => {
+    iniciarServicoCompleto(svc, data, fiscalNf);
+    svc.marcarEquipeConferida(data);
+    svc.marcarViaturaConferida(data);
+    const r = svc.encerrar(data, fiscalNf, true);
     expect(r.estado).toBe('ENCERRADO');
   });
 
@@ -114,8 +162,8 @@ describe('ServicoService — estado do dia', () => {
     iniciarServicoCompleto(svc, data, fiscalNf);
     svc.marcarEquipeConferida(data);
     svc.marcarViaturaConferida(data);
-    svc.encerrar(data, fiscalNf, false);
-    expect(() => svc.encerrar(data, fiscalNf, false)).toThrow(BadRequestException);
+    svc.encerrar(data, fiscalNf, true);
+    expect(() => svc.encerrar(data, fiscalNf, true)).toThrow(BadRequestException);
   });
 
   it('reset(dataIso) limpa estado da data', () => {

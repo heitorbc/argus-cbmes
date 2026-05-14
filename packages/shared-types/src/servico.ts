@@ -32,13 +32,13 @@ export const ESTADO_SERVICO = [
 export type EstadoServico = (typeof ESTADO_SERVICO)[number];
 
 export const ESTADO_SERVICO_LABEL: Record<EstadoServico, string> = {
-  NAO_INICIADO: 'Não iniciado',
-  PREVIA_INICIADA: 'Prévia em edição',
-  INICIADO: 'Iniciado',
+  NAO_INICIADO: 'Não iniciada',
+  PREVIA_INICIADA: 'Em prévia',
+  INICIADO: 'Serviço Iniciado',
   EQUIPE_CONFERIDA: 'Equipe conferida',
   VIATURA_CONFERIDA: 'Viaturas conferidas',
-  PREENCHENDO_MF: 'Preenchendo MF',
-  ENCERRADO: 'Encerrado',
+  PREENCHENDO_MF: 'Preenchendo Mapa Força',
+  ENCERRADO: 'Encerrado (passagem de serviço)',
 };
 
 export const servicoEstadoSchema = z.object({

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import type {
   ParteDiaria,
   ParteDiariaFaxina,
@@ -25,7 +25,9 @@ export function ParteDiariaPage() {
   const isFiscalOuAdmin = user?.papeis.some((p) => p === 'admin' || p === 'fiscal') ?? false;
 
   const today = new Date().toISOString().slice(0, 10);
-  const [data, setData] = useState(today);
+  const [searchParams] = useSearchParams();
+  const dataInicial = searchParams.get('data') ?? today;
+  const [data, setData] = useState(dataInicial);
   const [pd, setPd] = useState<ParteDiaria | null>(null);
   const [draft, setDraft] = useState<UpsertParteDiariaInput>({});
   const [loading, setLoading] = useState(false);

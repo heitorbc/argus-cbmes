@@ -297,12 +297,18 @@ export function MapaForcaDetalhePage() {
     }
   };
 
-  const handleEncerrarServico = async (force = false) => {
-    if (!confirm(`Encerrar serviço de ${data}?`)) return;
+  const handleEncerrarServico = async () => {
+    if (
+      !confirm(
+        `Encerrar serviço de ${data} manualmente? O fluxo normal é a auto-finalização ` +
+          `quando o próximo Fiscal iniciar o serviço (passagem de serviço).`,
+      )
+    )
+      return;
     setServicoActionInflight(true);
     setError(null);
     try {
-      await api.servicoEncerrar(data, force);
+      await api.servicoEncerrar(data);
       reload();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Erro ao encerrar serviço');
@@ -529,8 +535,12 @@ export function MapaForcaDetalhePage() {
                 {previa.swapsMilitares.length > 0 && (
                   <details className="mb-2 rounded border border-slate-200 bg-white p-2 text-xs">
                     <summary className="cursor-pointer font-medium text-slate-700">
-                      Swaps aplicados ({previa.swapsMilitares.length})
+                      Realocações internas da equipe ({previa.swapsMilitares.length})
                     </summary>
+                    <p className="mt-1 text-[10px] italic text-slate-500">
+                      Movimentações da prévia do dia. Não constituem trocas de serviço — não
+                      são registradas em Parte Diária nem como ajuste pré-escala.
+                    </p>
                     <ul className="mt-2 space-y-1">
                       {previa.swapsMilitares.map((s, i) => (
                         <li key={i} className="flex items-center justify-between gap-2">
@@ -2815,7 +2825,10 @@ function PreviaEstadoBanner({
   if (estado === 'NAO_INICIADO') {
     return (
       <div className="mt-3 rounded border border-cbmes-blue/30 bg-cbmes-blue/5 p-3 text-sm text-cbmes-blue">
-        <p className="font-semibold">Mapa Força em modo somente leitura.</p>
+        <p className="font-semibold">📖 Mapa Força — Não iniciada</p>
+        <p className="mt-1 text-xs text-slate-700">
+          Nenhuma intervenção foi feita nos dados importados. Visualização somente leitura.
+        </p>
         {podeIniciarPrevia ? (
           <>
             <p className="mt-1 text-xs text-slate-700">
@@ -2853,7 +2866,7 @@ function PreviaEstadoBanner({
     return (
       <div className="mt-3 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
         <p className="font-semibold">
-          ✏️ Prévia em edição
+          ✏️ Mapa Força — Em prévia
           {previa.previaIniciadaPorNf && (
             <span className="ml-2 text-xs font-normal">
               · iniciada por NF {previa.previaIniciadaPorNf}
@@ -2863,8 +2876,11 @@ function PreviaEstadoBanner({
         {podeCancelarPrevia ? (
           <>
             <p className="mt-1 text-xs">
-              Faça os ajustes necessários na composição abaixo. Quando concluído, clique em
-              <strong> "Iniciar Serviço"</strong> abaixo para congelar e abrir as Conferências.
+              Faça os ajustes necessários abaixo. Os ajustes ficam <strong>salvos
+              automaticamente</strong> a cada alteração e o Mapa Força permanece em
+              <strong> "Em prévia"</strong> até você clicar em <strong>"Iniciar Serviço"</strong>,
+              quando os dados são congelados e ficam disponíveis para o preenchimento do
+              Mapa Força CIODES e da Parte Diária.
             </p>
             <button
               type="button"
@@ -2885,16 +2901,37 @@ function PreviaEstadoBanner({
     );
   }
 
-  // INICIADO ou estados posteriores: serviço já em andamento.
+  if (estado === 'ENCERRADO') {
+    return (
+      <div className="mt-3 rounded border border-slate-300 bg-slate-50 p-3 text-sm text-slate-700">
+        <p className="font-semibold">🔒 Serviço encerrado</p>
+        <p className="mt-1 text-xs">
+          Encerrado pela passagem de serviço. Dados arquivados — consulte a Parte Diária do dia
+          para o histórico completo.
+        </p>
+      </div>
+    );
+  }
+
+  // INICIADO em diante (incl. EQUIPE_CONFERIDA, VIATURA_CONFERIDA, PREENCHENDO_MF):
+  // serviço em andamento; alterações vão para a Parte Diária / livro / MF CIODES.
   return (
     <div className="mt-3 rounded border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
       <p className="font-semibold">
-        🚒 Serviço em andamento — estado: {previa.estadoServico}
+        🚒 Serviço Iniciado — em andamento
       </p>
       <p className="mt-1 text-xs">
-        Os ajustes da Prévia foram congelados. Use as Conferências de Equipe/Viatura/Materiais e
-        Alterações Diversas durante o turno.
+        A Prévia foi congelada e os dados estão disponíveis para preenchimento do Mapa Força
+        CIODES (não-implementado) e da Parte Diária. <strong>Toda alteração</strong> a partir
+        deste momento deve constar em livro na seção específica do tipo de alteração; alterações
+        em recursos exigem também atualização no Mapa Força CIODES.
       </p>
+      <Link
+        to={`/parte-diaria?data=${previa.data}`}
+        className="mt-3 inline-block rounded-button bg-cbmes-blue px-4 py-2 text-sm font-semibold text-white hover:bg-cbmes-blue/90"
+      >
+        📑 Editar Parte Diária do dia
+      </Link>
     </div>
   );
 }

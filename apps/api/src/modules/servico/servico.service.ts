@@ -106,6 +106,14 @@ export class ServicoService {
           `Clique em "Iniciar Prévia do Mapa Força" primeiro.`,
       );
     }
+
+    // S0.x — Passagem de serviço: ao iniciar o serviço de hoje, encerra
+    // automaticamente os serviços anteriores ainda abertos (estado
+    // INICIADO+ e diferente de ENCERRADO). Reflete a regra institucional
+    // de que o serviço é ininterrupto e a passagem entre equipes a cada
+    // 24h fecha o turno anterior.
+    this.encerrarServicosAnteriores(dataIso, nf);
+
     const updated: ServicoEstado = {
       ...current,
       estado: 'INICIADO',
@@ -114,6 +122,34 @@ export class ServicoService {
     };
     this.byData.set(dataIso, updated);
     return updated;
+  }
+
+  /**
+   * S0.x — Auto-finalização na passagem de serviço.
+   *
+   * Encerra todos os serviços anteriores a `dataAtual` que ainda estão em
+   * estados de operação (INICIADO, EQUIPE_CONFERIDA, VIATURA_CONFERIDA,
+   * PREENCHENDO_MF). Não toca em NAO_INICIADO, PREVIA_INICIADA (não eram
+   * "serviço em andamento") nem ENCERRADO (idempotente).
+   */
+  private encerrarServicosAnteriores(dataAtual: string, nf: string): void {
+    const now = new Date().toISOString();
+    for (const [data, estado] of this.byData.entries()) {
+      if (data >= dataAtual) continue;
+      if (
+        estado.estado === 'INICIADO' ||
+        estado.estado === 'EQUIPE_CONFERIDA' ||
+        estado.estado === 'VIATURA_CONFERIDA' ||
+        estado.estado === 'PREENCHENDO_MF'
+      ) {
+        this.byData.set(data, {
+          ...estado,
+          estado: 'ENCERRADO',
+          encerradoEm: now,
+          encerradoPorNf: nf,
+        });
+      }
+    }
   }
 
   /**
@@ -197,11 +233,21 @@ export class ServicoService {
   }
 
   /**
-   * Encerra o serviço. Em fluxo normal exige passar por VIATURA_CONFERIDA.
-   * Override permitido apenas para admin/sargenteante (`force=true`).
+   * S0.x — Encerra o serviço **manualmente** (apenas admin).
+   *
+   * O fluxo institucional normal é a auto-finalização disparada pela
+   * passagem de serviço (`iniciar` do dia D+1 encerra D). Esta operação
+   * manual é um override administrativo para casos excepcionais (ex.:
+   * dia sem passagem de serviço programada).
    */
-  encerrar(dataIso: string, nf: string, force = false): ServicoEstado {
+  encerrar(dataIso: string, nf: string, isAdmin: boolean): ServicoEstado {
     const current = this.get(dataIso);
+    if (!isAdmin) {
+      throw new ForbiddenException(
+        `Encerramento manual de serviço é restrito a admin. ` +
+          `O fluxo normal é a passagem de serviço (Iniciar Serviço do próximo turno).`,
+      );
+    }
     if (current.estado === 'NAO_INICIADO' || current.estado === 'PREVIA_INICIADA') {
       throw new BadRequestException(
         `Serviço de ${dataIso} ainda não foi iniciado — não pode encerrar.`,
@@ -209,11 +255,6 @@ export class ServicoService {
     }
     if (current.estado === 'ENCERRADO') {
       throw new BadRequestException(`Serviço de ${dataIso} já está encerrado.`);
-    }
-    if (!force && current.estado !== 'VIATURA_CONFERIDA' && current.estado !== 'PREENCHENDO_MF') {
-      throw new ForbiddenException(
-        `Encerrar exige conferência de equipe + viatura completas. Estado atual: "${current.estado}". Apenas admin pode forçar encerramento.`,
-      );
     }
     const updated: ServicoEstado = {
       ...current,

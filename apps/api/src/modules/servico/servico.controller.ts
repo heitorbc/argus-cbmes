@@ -7,7 +7,6 @@ import {
   HttpStatus,
   Param,
   Post,
-  Query,
 } from '@nestjs/common';
 import {
   addAlteracaoDiversaSchema,
@@ -84,19 +83,19 @@ export class ServicoController {
     return this.servico.iniciar(data, user.nf);
   }
 
-  @Roles('admin', 'fiscal', 'sargenteante')
+  /**
+   * S0.x — Encerramento manual restrito a admin (override administrativo).
+   * O fluxo institucional normal é a auto-finalização ao iniciar o serviço
+   * do dia seguinte (passagem de serviço).
+   */
+  @Roles('admin')
   @Post(':data/encerrar')
   @HttpCode(HttpStatus.OK)
-  encerrar(
-    @Param('data') data: string,
-    @Query('force') force: string | undefined,
-    @CurrentUser() user: UserSession,
-  ): ServicoEstado {
+  encerrar(@Param('data') data: string, @CurrentUser() user: UserSession): ServicoEstado {
     if (!dataParamRegex.test(data)) {
       throw new BadRequestException('data inválida (esperado YYYY-MM-DD)');
     }
-    const isAdmin = user.papeis.includes('admin') || user.papeis.includes('sargenteante');
-    return this.servico.encerrar(data, user.nf, isAdmin && force === 'true');
+    return this.servico.encerrar(data, user.nf, true);
   }
 
   /**

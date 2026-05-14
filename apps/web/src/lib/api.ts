@@ -366,10 +366,12 @@ export const api = {
   servicoIniciar: (data: string) =>
     request<ServicoEstado>(`/servico/${data}/iniciar`, { method: 'POST' }),
 
-  servicoEncerrar: (data: string, force?: boolean) =>
-    request<ServicoEstado>(`/servico/${data}/encerrar${force ? '?force=true' : ''}`, {
-      method: 'POST',
-    }),
+  /**
+   * S0.x — Encerramento manual (admin only). O fluxo institucional normal é a
+   * auto-finalização ao iniciar serviço do dia seguinte (passagem de serviço).
+   */
+  servicoEncerrar: (data: string) =>
+    request<ServicoEstado>(`/servico/${data}/encerrar`, { method: 'POST' }),
 
   // S6h/2.1 — mock do Preencher Mapa Força
   servicoPreencherMf: (data: string) =>

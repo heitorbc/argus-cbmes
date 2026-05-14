@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { DayPicker } from 'react-day-picker';
+import { DayPicker, type DayButtonProps } from 'react-day-picker';
+import { ptBR } from 'date-fns/locale';
 import 'react-day-picker/dist/style.css';
 import { ApiError, api } from '@/lib/api';
 
@@ -23,12 +24,28 @@ const LETRA_EQUIPE_BADGE: Record<string, string> = {
 };
 
 /**
+ * Cores fortes (bg + texto) para a célula do calendário, espelhando a paleta
+ * usada no badge da lista para reforço visual cruzado.
+ */
+const LETRA_EQUIPE_CALENDARIO: Record<string, { bg: string; text: string }> = {
+  A: { bg: 'rgb(16 185 129 / 0.18)', text: 'rgb(4 120 87)' }, // emerald
+  B: { bg: 'rgb(6 182 212 / 0.18)', text: 'rgb(14 116 144)' }, // cyan
+  C: { bg: 'rgb(245 158 11 / 0.20)', text: 'rgb(146 64 14)' }, // amber
+  D: { bg: 'rgb(217 70 239 / 0.18)', text: 'rgb(134 25 143)' }, // fuchsia
+  AQUATICAS: { bg: 'rgb(59 130 246 / 0.18)', text: 'rgb(29 78 216)' }, // blue
+  STAFF: { bg: 'rgb(203 213 225 / 0.50)', text: 'rgb(51 65 85)' }, // slate
+};
+
+/**
  * S0.x/rename-mapa-forca — Tela do Mapa Força (entrada do módulo).
  *
- * Apresenta um calendário (ou lista) dos dias de serviço com escala XLSX
- * importada. Click em um dia abre `/mapa-forca/:data` em modo READ-ONLY
- * por padrão. A edição é liberada apenas para o Fiscal escalado (ou admin)
- * via botão "Iniciar Prévia do Mapa Força" na tela de detalhe.
+ * Apresenta um calendário (PT-BR) ou lista dos dias de serviço com escala
+ * XLSX importada. Cada dia escalado é colorido conforme a equipe (A/B/C/D
+ * ou AQUATICAS/STAFF) e mostra a letra logo abaixo do número.
+ *
+ * Click em um dia abre `/mapa-forca/:data` em modo READ-ONLY por padrão.
+ * A edição é liberada apenas para o Fiscal escalado (ou admin) via botão
+ * "Iniciar Prévia do Mapa Força" na tela de detalhe.
  *
  * Sem carregamento prévio dos dados do dia atual — o usuário escolhe.
  */
@@ -69,16 +86,61 @@ export function MapaForcaPage() {
   }, [ano, mesNum]);
 
   const diasSet = useMemo(() => new Set(diasComEscala), [diasComEscala]);
-  const diasDate = useMemo(
-    () => diasComEscala.map((iso) => parseIsoDate(iso)),
-    [diasComEscala],
-  );
 
   const handleDaySelect = (date: Date | undefined): void => {
     if (!date) return;
     const iso = formatIsoDate(date);
     if (!diasSet.has(iso)) return;
     navigate(`/mapa-forca/${iso}`);
+  };
+
+  /**
+   * Custom DayButton — destaca dias escalados com cor da equipe + letra
+   * logo abaixo do número do dia. Dias sem escala renderizam padrão (faded).
+   */
+  const DayButton = (props: DayButtonProps) => {
+    const { day, children, modifiers: _modifiers, ...rest } = props;
+    const iso = formatIsoDate(day.date);
+    const equipe = equipePorDia[iso];
+    const escalado = diasSet.has(iso);
+    const palette = equipe ? LETRA_EQUIPE_CALENDARIO[equipe] : null;
+    const isOutside = !day.outside ? false : true;
+
+    if (!escalado) {
+      return (
+        <button
+          {...rest}
+          type="button"
+          disabled
+          className={`flex h-12 w-full flex-col items-center justify-center rounded text-sm ${
+            isOutside ? 'text-slate-300' : 'text-slate-400'
+          } cursor-not-allowed`}
+        >
+          {children}
+        </button>
+      );
+    }
+
+    return (
+      <button
+        {...rest}
+        type="button"
+        className="flex h-12 w-full flex-col items-center justify-center rounded text-sm font-semibold transition hover:brightness-95"
+        style={
+          palette
+            ? { backgroundColor: palette.bg, color: palette.text }
+            : { backgroundColor: 'rgb(31 56 100 / 0.10)', color: '#1F3864' }
+        }
+        title={equipe ? `Equipe ${LETRA_EQUIPE_LABEL[equipe] ?? equipe}` : undefined}
+      >
+        <span className="leading-none">{children}</span>
+        {equipe && (
+          <span className="mt-0.5 text-[10px] font-bold tracking-widest opacity-90">
+            {equipe}
+          </span>
+        )}
+      </button>
+    );
   };
 
   return (
@@ -104,7 +166,7 @@ export function MapaForcaPage() {
             >
               ←
             </button>
-            <span className="min-w-[150px] text-center text-sm font-semibold text-slate-700">
+            <span className="min-w-[180px] text-center text-sm font-semibold capitalize text-slate-700">
               {mes.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
             </span>
             <button
@@ -167,38 +229,30 @@ export function MapaForcaPage() {
         )}
 
         {!loading && diasComEscala.length > 0 && viewMode === 'calendario' && (
-          <div className="mt-4 rounded border border-slate-200 bg-white p-3">
+          <div className="mt-4 flex justify-center rounded border border-slate-200 bg-white p-3">
             <DayPicker
               mode="single"
               month={mes}
               onMonthChange={setMes}
               onSelect={handleDaySelect}
-              modifiers={{ escalado: diasDate }}
-              modifiersClassNames={{
-                escalado: 'rdp-day_escalado',
-                disabled: 'opacity-30',
-              }}
-              disabled={(date) => !diasSet.has(formatIsoDate(date))}
               showOutsideDays
               fixedWeeks
-              locale={undefined}
+              locale={ptBR}
+              components={{ DayButton }}
             />
             <style>{`
-              .rdp { --rdp-accent-color: #1F3864; --rdp-cell-size: 40px; }
-              .rdp-day_escalado:not(.rdp-day_disabled) {
-                background-color: rgba(31, 56, 100, 0.1);
-                font-weight: 600;
-                color: #1F3864;
-                cursor: pointer;
-              }
-              .rdp-day_escalado:not(.rdp-day_disabled):hover {
-                background-color: rgba(31, 56, 100, 0.2);
-              }
+              .rdp { --rdp-accent-color: #1F3864; --rdp-cell-size: 48px; margin: 0 auto; }
+              .rdp-day { padding: 1px; }
+              .rdp-caption_label { text-transform: capitalize; }
             `}</style>
-            <p className="mt-2 text-[11px] italic text-slate-500">
-              Dias destacados têm escala importada. Toque em um dia para abrir o Mapa Força.
-            </p>
           </div>
+        )}
+
+        {!loading && diasComEscala.length > 0 && viewMode === 'calendario' && (
+          <p className="mt-2 text-center text-[11px] italic text-slate-500">
+            Dias coloridos têm escala importada · letra abaixo do número indica a equipe.
+            Toque em um dia para abrir o Mapa Força.
+          </p>
         )}
 
         {!loading && diasComEscala.length > 0 && viewMode === 'lista' && (

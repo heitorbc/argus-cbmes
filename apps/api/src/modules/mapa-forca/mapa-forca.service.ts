@@ -19,6 +19,7 @@ import {
   type PreviaSwapMilitar,
   type TripulacaoEntry,
   type StatusViatura,
+  type StatusVtr,
   type TipoIdeo,
 } from '@argus/shared-types';
 import {
@@ -291,7 +292,12 @@ export class MapaForcaService {
     // S6b/F2 — composicaoMf espelhando o MF (1 entry por recurso).
     // Já inclui MERGULHO 01/02 e SALVAMAR 01 porque foram empurrados em
     // tripulacao acima.
-    const composicaoMf = buildComposicaoMf(tripulacao, allViaturas);
+    // S0.x — Inclui em composicaoMf TODOS os recursos do MF CIODES com
+    // viatura cadastrada (mesmo BAIXADA/EMPRESTADA), para garantir que
+    // recursos como RESGATE 02 (AR_044 BAIXADA) e PLATAFORMA (TE_110
+    // BAIXADA) constem na Prévia, no preenchimento do MF e na Parte
+    // Diária mesmo sem militares no XLSX.
+    const composicaoMf = buildComposicaoMf(tripulacao, allViaturas, mfRecursos);
 
     // S6b/F1 — Estado do Servico do dia
     const estadoServico = this.servico.get(dataIso);
@@ -548,13 +554,15 @@ function normalizeViaturaCode(s: string): string {
  * Reagrupa `tripulacao` (1 entry por militar) em `composicaoMf` (1 entry por
  * recurso/viatura) — espelhando o shape do MF (S6b/F2/ADR-011).
  *
- * Cada entry tem chefe + motorista + operadores resolvidos.
- * Viaturas sem tripulação ainda aparecem no `composicaoMf` (com vtrStatus,
- * sem militares).
+ * Cada entry tem chefe + motorista + operadores resolvidos. Recursos
+ * cadastrados no MF CIODES com viatura mas sem tripulação no XLSX entram
+ * com `semEquipe: true` (ex.: RESGATE 02 = AR_044 BAIXADA) — visíveis na
+ * Prévia, no preenchimento do MF CIODES e na Parte Diária.
  */
 function buildComposicaoMf(
   tripulacao: readonly TripulacaoEntry[],
   viaturas: readonly { id: string; prefixo: string; status: StatusViatura }[],
+  mfRecursos: readonly { recurso: string; vtrPrefixo?: string; vtrStatus: StatusVtr | null }[],
 ): ComposicaoMfEntry[] {
   const byRecurso = new Map<string, ComposicaoMfEntry>();
 
@@ -590,23 +598,56 @@ function buildComposicaoMf(
     else entry.operadores.push(militar);
   }
 
-  // Viaturas sem tripulação (orfãs) também entram para visibilidade do status.
+  // S0.x — Recursos do MF CIODES com viatura mas sem tripulação no XLSX.
+  // Mantém o NOME canônico do recurso (ex.: "RESGATE 02") em vez do prefixo
+  // da viatura (ex.: "AR_044"). Isso permite que recursos baixados constem
+  // no preenchimento do MF e na Parte Diária.
+  for (const r of mfRecursos) {
+    if (!r.vtrPrefixo) continue; // ex.: GUARDA, OFICIAL DE DIA — sem viatura
+    if (byRecurso.has(r.recurso)) continue; // já tem tripulação no XLSX
+    const vtr = viaturas.find(
+      (v) => normalizeViaturaCode(v.prefixo) === normalizeViaturaCode(r.vtrPrefixo!),
+    );
+    const status = mapStatusVtrToViatura(r.vtrStatus);
+    byRecurso.set(r.recurso, {
+      recurso: r.recurso,
+      vtrPrefixo: r.vtrPrefixo,
+      vtrStatus: vtr?.status ?? status,
+      semEquipe: true,
+      equipe: null,
+      chefe: undefined,
+      motorista: undefined,
+      operadores: [],
+    });
+  }
+
+  // Viaturas órfãs ainda não vinculadas a nenhum recurso (ex.: viatura
+  // existe no override admin mas não está em nenhum recurso do MF CIODES).
   for (const v of viaturas) {
-    if (!byRecurso.has(v.prefixo)) {
-      byRecurso.set(v.prefixo, {
-        recurso: v.prefixo,
-        vtrPrefixo: v.prefixo,
-        vtrStatus: v.status,
-        semEquipe: true,
-        equipe: null,
-        chefe: undefined,
-        motorista: undefined,
-        operadores: [],
-      });
-    }
+    const alreadyBound = Array.from(byRecurso.values()).some(
+      (e) => e.vtrPrefixo && normalizeViaturaCode(e.vtrPrefixo) === normalizeViaturaCode(v.prefixo),
+    );
+    if (alreadyBound) continue;
+    if (byRecurso.has(v.prefixo)) continue;
+    byRecurso.set(v.prefixo, {
+      recurso: v.prefixo,
+      vtrPrefixo: v.prefixo,
+      vtrStatus: v.status,
+      semEquipe: true,
+      equipe: null,
+      chefe: undefined,
+      motorista: undefined,
+      operadores: [],
+    });
   }
 
   return Array.from(byRecurso.values());
+}
+
+/** Converte StatusVtr (MF CIODES) → StatusViatura (modelo interno). */
+function mapStatusVtrToViatura(s: StatusVtr | null): StatusViatura | null {
+  if (s === null || s === 'NAO_POSSUI') return null;
+  return s as StatusViatura;
 }
 
 /**
@@ -826,10 +867,23 @@ function resolverNfTrocaAutorizada(
 }
 
 /**
- * S0.5 — Aplica um swap de militares trocando o conteúdo de 2 células
- * (viatura+funcao) da MESMA equipe na lista `tripulacao`. Mutação
- * in-place. Lados não encontrados ou em equipes diferentes registram
- * uma inconsistência e o swap é descartado.
+ * S0.5 + S0.x — Aplica um swap **person-based** de militares dentro da
+ * mesma equipe.
+ *
+ * Identifica os militares ocupando as duas posições escolhidas (origemA
+ * e origemB) e troca **TODAS** as ocorrências de cada um pelo outro na
+ * `tripulacao` (mantendo viatura/função fixas). Mutação in-place.
+ *
+ * Exemplo (item 5 do refactor): se CB KREUZ está escalado em ATB e
+ * Plataforma e o Fiscal o troca por CB ELSON (escalado como COV do
+ * ABTS), ELSON passa a ocupar **ambas** as posições de KREUZ
+ * (ATB + Plataforma) e KREUZ ocupa a única posição de ELSON
+ * (COV ABTS). Swap simétrico — equivale a "trocar todas as
+ * ocorrências do militar X com todas as ocorrências do militar Y".
+ *
+ * Lados não encontrados, equipes diferentes ou casos onde não é possível
+ * identificar 2 militares distintos registram inconsistência e o swap é
+ * descartado.
  *
  * Como o swap acontece sobre `tripulacao` ANTES de `buildComposicaoMf`,
  * a composição resultante já reflete o swap — não precisa duplicar o
@@ -854,14 +908,50 @@ function aplicarSwapMilitar(
     });
     return;
   }
-  // Troca atômica de quem ocupa cada célula (não troca viatura/funcao,
-  // apenas o militar).
-  const tmpRef = a.militarRef;
-  const tmpResolvido = a.militarResolvido;
-  a.militarRef = b.militarRef;
-  a.militarResolvido = b.militarResolvido;
-  b.militarRef = tmpRef;
-  b.militarResolvido = tmpResolvido;
+
+  // Captura snapshot dos militares originais ANTES de qualquer mutação.
+  const refA = a.militarRef;
+  const resolvidoA = a.militarResolvido;
+  const refB = b.militarRef;
+  const resolvidoB = b.militarResolvido;
+
+  // Mesmo militar nos dois lados → no-op.
+  if (sameMilitar(refA, resolvidoA, refB, resolvidoB)) {
+    inconsistencias.push({
+      tipo: 'NF_NAO_RESOLVIDO',
+      mensagem: `Swap inválido: as duas posições estão ocupadas pelo mesmo militar.`,
+      detalhe: { origem: 'swap-militar', swap: swap as unknown as Record<string, unknown> },
+    });
+    return;
+  }
+
+  // Person-based swap: troca TODAS as ocorrências de A por B (e vice-versa)
+  // dentro da MESMA equipe.
+  for (const t of tripulacao) {
+    if (t.equipe !== swap.equipe) continue;
+    if (sameMilitar(t.militarRef, t.militarResolvido, refA, resolvidoA)) {
+      t.militarRef = refB;
+      t.militarResolvido = resolvidoB;
+    } else if (sameMilitar(t.militarRef, t.militarResolvido, refB, resolvidoB)) {
+      t.militarRef = refA;
+      t.militarResolvido = resolvidoA;
+    }
+  }
+}
+
+/**
+ * Compara 2 militares para fins de propagação de swap. Prefere `nf`
+ * quando ambos resolvidos; cai em comparação por `raw` quando algum
+ * deles não tem NF resolvida.
+ */
+function sameMilitar(
+  refX: MilitarRef,
+  resolvidoX: Militar | null,
+  refY: MilitarRef,
+  resolvidoY: Militar | null,
+): boolean {
+  if (resolvidoX && resolvidoY) return resolvidoX.nf === resolvidoY.nf;
+  return refX.raw.trim().toUpperCase() === refY.raw.trim().toUpperCase();
 }
 
 /**
