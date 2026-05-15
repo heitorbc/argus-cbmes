@@ -51,6 +51,22 @@ export const servicoEstadoSchema = z.object({
   conferenciaEquipeEm: z.string().optional(),
   conferenciaViaturaEm: z.string().optional(),
   preenchendoMfEm: z.string().optional(),
+  /**
+   * S0.x — Timestamp do último preenchimento do Mapa Força CIODES (mock).
+   * Definido pela transição PREENCHENDO_MF; preservado entre atualizações.
+   */
+  mfPreenchidoEm: z.string().optional(),
+  /**
+   * S0.x — Dirty state do Mapa Força CIODES.
+   *
+   * `undefined` = MF sincronizado (botão "Mapa Força CIODES preenchido"
+   * inativo). ISO timestamp = houve alguma alteração estrutural após
+   * preencher (botão "Atualizar Mapa Força CIODES" ativo). Apenas ações
+   * estruturais marcam dirty (trocas, atestados criados durante serviço,
+   * mudança de status de viatura). Conferências rotineiras de KM/tanque
+   * sem mudança de status NÃO marcam.
+   */
+  mfDirtyDesde: z.string().optional(),
   encerradoEm: z.string().optional(),
   encerradoPorNf: z.string().optional(),
 });

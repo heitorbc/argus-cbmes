@@ -38,7 +38,7 @@ export class ConferenciaEquipeController {
     @Param('data') data: string,
     @Body() body: unknown,
     @CurrentUser() user: UserSession,
-  ): ConferenciaEquipeEntry[] {
+  ): Promise<ConferenciaEquipeEntry[]> {
     if (!dataParamRegex.test(data)) {
       throw new BadRequestException('data inválida (esperado YYYY-MM-DD)');
     }
@@ -46,6 +46,10 @@ export class ConferenciaEquipeController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     }
-    return this.conferencia.bulkUpdate(data, parsed.data, user.nf);
+    const isOverride =
+      user.papeis.includes('admin') ||
+      user.papeis.includes('fiscal') ||
+      user.papeis.includes('sargenteante');
+    return this.conferencia.bulkUpdate(data, parsed.data, user.nf, isOverride);
   }
 }

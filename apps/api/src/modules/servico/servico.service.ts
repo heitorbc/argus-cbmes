@@ -223,13 +223,56 @@ export class ServicoService {
         `Preencher MF exige Conferência de Equipe + Viatura completas. Estado atual: "${current.estado}".`,
       );
     }
+    const now = new Date().toISOString();
     const updated: ServicoEstado = {
       ...current,
       estado: 'PREENCHENDO_MF',
-      preenchendoMfEm: current.preenchendoMfEm ?? new Date().toISOString(),
+      preenchendoMfEm: current.preenchendoMfEm ?? now,
+      // S0.x — Marca como sincronizado (limpa dirty + grava timestamp do
+      // preenchimento). Próximas alterações estruturais reativam o botão.
+      mfPreenchidoEm: now,
+      mfDirtyDesde: undefined,
     };
     this.byData.set(dataIso, updated);
     return updated;
+  }
+
+  /**
+   * S0.x — Atualizar Mapa Força CIODES (mock). Equivale a "preencher de
+   * novo" — limpa dirty e atualiza timestamp. Estado precisa ser
+   * PREENCHENDO_MF (já preencheu antes).
+   */
+  atualizarMfMock(dataIso: string): ServicoEstado {
+    const current = this.get(dataIso);
+    if (current.estado !== 'PREENCHENDO_MF') {
+      throw new BadRequestException(
+        `Atualizar MF exige estado PREENCHENDO_MF. Estado atual: "${current.estado}".`,
+      );
+    }
+    const now = new Date().toISOString();
+    const updated: ServicoEstado = {
+      ...current,
+      mfPreenchidoEm: now,
+      mfDirtyDesde: undefined,
+    };
+    this.byData.set(dataIso, updated);
+    return updated;
+  }
+
+  /**
+   * S0.x — Marca o Mapa Força CIODES como dirty (precisa atualizar). Só
+   * tem efeito quando o serviço já foi preenchido (estado PREENCHENDO_MF).
+   * Idempotente — chamadas repetidas mantêm o timestamp original do
+   * primeiro evento dirty.
+   */
+  marcarMfDirty(dataIso: string): void {
+    const current = this.get(dataIso);
+    if (current.estado !== 'PREENCHENDO_MF') return;
+    if (current.mfDirtyDesde) return; // já dirty
+    this.byData.set(dataIso, {
+      ...current,
+      mfDirtyDesde: new Date().toISOString(),
+    });
   }
 
   /**
@@ -289,6 +332,12 @@ export class ServicoService {
     const list = this.alteracoesByData.get(dataIso) ?? [];
     list.push(novaAlt);
     this.alteracoesByData.set(dataIso, list);
+
+    // S0.x — Alterações estruturais marcam dirty (troca/mudança de viatura).
+    // Observações puras não alteram MF CIODES.
+    if (input.tipo === 'troca_militar' || input.tipo === 'mudanca_viatura') {
+      this.marcarMfDirty(dataIso);
+    }
     return novaAlt;
   }
 

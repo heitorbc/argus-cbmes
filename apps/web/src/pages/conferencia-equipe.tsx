@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   STATUS_CONFERENCIA,
   STATUS_CONFERENCIA_EQUIPE_LABEL,
@@ -43,6 +43,8 @@ const STATUS_BADGE: Record<StatusConferencia, string> = {
  */
 export function ConferenciaEquipePage() {
   const { data } = useParams<{ data: string }>();
+  const [searchParams] = useSearchParams();
+  const recursoFoco = searchParams.get('recurso');
   const navigate = useNavigate();
 
   const [previa, setPrevia] = useState<MapaForcaDoDia | null>(null);
@@ -60,6 +62,8 @@ export function ConferenciaEquipePage() {
         if (cancelled) return;
         setPrevia(p);
         setMarcacoes(buildMarcacoesFromPrevia(p, existing));
+        // S0.x — Se ?recurso=X, abre o modal direto naquele recurso.
+        if (recursoFoco) setEquipeAberta(recursoFoco);
       })
       .catch((e) => {
         if (!cancelled) setError(e instanceof ApiError ? e.message : 'Erro ao carregar Prévia');
@@ -70,7 +74,7 @@ export function ConferenciaEquipePage() {
     return () => {
       cancelled = true;
     };
-  }, [data]);
+  }, [data, recursoFoco]);
 
   /** Agrupa marcações por recurso (= equipe). */
   const equipes = useMemo(() => {

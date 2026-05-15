@@ -373,9 +373,15 @@ export const api = {
   servicoEncerrar: (data: string) =>
     request<ServicoEstado>(`/servico/${data}/encerrar`, { method: 'POST' }),
 
-  // S6h/2.1 — mock do Preencher Mapa Força
+  // S6h/2.1 — mock do Preencher Mapa Força CIODES
   servicoPreencherMf: (data: string) =>
     request<{ estado: ServicoEstado; mensagem: string }>(`/servico/${data}/preencher-mf`, {
+      method: 'POST',
+    }),
+
+  // S0.x — mock do Atualizar Mapa Força CIODES (após dirty)
+  servicoAtualizarMf: (data: string) =>
+    request<{ estado: ServicoEstado; mensagem: string }>(`/servico/${data}/atualizar-mf`, {
       method: 'POST',
     }),
 

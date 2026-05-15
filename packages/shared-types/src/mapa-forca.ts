@@ -518,6 +518,10 @@ export const mapaForcaDoDiaSchema = z.object({
   previaIniciadaPorNf: z.string().optional(),
   iniciadoEm: z.string().optional(),
   iniciadoPorNf: z.string().optional(),
+  /** S0.x — Timestamp do último preenchimento do MF CIODES (mock). */
+  mfPreenchidoEm: z.string().optional(),
+  /** S0.x — Dirty state do MF CIODES (timestamp da 1ª alteração estrutural). */
+  mfDirtyDesde: z.string().optional(),
   encerradoEm: z.string().optional(),
   encerradoPorNf: z.string().optional(),
 
@@ -547,33 +551,77 @@ export function previaMatchKey(postoAbreviado: string, nomeGuerra: string): stri
 }
 
 /**
- * S6i — Gera texto institucional do Fiscal atestando IDEO.
+ * S6i + S0.x — Gera texto institucional atestando IDEO (Chefe ABTS/RESGATE).
  *
- * Caso A (todos realizados, sem alterações nos materiais):
- *   "Eu, <posto> <nome>, NF <nf>, atesto que todos os equipamentos
- *    inspecionados estão em ESTADO DE PRONTIDÃO (condições de pronto emprego)"
+ * 4 estados por tipo (ABTS/RESGATE):
+ *  - REALIZADA_SEM_ALTERACAO: estado de prontidão.
+ *  - REALIZADA_COM_ALTERACAO: lista equipamentos com alteração.
+ *  - NAO_REALIZADA: motivo geral.
+ *  - PENDENTE: ainda não atestado (impede geração do texto consolidado).
  *
- * Caso B (algum não realizado): texto descritivo listando os tipos não
- * realizados e seus motivos. Caller decide se inclui no payload da PD.
- *
- * Retorna `null` se faltar marcação de algum tipo (incompleto).
+ * Caller decide se inclui no payload da Parte Diária. Retorna `null` se
+ * faltar atestação de algum tipo (incompleto).
  */
 export function gerarTextoFiscalAtestadoIdeo(
-  ideoStatus: readonly { tipo: TipoIdeo; realizada: boolean; motivoNaoRealizacao?: string }[],
+  ideoStatus: readonly {
+    tipo: TipoIdeo;
+    estado?: 'PENDENTE' | 'REALIZADA_SEM_ALTERACAO' | 'REALIZADA_COM_ALTERACAO' | 'NAO_REALIZADA';
+    /** @deprecated S0.x — usar `estado`. Mantido para retrocompat. */
+    realizada?: boolean;
+    equipamentos?: readonly { item: string; descricao: string }[];
+    motivoNaoRealizacao?: string;
+  }[],
   fiscal: { posto: string; nomeGuerra: string; nf: string } | null,
 ): string | null {
   if (!fiscal) return null;
   const tiposEsperados: readonly TipoIdeo[] = ['ABTS', 'RESGATE'];
-  const tiposMarcados = new Set(ideoStatus.map((s) => s.tipo));
-  const completo = tiposEsperados.every((t) => tiposMarcados.has(t));
+
+  // Mapa tipo → estado normalizado (compat: `realizada` legado vira
+  // REALIZADA_SEM_ALTERACAO ou NAO_REALIZADA).
+  const estadoPorTipo = new Map<
+    TipoIdeo,
+    {
+      estado: 'PENDENTE' | 'REALIZADA_SEM_ALTERACAO' | 'REALIZADA_COM_ALTERACAO' | 'NAO_REALIZADA';
+      equipamentos?: readonly { item: string; descricao: string }[];
+      motivoNaoRealizacao?: string;
+    }
+  >();
+  for (const s of ideoStatus) {
+    const estadoNorm =
+      s.estado ?? (s.realizada === true ? 'REALIZADA_SEM_ALTERACAO' : 'NAO_REALIZADA');
+    estadoPorTipo.set(s.tipo, {
+      estado: estadoNorm,
+      equipamentos: s.equipamentos,
+      motivoNaoRealizacao: s.motivoNaoRealizacao,
+    });
+  }
+  const completo = tiposEsperados.every(
+    (t) => estadoPorTipo.has(t) && estadoPorTipo.get(t)!.estado !== 'PENDENTE',
+  );
   if (!completo) return null;
 
-  const naoRealizadas = ideoStatus.filter((s) => !s.realizada);
-  if (naoRealizadas.length === 0) {
+  const semAlteracoes = tiposEsperados.every(
+    (t) => estadoPorTipo.get(t)!.estado === 'REALIZADA_SEM_ALTERACAO',
+  );
+  if (semAlteracoes) {
     return `Eu, ${fiscal.posto} ${fiscal.nomeGuerra}, NF ${fiscal.nf}, atesto que todos os equipamentos inspecionados estão em ESTADO DE PRONTIDÃO (condições de pronto emprego)`;
   }
-  const detalhes = naoRealizadas
-    .map((s) => `IDEO ${s.tipo} NÃO REALIZADA — ${s.motivoNaoRealizacao ?? 'sem motivo informado'}`)
+
+  const detalhes = tiposEsperados
+    .map((tipo) => {
+      const s = estadoPorTipo.get(tipo)!;
+      if (s.estado === 'REALIZADA_SEM_ALTERACAO') {
+        return `IDEO ${tipo} REALIZADA SEM ALTERAÇÃO`;
+      }
+      if (s.estado === 'NAO_REALIZADA') {
+        return `IDEO ${tipo} NÃO REALIZADA — ${s.motivoNaoRealizacao ?? 'sem motivo informado'}`;
+      }
+      // REALIZADA_COM_ALTERACAO: lista cada equipamento com a descrição.
+      const itens = (s.equipamentos ?? [])
+        .map((eq) => `${eq.item}: ${eq.descricao}`)
+        .join('; ');
+      return `IDEO ${tipo} REALIZADA COM ALTERAÇÃO — ${itens || 'sem detalhamento'}`;
+    })
     .join('; ');
   return `Eu, ${fiscal.posto} ${fiscal.nomeGuerra}, NF ${fiscal.nf}, registro: ${detalhes}.`;
 }

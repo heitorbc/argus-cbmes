@@ -99,8 +99,9 @@ export class ServicoController {
   }
 
   /**
-   * S6h/2.1 — Mock do "Preencher Mapa Força". Transiciona o estado para
-   * PREENCHENDO_MF e retorna mensagem. A escrita real chega no S9 (Puppeteer).
+   * S6h/2.1 + S0.x — Mock do "Preencher Mapa Força CIODES". Transiciona o
+   * estado para PREENCHENDO_MF, grava `mfPreenchidoEm` e zera dirty. A
+   * escrita real chega no S9 (OAuth/Puppeteer).
    */
   @Roles('admin', 'fiscal', 'sargenteante')
   @Post(':data/preencher-mf')
@@ -112,8 +113,26 @@ export class ServicoController {
     const estado = this.servico.marcarPreenchimentoMfIniciado(data);
     return {
       estado,
-      mensagem:
-        'Preenchimento do Mapa Força iniciado (mock). A escrita automatizada será implementada no S9.',
+      mensagem: 'Preenchimento ainda em implementação (mock). A escrita automatizada chega no S9.',
+    };
+  }
+
+  /**
+   * S0.x — Mock do "Atualizar Mapa Força CIODES" (botão dirty-state).
+   * Equivale a "preencher de novo": limpa dirty e atualiza timestamp.
+   * Exige estado PREENCHENDO_MF (já preenchido antes).
+   */
+  @Roles('admin', 'fiscal', 'sargenteante')
+  @Post(':data/atualizar-mf')
+  @HttpCode(HttpStatus.OK)
+  atualizarMf(@Param('data') data: string): { estado: ServicoEstado; mensagem: string } {
+    if (!dataParamRegex.test(data)) {
+      throw new BadRequestException('data inválida (esperado YYYY-MM-DD)');
+    }
+    const estado = this.servico.atualizarMfMock(data);
+    return {
+      estado,
+      mensagem: 'Preenchimento ainda em implementação (mock). A escrita automatizada chega no S9.',
     };
   }
 

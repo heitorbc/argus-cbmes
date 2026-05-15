@@ -487,6 +487,7 @@ export function MapaForcaDetalhePage() {
             <ServicoCard
               previa={previa}
               podeIniciar={podeIniciarServico}
+              isAdmin={isAdmin}
               inflight={servicoActionInflight}
               onIniciar={handleIniciarServico}
               onEncerrar={handleEncerrarServico}
@@ -1320,12 +1321,13 @@ function formatDataExtenso(iso: string): string {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// S6b — ServicoCard: estado do dia + Conferências + Alterações Diversas
+// S6b + S0.x — ServicoCard: estado do dia + 3 boxes de progresso + MF dirty
 // ════════════════════════════════════════════════════════════════════════════
 
 function ServicoCard({
   previa,
   podeIniciar,
+  isAdmin,
   inflight,
   onIniciar,
   onEncerrar,
@@ -1333,55 +1335,47 @@ function ServicoCard({
 }: {
   previa: MapaForcaDoDia;
   podeIniciar: boolean;
+  isAdmin: boolean;
   inflight: boolean;
   onIniciar: () => Promise<void>;
-  onEncerrar: (force?: boolean) => Promise<void>;
+  onEncerrar: () => Promise<void>;
   onSaved: () => void;
 }) {
   const estado = previa.estadoServico;
   const isEncerrado = estado === 'ENCERRADO';
-  const podePreencherMf = estado === 'VIATURA_CONFERIDA';
-  const [preenchendoMf, setPreenchendoMf] = useState(false);
-  const [mfMsg, setMfMsg] = useState<string | null>(null);
+  const isPosIniciado =
+    estado === 'INICIADO' ||
+    estado === 'EQUIPE_CONFERIDA' ||
+    estado === 'VIATURA_CONFERIDA' ||
+    estado === 'PREENCHENDO_MF';
 
-  const handlePreencherMf = async () => {
-    if (!confirm('Iniciar preenchimento do Mapa Força? (mock — escrita real chega no S9)')) return;
-    setPreenchendoMf(true);
-    setMfMsg(null);
-    try {
-      const r = await api.servicoPreencherMf(previa.data);
-      setMfMsg(r.mensagem);
-      onSaved();
-    } catch (e) {
-      setMfMsg(e instanceof ApiError ? e.message : 'Erro ao iniciar preenchimento do MF');
-    } finally {
-      setPreenchendoMf(false);
-    }
-  };
-
-  if (estado === 'NAO_INICIADO') {
-    if (!podeIniciar) return null;
-    return (
-      <section className="mt-4 rounded border border-cbmes-blue/30 bg-cbmes-blue/5 p-3">
-        <div className="flex items-baseline justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-semibold text-cbmes-blue">Serviço do dia</h3>
-            <p className="text-xs text-slate-600">
-              Estado: <strong>{ESTADO_SERVICO_LABEL[estado]}</strong> — clique para iniciar e
-              começar as Conferências.
-            </p>
+  if (estado === 'NAO_INICIADO' || estado === 'PREVIA_INICIADA') {
+    // PREVIA_INICIADA + NAO_INICIADO: gerencia pelo banner principal (PreviaEstadoBanner).
+    // O botão "Iniciar Serviço" aparece quando podeIniciar (permitido em PREVIA_INICIADA).
+    if (estado === 'PREVIA_INICIADA' && podeIniciar) {
+      return (
+        <section className="mt-4 rounded border border-cbmes-red/40 bg-cbmes-red/5 p-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-cbmes-red">Pronto para iniciar serviço</h3>
+              <p className="text-xs text-slate-700">
+                Quando os ajustes pré-turno estiverem revisados, clique para congelar a Prévia
+                e abrir as Conferências.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onIniciar}
+              disabled={inflight}
+              className="rounded-button bg-cbmes-red px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {inflight ? '…' : 'Iniciar Serviço'}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onIniciar}
-            disabled={inflight}
-            className="rounded-button bg-cbmes-red px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-          >
-            {inflight ? '…' : 'Iniciar Serviço'}
-          </button>
-        </div>
-      </section>
-    );
+        </section>
+      );
+    }
+    return null;
   }
 
   return (
@@ -1389,7 +1383,9 @@ function ServicoCard({
       <section className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-amber-900">
         <div className="flex items-baseline justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold">⚠️ Serviço {ESTADO_SERVICO_LABEL[estado]}</h3>
+            <h3 className="text-sm font-semibold">
+              ⚙️ Serviço — {ESTADO_SERVICO_LABEL[estado]}
+            </h3>
             <p className="text-xs">
               {previa.iniciadoEm && (
                 <>
@@ -1404,81 +1400,24 @@ function ServicoCard({
                   {previa.encerradoPorNf && <> por NF {previa.encerradoPorNf}</>}.{' '}
                 </>
               )}
-              {!isEncerrado && (
-                <>Edição da Prévia bloqueada. Use Conferências e Alterações Diversas.</>
-              )}
             </p>
           </div>
-          {!isEncerrado && podeIniciar && (
+          {!isEncerrado && isAdmin && (
             <button
               type="button"
-              onClick={() => onEncerrar(false)}
+              onClick={() => void onEncerrar()}
               disabled={inflight}
               className="rounded-button bg-cbmes-red px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+              title="Encerramento manual restrito a admin (override)"
             >
-              Encerrar Serviço
+              Encerrar Serviço (admin)
             </button>
           )}
         </div>
       </section>
 
-      {!isEncerrado && (
-        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-          <Link
-            to={`/servico/${previa.data}/conferencia-equipe`}
-            className="block rounded border border-cbmes-blue/30 bg-white p-3 hover:bg-cbmes-blue/5"
-          >
-            <h4 className="text-sm font-semibold text-cbmes-blue">👥 Conferência da Equipe</h4>
-            <p className="mt-1 text-xs text-slate-600">
-              Marcar presença/substituição/ausência da equipe escalada.
-            </p>
-          </Link>
-          <ConferenciaViaturasMenu data={previa.data} composicaoMf={previa.composicaoMf} />
-          <Link
-            to={`/servico/${previa.data}/ideo`}
-            className="block rounded border border-cbmes-blue/30 bg-white p-3 hover:bg-cbmes-blue/5 md:col-span-2"
-          >
-            <h4 className="text-sm font-semibold text-cbmes-blue">✅ IDEO (atestar Fiscal)</h4>
-            <p className="mt-1 text-xs text-slate-600">
-              Marcar IDEO ABTS / RESGATE como realizada/não realizada e gerar texto institucional do
-              Fiscal para a Parte Diária.
-            </p>
-            {previa.textoAtestadoIdeoFiscal && (
-              <p className="mt-1 text-[10px] uppercase tracking-wide text-emerald-700">
-                ✓ texto do Fiscal pronto
-              </p>
-            )}
-          </Link>
-        </div>
-      )}
-
-      {/* S6h/2.1 — Botão "Preencher Mapa Força" (mock até S9) */}
-      {podePreencherMf && podeIniciar && (
-        <section className="mt-3 rounded border-2 border-emerald-500 bg-emerald-50 p-3">
-          <div className="flex items-baseline justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-emerald-900">
-                ✓ Equipes e viaturas conferidas
-              </h3>
-              <p className="text-xs text-emerald-800">
-                Pronto para preencher o Mapa Força. (Escrita automatizada chega no S9.)
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={handlePreencherMf}
-              disabled={preenchendoMf}
-              className="rounded-button bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-            >
-              {preenchendoMf ? 'Preenchendo…' : '🗺️ Preencher Mapa Força'}
-            </button>
-          </div>
-        </section>
-      )}
-      {mfMsg && (
-        <div className="mt-2 rounded border border-emerald-300 bg-emerald-50 p-2 text-xs text-emerald-900">
-          {mfMsg}
-        </div>
+      {isPosIniciado && (
+        <ProgressoConferenciasBox previa={previa} onSaved={onSaved} isAdmin={isAdmin} />
       )}
 
       <AlteracoesDiversasCard
@@ -1492,35 +1431,383 @@ function ServicoCard({
   );
 }
 
-function ConferenciaViaturasMenu({
-  data,
-  composicaoMf,
+/**
+ * S0.x — Box principal pós Iniciar Serviço com 3 sub-boxes:
+ * Conferência de Equipe, Conferência de Viatura, IDEO + botão dinâmico
+ * "Preencher / Atualizar Mapa Força CIODES" (com dirty-state).
+ */
+function ProgressoConferenciasBox({
+  previa,
+  onSaved,
+  isAdmin,
 }: {
-  data: string;
-  composicaoMf: MapaForcaDoDia['composicaoMf'];
+  previa: MapaForcaDoDia;
+  onSaved: () => void;
+  isAdmin: boolean;
 }) {
-  const viaturas = composicaoMf
-    .filter((c) => c.vtrPrefixo && c.vtrStatus === 'DISPONIVEL')
-    .map((c) => c.vtrPrefixo!);
+  const estado = previa.estadoServico;
+  const podePreencherInicial = estado === 'VIATURA_CONFERIDA';
+  const jaPreencheu = estado === 'PREENCHENDO_MF';
+  const dirtyDesde = previa.mfDirtyDesde;
+  const podeAtualizar = jaPreencheu && Boolean(dirtyDesde);
+
+  const [inflight, setInflight] = useState(false);
+  const [mfMsg, setMfMsg] = useState<string | null>(null);
+
+  const handlePreencher = async () => {
+    setInflight(true);
+    setMfMsg(null);
+    try {
+      const r = await api.servicoPreencherMf(previa.data);
+      setMfMsg(r.mensagem);
+      onSaved();
+    } catch (e) {
+      setMfMsg(e instanceof ApiError ? e.message : 'Erro ao preencher MF');
+    } finally {
+      setInflight(false);
+    }
+  };
+
+  const handleAtualizar = async () => {
+    setInflight(true);
+    setMfMsg(null);
+    try {
+      const r = await api.servicoAtualizarMf(previa.data);
+      setMfMsg(r.mensagem);
+      onSaved();
+    } catch (e) {
+      setMfMsg(e instanceof ApiError ? e.message : 'Erro ao atualizar MF');
+    } finally {
+      setInflight(false);
+    }
+  };
 
   return (
-    <div className="rounded border border-cbmes-blue/30 bg-white p-3">
-      <h4 className="text-sm font-semibold text-cbmes-blue">🚒 Conferência das Viaturas</h4>
-      {viaturas.length === 0 ? (
-        <p className="mt-1 text-xs text-slate-500">Nenhuma viatura disponível para conferir.</p>
-      ) : (
-        <ul className="mt-2 flex flex-wrap gap-1">
-          {viaturas.map((v) => (
-            <li key={v}>
-              <Link
-                to={`/servico/${data}/conferencia-viatura/${encodeURIComponent(v)}`}
-                className="rounded-button border border-cbmes-blue px-2 py-1 text-xs text-cbmes-blue hover:bg-cbmes-blue/10"
+    <>
+      <section className="mt-3 rounded border border-cbmes-blue/30 bg-white p-3">
+        <h3 className="mb-3 text-sm font-semibold text-cbmes-blue">
+          📋 Conferências e IDEO do dia
+        </h3>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <ConferenciaEquipeBox previa={previa} />
+          <ConferenciaViaturaBox previa={previa} />
+          <IdeoBox previa={previa} />
+        </div>
+      </section>
+
+      {/* Botão dinâmico Preencher / Atualizar Mapa Força CIODES */}
+      {(podePreencherInicial || jaPreencheu) && (
+        <section
+          className={`mt-3 rounded border-2 p-3 ${
+            podeAtualizar
+              ? 'border-amber-500 bg-amber-50'
+              : jaPreencheu
+                ? 'border-slate-300 bg-slate-50'
+                : 'border-emerald-500 bg-emerald-50'
+          }`}
+        >
+          <div className="flex items-baseline justify-between gap-3">
+            <div>
+              {podeAtualizar ? (
+                <>
+                  <h3 className="text-sm font-semibold text-amber-900">
+                    🔄 Mapa Força CIODES desatualizado
+                  </h3>
+                  <p className="text-xs text-amber-800">
+                    Houve alteração estrutural (troca, atestado ou mudança de viatura) desde o
+                    último preenchimento. Clique para reenviar ao MF CIODES.
+                  </p>
+                </>
+              ) : jaPreencheu ? (
+                <>
+                  <h3 className="text-sm font-semibold text-slate-700">
+                    ✓ Mapa Força CIODES preenchido (sincronizado)
+                  </h3>
+                  <p className="text-xs text-slate-600">
+                    {previa.mfPreenchidoEm && (
+                      <>Última atualização: {new Date(previa.mfPreenchidoEm).toLocaleString('pt-BR')}.</>
+                    )}{' '}
+                    Aguarda nova alteração estrutural para reativar.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-sm font-semibold text-emerald-900">
+                    ✓ Equipes, viaturas e IDEO conferidas
+                  </h3>
+                  <p className="text-xs text-emerald-800">
+                    Pronto para preencher o Mapa Força CIODES. (Escrita automatizada chega no S9.)
+                  </p>
+                </>
+              )}
+            </div>
+            {podeAtualizar ? (
+              <button
+                type="button"
+                onClick={() => void handleAtualizar()}
+                disabled={inflight}
+                className="rounded-button bg-amber-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
               >
-                {v}
+                {inflight ? 'Atualizando…' : '🔄 Atualizar Mapa Força CIODES'}
+              </button>
+            ) : jaPreencheu ? (
+              <button
+                type="button"
+                disabled
+                className="rounded-button bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-500"
+                title="Aguarda alteração estrutural para reativar"
+              >
+                Mapa Força CIODES preenchido
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void handlePreencher()}
+                disabled={inflight}
+                className="rounded-button bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {inflight ? 'Preenchendo…' : '🗺️ Preencher Mapa Força CIODES'}
+              </button>
+            )}
+          </div>
+        </section>
+      )}
+      {mfMsg && (
+        <div className="mt-2 rounded border border-cbmes-blue/30 bg-cbmes-blue/5 p-2 text-xs text-cbmes-blue">
+          ⚠️ {mfMsg}
+        </div>
+      )}
+
+      {/* Atalho explícito para Parte Diária — útil mesmo em estados intermediários */}
+      {!isAdmin && null}
+    </>
+  );
+}
+
+const STATUS_EQUIPE_BADGE: Record<string, { bg: string; text: string; label: string }> = {
+  nao_conferida: { bg: 'bg-rose-100 border-rose-300', text: 'text-rose-700', label: 'Não conferida' },
+  em_conferencia: {
+    bg: 'bg-amber-100 border-amber-300',
+    text: 'text-amber-800',
+    label: 'Em conferência',
+  },
+  conferida: {
+    bg: 'bg-emerald-100 border-emerald-300',
+    text: 'text-emerald-800',
+    label: 'Conferida',
+  },
+  conferida_com_alteracao: {
+    bg: 'bg-cyan-100 border-cyan-300',
+    text: 'text-cyan-800',
+    label: 'Conferida c/ alteração',
+  },
+};
+
+/**
+ * S0.x — Box "Conferência de Equipe" com cards por recurso colorindo o estado.
+ * Cada recurso (RESGATE 01, ABTS 01, ATB...) tem seu card. Clique navega
+ * para `/servico/:data/conferencia-equipe?recurso=X`.
+ */
+function ConferenciaEquipeBox({ previa }: { previa: MapaForcaDoDia }) {
+  const [marcacoes, setMarcacoes] = useState<
+    { recurso: string; statusConferencia: string; substitutoNf?: string }[]
+  >([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .conferenciaEquipeGet(previa.data)
+      .then((r) => {
+        if (!cancelled) setMarcacoes(r);
+      })
+      .catch(() => {
+        /* noop — box mostra "não conferida" para tudo */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [previa.data, previa.estadoServico, previa.mfDirtyDesde]);
+
+  const recursosComEquipe = previa.composicaoMf.filter(
+    (c) => c.chefe || c.motorista || (c.operadores && c.operadores.length > 0),
+  );
+
+  const statusPorRecurso = new Map<string, string>();
+  for (const m of marcacoes) {
+    const list = recursosComEquipe.filter((r) => r.recurso === m.recurso);
+    if (list.length === 0) continue;
+    const todos = marcacoes.filter((x) => x.recurso === m.recurso);
+    const algumPendente = todos.some((x) => x.statusConferencia === 'pendente');
+    const temSubstituicao = todos.some(
+      (x) => x.statusConferencia === 'substituido' || x.statusConferencia === 'ausente',
+    );
+    const status = algumPendente
+      ? 'em_conferencia'
+      : temSubstituicao
+        ? 'conferida_com_alteracao'
+        : 'conferida';
+    statusPorRecurso.set(m.recurso, status);
+  }
+
+  return (
+    <div className="rounded border border-slate-200 bg-white p-3">
+      <h4 className="text-xs font-semibold uppercase text-cbmes-blue">
+        👥 Conferência de Equipe
+      </h4>
+      <ul className="mt-2 space-y-1">
+        {recursosComEquipe.map((c) => {
+          const status = statusPorRecurso.get(c.recurso) ?? 'nao_conferida';
+          const badge = STATUS_EQUIPE_BADGE[status]!;
+          return (
+            <li key={c.recurso}>
+              <Link
+                to={`/servico/${previa.data}/conferencia-equipe?recurso=${encodeURIComponent(c.recurso)}`}
+                className={`flex items-center justify-between rounded border px-2 py-1.5 text-xs hover:brightness-95 ${badge.bg} ${badge.text}`}
+              >
+                <span className="font-medium">{c.recurso}</span>
+                <span className="text-[10px] uppercase">{badge.label}</span>
               </Link>
             </li>
-          ))}
-        </ul>
+          );
+        })}
+      </ul>
+      {recursosComEquipe.length === 0 && (
+        <p className="mt-2 text-xs italic text-slate-500">Nenhum recurso com equipe escalada.</p>
+      )}
+    </div>
+  );
+}
+
+const STATUS_VIATURA_BOX_BADGE: Record<string, { bg: string; text: string; label: string }> = {
+  nao_conferida: { bg: 'bg-rose-100 border-rose-300', text: 'text-rose-700', label: 'Não conferida' },
+  conferida: {
+    bg: 'bg-emerald-100 border-emerald-300',
+    text: 'text-emerald-800',
+    label: 'Conferida',
+  },
+  baixada: { bg: 'bg-slate-100 border-slate-300', text: 'text-slate-600', label: 'Baixada (pulada)' },
+};
+
+/**
+ * S0.x — Box "Conferência de Viatura" com cards por viatura colorindo o estado.
+ * Viaturas BAIXADA/EMPRESTADA aparecem como "puladas" (não exigem conferência).
+ */
+function ConferenciaViaturaBox({ previa }: { previa: MapaForcaDoDia }) {
+  const [conferidas, setConferidas] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .conferenciaViaturaGet(previa.data)
+      .then((r) => {
+        if (!cancelled) setConferidas(r.map((c) => c.vtrPrefixo));
+      })
+      .catch(() => {
+        /* noop */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [previa.data, previa.estadoServico, previa.mfDirtyDesde]);
+
+  const viaturas = previa.composicaoMf.filter((c) => c.vtrPrefixo);
+  const conferidasSet = new Set(conferidas);
+
+  return (
+    <div className="rounded border border-slate-200 bg-white p-3">
+      <h4 className="text-xs font-semibold uppercase text-cbmes-blue">
+        🚒 Conferência de Viatura
+      </h4>
+      <ul className="mt-2 space-y-1">
+        {viaturas.map((c) => {
+          const baixada = c.vtrStatus !== 'DISPONIVEL';
+          const status = baixada
+            ? 'baixada'
+            : conferidasSet.has(c.vtrPrefixo!)
+              ? 'conferida'
+              : 'nao_conferida';
+          const badge = STATUS_VIATURA_BOX_BADGE[status]!;
+          if (baixada) {
+            return (
+              <li
+                key={c.vtrPrefixo}
+                className={`flex items-center justify-between rounded border px-2 py-1.5 text-xs ${badge.bg} ${badge.text}`}
+              >
+                <span className="font-medium">{c.vtrPrefixo}</span>
+                <span className="text-[10px] uppercase">{badge.label}</span>
+              </li>
+            );
+          }
+          return (
+            <li key={c.vtrPrefixo}>
+              <Link
+                to={`/servico/${previa.data}/conferencia-viatura/${encodeURIComponent(c.vtrPrefixo!)}`}
+                className={`flex items-center justify-between rounded border px-2 py-1.5 text-xs hover:brightness-95 ${badge.bg} ${badge.text}`}
+              >
+                <span className="font-medium">{c.vtrPrefixo}</span>
+                <span className="text-[10px] uppercase">{badge.label}</span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+      {viaturas.length === 0 && (
+        <p className="mt-2 text-xs italic text-slate-500">Nenhuma viatura no Mapa Força do dia.</p>
+      )}
+    </div>
+  );
+}
+
+const STATUS_IDEO_BADGE: Record<string, { bg: string; text: string; label: string }> = {
+  PENDENTE: { bg: 'bg-rose-100 border-rose-300', text: 'text-rose-700', label: 'Pendente' },
+  REALIZADA_SEM_ALTERACAO: {
+    bg: 'bg-emerald-100 border-emerald-300',
+    text: 'text-emerald-800',
+    label: 'Realizada s/ alt.',
+  },
+  REALIZADA_COM_ALTERACAO: {
+    bg: 'bg-cyan-100 border-cyan-300',
+    text: 'text-cyan-800',
+    label: 'Realizada c/ alt.',
+  },
+  NAO_REALIZADA: {
+    bg: 'bg-amber-100 border-amber-300',
+    text: 'text-amber-800',
+    label: 'Não realizada',
+  },
+};
+
+/**
+ * S0.x — Box "IDEO" com cards ABTS / RESGATE colorindo o estado (4 estados).
+ */
+function IdeoBox({ previa }: { previa: MapaForcaDoDia }) {
+  const tipos = ['ABTS', 'RESGATE'] as const;
+  const statusByTipo = new Map(previa.ideoStatus.map((s) => [s.tipo, s.estado ?? 'PENDENTE']));
+
+  return (
+    <div className="rounded border border-slate-200 bg-white p-3">
+      <h4 className="text-xs font-semibold uppercase text-cbmes-blue">✅ IDEO (Chefe atestar)</h4>
+      <ul className="mt-2 space-y-1">
+        {tipos.map((tipo) => {
+          const estado = statusByTipo.get(tipo) ?? 'PENDENTE';
+          const badge = STATUS_IDEO_BADGE[estado]!;
+          return (
+            <li key={tipo}>
+              <Link
+                to={`/servico/${previa.data}/ideo?tipo=${tipo}`}
+                className={`flex items-center justify-between rounded border px-2 py-1.5 text-xs hover:brightness-95 ${badge.bg} ${badge.text}`}
+              >
+                <span className="font-medium">IDEO {tipo}</span>
+                <span className="text-[10px] uppercase">{badge.label}</span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+      {previa.textoAtestadoIdeoFiscal && (
+        <p className="mt-2 rounded bg-slate-50 p-2 text-[10px] italic text-slate-700">
+          ✓ Texto institucional: {previa.textoAtestadoIdeoFiscal}
+        </p>
       )}
     </div>
   );

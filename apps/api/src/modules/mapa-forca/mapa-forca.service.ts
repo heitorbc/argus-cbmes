@@ -439,8 +439,12 @@ export class MapaForcaService {
         })),
       chefesOperacoes: chefes,
       estadoServico: estadoServico.estado,
+      previaIniciadaEm: estadoServico.previaIniciadaEm,
+      previaIniciadaPorNf: estadoServico.previaIniciadaPorNf,
       iniciadoEm: estadoServico.iniciadoEm,
       iniciadoPorNf: estadoServico.iniciadoPorNf,
+      mfPreenchidoEm: estadoServico.mfPreenchidoEm,
+      mfDirtyDesde: estadoServico.mfDirtyDesde,
       encerradoEm: estadoServico.encerradoEm,
       encerradoPorNf: estadoServico.encerradoPorNf,
       alteracoesDiversas,
@@ -493,6 +497,33 @@ export class MapaForcaService {
   async getFiscalDoDia(dataIso: string): Promise<FiscalDoDia | null> {
     const payload = await this.getMapaForcaDoDia(dataIso);
     return payload.fiscal;
+  }
+
+  /**
+   * S0.x — Lista os recursos onde o usuário identificado é Chefe (`composicaoMf`).
+   * Usado pelo gating granular das Conferências e da IDEO. Retorna nomes
+   * canônicos dos recursos (ex.: "ABTS_01", "RESGATE 01").
+   */
+  async recursosComandadosPor(nf: string, dataIso: string): Promise<string[]> {
+    const payload = await this.getMapaForcaDoDia(dataIso);
+    return payload.composicaoMf
+      .filter((c) => c.chefe?.militarResolvido?.nf === nf)
+      .map((c) => c.recurso);
+  }
+
+  /**
+   * S0.x — Recursos onde o usuário é Motorista (analogia para gating de
+   * Conferência de Viatura). Inclui também recursos onde é Chefe (chefe pode
+   * fazer conferência da viatura vinculada).
+   */
+  async recursosOndeMotoristaOuChefe(nf: string, dataIso: string): Promise<string[]> {
+    const payload = await this.getMapaForcaDoDia(dataIso);
+    return payload.composicaoMf
+      .filter(
+        (c) =>
+          c.chefe?.militarResolvido?.nf === nf || c.motorista?.militarResolvido?.nf === nf,
+      )
+      .map((c) => c.recurso);
   }
 
   private calcularFiscal(
