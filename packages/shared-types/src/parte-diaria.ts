@@ -63,18 +63,63 @@ export const parteDiariaLinhaHorarioSchema = z.object({
 });
 export type ParteDiariaLinhaHorario = z.infer<typeof parteDiariaLinhaHorarioSchema>;
 
-/** Linha da Escala de Faxina. */
+/**
+ * Linha da Escala de Faxina (n:m — 1 militar pode ir para vários locais
+ * via múltiplas entries; vários militares podem compartilhar 1 local).
+ *
+ * Schema legado mantém `local` por compat de PUT vindos de UI antiga;
+ * `locaisIds[]` é o canônico (vincula a `LocalFaxina.id`). O builder DOCX
+ * agrupa por militar e renderiza locais separados por " / ".
+ */
 export const parteDiariaFaxinaSchema = z.object({
+  militarNf: z.string().optional(),
   militar: z.string(),
-  local: z.string(),
+  /** IDs dos locais (n:m). Vazio quando entry é legacy com `local`. */
+  locaisIds: z.array(z.string()).default([]),
+  /** Texto livre legado. Quando preenchido, usado direto na render. */
+  local: z.string().default(''),
 });
 export type ParteDiariaFaxina = z.infer<typeof parteDiariaFaxinaSchema>;
 
-/** Linha da tabela "Ocorrências Confeccionadas" (registro manual; integração BAON futura). */
+/**
+ * Linha da Escala de Guarda — 1 militar por slot horário, com setor.
+ * `setor` default "PORTÃO DAS ARMAS" (fixo no modelo institucional).
+ */
+export const parteDiariaGuardaEntrySchema = z.object({
+  horarioInicio: z.string().regex(/^\d{2}:\d{2}$/),
+  horarioFim: z.string().regex(/^\d{2}:\d{2}$/),
+  /** NF do militar escalado (vazio = slot pendente). */
+  militarNf: z.string().optional(),
+  /** Display name (posto + nomeGuerra). Pré-resolvido para o builder DOCX. */
+  militarRaw: z.string().default(''),
+  /** Sub-rótulo "Sentinela 1/2/3" para auditoria do rodízio. */
+  sentinelaSlot: z.enum(['1', '2', '3']).optional(),
+  setor: z.string().default('PORTÃO DAS ARMAS'),
+});
+export type ParteDiariaGuardaEntry = z.infer<typeof parteDiariaGuardaEntrySchema>;
+
+/** Linha da Ronda Noturna — 1 militar por turno (sem repetição no dia). */
+export const parteDiariaRondaEntrySchema = z.object({
+  horarioInicio: z.string().regex(/^\d{2}:\d{2}$/),
+  horarioFim: z.string().regex(/^\d{2}:\d{2}$/),
+  militarNf: z.string().optional(),
+  militarRaw: z.string().default(''),
+  area: z.string().default('COMPLEXO DO QCG'),
+});
+export type ParteDiariaRondaEntry = z.infer<typeof parteDiariaRondaEntrySchema>;
+
+/**
+ * Linha da tabela "Ocorrências Confeccionadas" — código vem da tabela BAON
+ * (selecionado via combobox), Nº BAON é manual, viatura selecionada das
+ * viaturas em serviço.
+ */
 export const parteDiariaOcorrenciaSchema = z.object({
   vtr: z.string(),
   numeroBaon: z.string(),
+  /** Código BAON (ex.: "Q01A01"). */
   codigo: z.string(),
+  /** Descrição BAON enriquecida (ex.: "INCENDIO: ..."). */
+  descricao: z.string().default(''),
 });
 export type ParteDiariaOcorrencia = z.infer<typeof parteDiariaOcorrenciaSchema>;
 
@@ -94,9 +139,9 @@ export const parteDiariaOverrideSchema = z.object({
   textoEscalaEspecial: z.string().optional(),
   textoEscalaExtraordinaria: z.string().optional(),
   textoIseo: z.string().optional(),
-  escalaGuarda: z.array(parteDiariaLinhaHorarioSchema).optional(),
+  escalaGuarda: z.array(parteDiariaGuardaEntrySchema).optional(),
   escalaFaxina: z.array(parteDiariaFaxinaSchema).optional(),
-  rondaNoturna: z.array(parteDiariaLinhaHorarioSchema).optional(),
+  rondaNoturna: z.array(parteDiariaRondaEntrySchema).optional(),
   passagemServicoManha: z.array(parteDiariaLinhaHorarioSchema).optional(),
   textoInstrucao: z.string().optional(),
   textoCumprimentoNs: z.string().optional(),
@@ -104,6 +149,7 @@ export const parteDiariaOverrideSchema = z.object({
   textoAlteracaoViaturas: z.string().optional(),
   textoAlteracoesDiversas: z.string().optional(),
   ocorrenciasConfeccionadas: z.array(parteDiariaOcorrenciaSchema).optional(),
+  ocorrenciasNaoConfeccionadas: z.array(parteDiariaOcorrenciaSchema).optional(),
   textoPassagemServico: z.string().optional(),
 });
 export type ParteDiariaOverride = z.infer<typeof parteDiariaOverrideSchema>;
@@ -145,10 +191,11 @@ export const parteDiariaSchema = z.object({
   textoEscalaExtraordinaria: z.string(),
   textoIseo: z.string(),
 
-  /** Tabelas livres (Fiscal preenche manualmente). */
-  escalaGuarda: z.array(parteDiariaLinhaHorarioSchema).default([]),
+  /** Escala de Guarda (12 slots de 2h, 1 militar por slot, rodízio cíclico). */
+  escalaGuarda: z.array(parteDiariaGuardaEntrySchema).default([]),
   escalaFaxina: z.array(parteDiariaFaxinaSchema).default([]),
-  rondaNoturna: z.array(parteDiariaLinhaHorarioSchema).default([]),
+  /** Ronda Noturna (intervalo 23:10–05:10 dividido entre N militares). */
+  rondaNoturna: z.array(parteDiariaRondaEntrySchema).default([]),
   passagemServicoManha: z.array(parteDiariaLinhaHorarioSchema).default([]),
 
   textoInstrucao: z.string(),
@@ -160,6 +207,7 @@ export const parteDiariaSchema = z.object({
   textoAlteracoesDiversas: z.string(),
 
   ocorrenciasConfeccionadas: z.array(parteDiariaOcorrenciaSchema).default([]),
+  ocorrenciasNaoConfeccionadas: z.array(parteDiariaOcorrenciaSchema).default([]),
   textoPassagemServico: z.string(),
 
   geradoEm: z.string(),

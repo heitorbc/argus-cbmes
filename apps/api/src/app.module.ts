@@ -13,7 +13,9 @@ import { FeriasModule } from './modules/ferias/ferias.module';
 import { FiscaisModule } from './modules/fiscais/fiscais.module';
 import { HealthModule } from './modules/health/health.module';
 import { IdeoModule } from './modules/ideo/ideo.module';
+import { IncidentesBaonModule } from './modules/incidentes-baon/incidentes-baon.module';
 import { IntegracoesModule } from './modules/integracoes/integracoes.module';
+import { LocaisFaxinaModule } from './modules/locais-faxina/locais-faxina.module';
 import { MapaForcaModule } from './modules/mapa-forca/mapa-forca.module';
 import { MapaForcaCiodesModule } from './modules/mapa-forca-ciodes/mapa-forca-ciodes.module';
 import { MateriaisModule } from './modules/materiais/materiais.module';
@@ -43,7 +45,9 @@ import { ViaturasModule } from './modules/viaturas/viaturas.module';
     FiscaisModule,
     HealthModule,
     IdeoModule,
+    IncidentesBaonModule,
     IntegracoesModule,
+    LocaisFaxinaModule,
     MapaForcaModule,
     MapaForcaCiodesModule,
     MateriaisModule,

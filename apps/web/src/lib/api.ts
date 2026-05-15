@@ -34,7 +34,9 @@ import type {
   IdeoEntry,
   IdeoMatrix,
   IdeoStatusDoDia,
+  IncidenteBaon,
   IntegracaoStatus,
+  LocalFaxina,
   LetraEquipe,
   LetraEquipeRotativa,
   LoginInput,
@@ -647,6 +649,36 @@ export const api = {
 
   parteDiariaReabrir: (data: string) =>
     request<ParteDiaria>(`/parte-diaria/${data}/reabrir`, { method: 'POST' }),
+
+  // S0.x/parte-diaria — BAON (autocomplete códigos de ocorrência)
+  incidentesBaonSearch: (q?: string, limit = 20) => {
+    const p = new URLSearchParams();
+    if (q) p.set('q', q);
+    p.set('limit', String(limit));
+    return request<IncidenteBaon[]>(`/incidentes-baon?${p.toString()}`);
+  },
+
+  // S0.x/parte-diaria — Locais de Faxina (CRUD admin)
+  locaisFaxinaList: (ativosOnly = false) =>
+    request<LocalFaxina[]>(`/locais-faxina${ativosOnly ? '?ativosOnly=true' : ''}`),
+
+  locaisFaxinaCreate: (input: { nome: string; ordem?: number }) =>
+    request<LocalFaxina>('/locais-faxina', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  locaisFaxinaUpdate: (
+    id: string,
+    input: { nome?: string; ordem?: number; ativo?: boolean },
+  ) =>
+    request<LocalFaxina>(`/locais-faxina/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+
+  locaisFaxinaDelete: (id: string) =>
+    request<LocalFaxina>(`/locais-faxina/${id}`, { method: 'DELETE' }),
 
   // Conferência de Materiais (S8)
   materiaisChecklistPadrao: (vtrPrefixo: string) =>

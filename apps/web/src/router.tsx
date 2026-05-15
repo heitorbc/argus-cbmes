@@ -29,6 +29,7 @@ import { ConferenciaViaturaPage } from '@/pages/conferencia-viatura';
 import { DispensasPage } from '@/pages/dispensas';
 import { FeriasPage } from '@/pages/ferias';
 import { IntegracoesPage } from '@/pages/integracoes';
+import { LocaisFaxinaPage } from '@/pages/locais-faxina';
 import { TrocasPage } from '@/pages/trocas';
 import { NotasServicoPage } from '@/pages/notas-servico';
 import { ParteDiariaPage } from '@/pages/parte-diaria';
@@ -117,6 +118,7 @@ export const router = createBrowserRouter([
           { path: '/cadastros/trocas', element: <TrocasPage /> },
           { path: '/cadastros/atestados', element: <AtestadosPage /> },
           { path: '/cadastros/notas-servico', element: <NotasServicoPage /> },
+          { path: '/cadastros/locais-faxina', element: <LocaisFaxinaPage /> },
           { path: '/configuracoes/unidades', element: <UnidadesPage /> },
           { path: '/configuracoes/recursos', element: <RecursosPage /> },
           { path: '/configuracoes/integracoes', element: <IntegracoesPage /> },

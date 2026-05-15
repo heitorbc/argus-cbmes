@@ -18,26 +18,22 @@ import {
   type ParteDiaria,
   type ParteDiariaEscalaOperacionalEntry,
   type ParteDiariaFaxina,
-  type ParteDiariaLinhaHorario,
+  type ParteDiariaGuardaEntry,
   type ParteDiariaMilitarRef,
   type ParteDiariaOcorrencia,
+  type ParteDiariaRondaEntry,
 } from '@argus/shared-types';
 
 /**
- * S11 — Builder do `.docx` da Parte Diária.
+ * S11 / S0.x — Builder do `.docx` da Parte Diária seguindo o modelo
+ * institucional fielmente
+ * (`data/Parte Diarias - 5 MAIO/2026.01.25 - 1ªCIA 1ºBBM - PARTE DIÁRIA.docx`).
  *
- * Recebe o shape canônico `ParteDiaria` (do S10) e produz um Buffer do
- * arquivo Word com layout fiel ao PDF institucional de referência
- * (`data/Fase1/2026.05.04_-_1ªCIA_1BBM.pdf`):
- *
- *  - Cabeçalho centralizado: Estado · CBMES · 1ª Cia/1º BBM.
- *  - Título principal "Parte Diária da Equipe X — Y, do dia DD/MM/AAAA
- *    para o dia DD/MM/AAAA".
- *  - 19 seções na mesma ordem do PDF. Cada título em UPPERCASE com borda
- *    inferior simulando o `<h3>` do HTML.
- *  - Escalas Operacionais: tabela com rowspan agrupando militares por
- *    viatura (mesmo padrão da tela `/parte-diaria`).
- *  - Rodapé: 2 colunas de assinatura (Fiscal que passa | que assume).
+ * Estrutura: cabeçalho 3 linhas + título + 17 seções na ordem do modelo.
+ * Tabela operacional tem 1ª coluna unificada (RECURSO + VTR + KM); seções
+ * "OCORRÊNCIAS NÃO CONFECCIONADAS" e "ALTERAÇÃO DE VIATURAS" foram
+ * adicionadas. Rodapé mostra o Fiscal de hoje (passa) e o Fiscal do
+ * próximo dia (assume).
  */
 export async function buildParteDiariaDocx(pd: ParteDiaria): Promise<Buffer> {
   const children: (Paragraph | Table)[] = [
@@ -53,20 +49,15 @@ export async function buildParteDiariaDocx(pd: ParteDiaria): Promise<Buffer> {
       subTitulo('ISEO:'),
       ...paragrafosDeTexto(pd.textoIseo),
     ]),
-    ...secao(
-      'ESCALA DE GUARDA',
-      tabelaHorarioOuVazio(pd.escalaGuarda, ['Horário', 'Militar', 'Setor ou Área Responsável']),
-    ),
-    ...secao('ESCALA DE FAXINA', tabelaFaxinaOuVazio(pd.escalaFaxina)),
-    ...secao(
-      'RONDA NOTURNA',
-      tabelaHorarioOuVazio(pd.rondaNoturna, ['Horário', 'Militar', 'Área']),
-    ),
-    ...secao(
-      'PASSAGEM DE SERVIÇO (MANHÃ)',
-      tabelaHorarioOuVazio(pd.passagemServicoManha, ['Horário', 'Militar', 'Área']),
-    ),
-    ...secao('ATIVIDADE DE INSTRUÇÃO', paragrafosDeTexto(pd.textoInstrucao)),
+    ...secao('ESCALA DE GUARDA, RONDA E MANUTENÇÃO DO QUARTEL', [
+      subTitulo('ESCALA DE GUARDA'),
+      ...tabelaGuardaOuVazio(pd.escalaGuarda),
+      subTitulo('RONDA NOTURNA'),
+      ...tabelaRondaOuVazio(pd.rondaNoturna),
+      subTitulo('ESCALA DE FAXINA'),
+      ...tabelaFaxinaOuVazio(pd.escalaFaxina),
+    ]),
+    ...secao('ATIVIDADE DE INSTRUÇÃO / PREPARAÇÃO', paragrafosDeTexto(pd.textoInstrucao)),
     ...secao(
       'INSPEÇÃO DIÁRIA DE EQUIPAMENTOS OPERACIONAIS (IDEO)',
       paragrafosDeTexto(pd.textoIdeoFiscal),
@@ -79,6 +70,10 @@ export async function buildParteDiariaDocx(pd: ParteDiaria): Promise<Buffer> {
     ...secao('ALTERAÇÃO DE VIATURAS', paragrafosDeTexto(pd.textoAlteracaoViaturas)),
     ...secao('ALTERAÇÕES DIVERSAS', paragrafosDeTexto(pd.textoAlteracoesDiversas)),
     ...secao('OCORRÊNCIAS CONFECCIONADAS', tabelaOcorrenciasOuVazio(pd.ocorrenciasConfeccionadas)),
+    ...secao(
+      'OCORRÊNCIAS NÃO CONFECCIONADAS',
+      tabelaOcorrenciasOuVazio(pd.ocorrenciasNaoConfeccionadas),
+    ),
     ...secao('PASSAGEM DE SERVIÇO', [
       ...paragrafosDeTexto(pd.textoPassagemServico),
       paragrafo(formatDataBr(pd.proximoDia) + '.', { alignment: AlignmentType.CENTER }),
@@ -114,9 +109,7 @@ export async function buildParteDiariaDocx(pd: ParteDiaria): Promise<Buffer> {
   return Packer.toBuffer(doc);
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+// ── Cabeçalho ───────────────────────────────────────────────────────────────
 
 function cabecalho(pd: ParteDiaria): Paragraph[] {
   const equipeNome = pd.equipeNome ?? '?';
@@ -124,13 +117,7 @@ function cabecalho(pd: ParteDiaria): Paragraph[] {
   return [
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      children: [
-        new TextRun({
-          text: 'ESTADO DO ESPÍRITO SANTO',
-          bold: true,
-          allCaps: true,
-        }),
-      ],
+      children: [new TextRun({ text: 'ESTADO DO ESPÍRITO SANTO', bold: true })],
     }),
     new Paragraph({
       alignment: AlignmentType.CENTER,
@@ -138,18 +125,16 @@ function cabecalho(pd: ParteDiaria): Paragraph[] {
         new TextRun({
           text: 'CORPO DE BOMBEIROS MILITAR DO ESTADO DO ESPÍRITO SANTO',
           bold: true,
-          allCaps: true,
         }),
       ],
     }),
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      children: [
-        new TextRun({
-          text: 'PRIMEIRA COMPANHIA · 1ª Cia/1º BBM',
-          bold: true,
-        }),
-      ],
+      children: [new TextRun({ text: 'PRIMEIRA COMPANHIA 1º CIA', bold: true })],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [new TextRun({ text: '1ª Cia 1º BBM', bold: true })],
     }),
     new Paragraph({ children: [] }),
     new Paragraph({
@@ -157,7 +142,7 @@ function cabecalho(pd: ParteDiaria): Paragraph[] {
       heading: HeadingLevel.HEADING_2,
       children: [
         new TextRun({
-          text: `Parte Diária da Equipe ${equipeNome} - ${equipeLetra}, do dia ${formatDataBr(pd.data)} para o dia ${formatDataBr(pd.proximoDia)}.`,
+          text: `Parte Diária da Equipe ${equipeNome} - ${equipeLetra}, dia ${formatDataBr(pd.data)} para o dia ${formatDataBr(pd.proximoDia)}.`,
           bold: true,
         }),
       ],
@@ -165,6 +150,8 @@ function cabecalho(pd: ParteDiaria): Paragraph[] {
     new Paragraph({ children: [] }),
   ];
 }
+
+// ── Section helpers ─────────────────────────────────────────────────────────
 
 function secaoTitulo(texto: string): Paragraph {
   return new Paragraph({
@@ -186,13 +173,7 @@ function secaoTitulo(texto: string): Paragraph {
 function subTitulo(texto: string): Paragraph {
   return new Paragraph({
     spacing: { before: 100, after: 50 },
-    children: [
-      new TextRun({
-        text: texto,
-        bold: true,
-        size: 20,
-      }),
-    ],
+    children: [new TextRun({ text: texto, bold: true, size: 20 })],
   });
 }
 
@@ -210,16 +191,18 @@ function paragrafo(
   });
 }
 
-/** Quebra texto em parágrafos preservando `\n` (usado em textos pré-gerados). */
 function paragrafosDeTexto(texto: string): Paragraph[] {
   if (!texto) return [paragrafo('')];
   return texto.split('\n').map((linha) => paragrafo(linha));
 }
 
-// ---------------------------------------------------------------------------
-// Tabela: Escalas Operacionais (com rowspan por viatura)
-// ---------------------------------------------------------------------------
+// ── Tabela: Escalas Operacionais (1ª coluna unificada) ──────────────────────
 
+/**
+ * 1ª coluna agrupa RECURSO + VTR + KM em uma única célula multilinha,
+ * com rowSpan = número de militares. Demais colunas: FUNÇÃO | MILITAR |
+ * OBSERVAÇÃO. Formato fiel ao modelo institucional.
+ */
 function tabelaEscalasOperacionais(entries: readonly ParteDiariaEscalaOperacionalEntry[]): Table {
   if (entries.length === 0) {
     return tabelaSimples([['Nenhum recurso operacional no dia.']]);
@@ -227,7 +210,7 @@ function tabelaEscalasOperacionais(entries: readonly ParteDiariaEscalaOperaciona
 
   const headerRow = new TableRow({
     tableHeader: true,
-    children: ['Viatura', 'KM Inicial', 'Função', 'Militar', 'Observação'].map((h) =>
+    children: ['Recurso · VTR · KM Inicial', 'Função', 'Militar', 'Observação'].map((h) =>
       cellHeader(h),
     ),
   });
@@ -237,14 +220,19 @@ function tabelaEscalasOperacionais(entries: readonly ParteDiariaEscalaOperaciona
     const baixada = e.vtrStatus === 'BAIXADA';
     const militares = e.militares;
     const rowspan = Math.max(1, militares.length);
-    const kmTexto = e.kmInicial !== null ? String(e.kmInicial) : '-';
+    const blocoRecurso = cellRecursoBloco(
+      e.recurso,
+      e.vtrPrefixo,
+      e.kmInicial,
+      e.vtrStatus,
+      rowspan,
+    );
 
     if (militares.length === 0) {
       bodyRows.push(
         new TableRow({
           children: [
-            cell(e.recurso, { bold: true }),
-            cell(kmTexto),
+            blocoRecurso,
             cell('-'),
             cell('-'),
             cell(baixada ? 'VTR BAIXADA' : '-'),
@@ -258,12 +246,7 @@ function tabelaEscalasOperacionais(entries: readonly ParteDiariaEscalaOperaciona
       const m = militares[i]!;
       const row = new TableRow({
         children: [
-          ...(i === 0
-            ? [
-                cell(e.recurso, { bold: true, rowSpan: rowspan }),
-                cell(kmTexto, { rowSpan: rowspan }),
-              ]
-            : []),
+          ...(i === 0 ? [blocoRecurso] : []),
           cell(m.funcao),
           cell(m.militarRaw),
           cell(m.observacao || '-'),
@@ -279,25 +262,58 @@ function tabelaEscalasOperacionais(entries: readonly ParteDiariaEscalaOperaciona
   });
 }
 
-// ---------------------------------------------------------------------------
-// Tabelas livres (Guarda, Faxina, Ronda, Passagem manhã, Ocorrências)
-// ---------------------------------------------------------------------------
+function cellRecursoBloco(
+  recurso: string,
+  vtrPrefixo: string | null,
+  kmInicial: number | null,
+  vtrStatus: ParteDiariaEscalaOperacionalEntry['vtrStatus'],
+  rowSpan: number,
+): TableCell {
+  const linhas = [
+    { texto: recurso, bold: true },
+    { texto: vtrPrefixo ? `VTR ${vtrPrefixo}` : '— sem VTR —' },
+    {
+      texto:
+        kmInicial !== null
+          ? `KM inicial: ${kmInicial.toLocaleString('pt-BR')}`
+          : 'KM inicial: —',
+    },
+    ...(vtrStatus && vtrStatus !== 'DISPONIVEL'
+      ? [{ texto: `Status: ${vtrStatus}`, bold: true }]
+      : []),
+  ];
+  return new TableCell({
+    rowSpan,
+    verticalAlign: VerticalAlign.CENTER,
+    children: linhas.map(
+      (l) =>
+        new Paragraph({
+          children: [new TextRun({ text: l.texto, bold: l.bold })],
+        }),
+    ),
+  });
+}
 
-function tabelaHorarioOuVazio(
-  linhas: readonly ParteDiariaLinhaHorario[],
-  colunas: [string, string, string],
-): (Paragraph | Table)[] {
+// ── Tabela: Guarda (1 col por slot, com rodízio Sent. 1/2/3) ────────────────
+
+function tabelaGuardaOuVazio(linhas: readonly ParteDiariaGuardaEntry[]): (Paragraph | Table)[] {
   if (linhas.length === 0) {
     return [paragrafo('Não houve.')];
   }
   const header = new TableRow({
     tableHeader: true,
-    children: colunas.map((c) => cellHeader(c)),
+    children: ['Horário', 'Militar', 'Setor ou Área Responsável'].map((c) => cellHeader(c)),
   });
   const body = linhas.map(
     (l) =>
       new TableRow({
-        children: [cell(l.horario), cell(l.militar), cell(l.setorOuArea || '-')],
+        children: [
+          cell(`${l.horarioInicio} – ${l.horarioFim}`),
+          cell(
+            l.militarRaw + (l.sentinelaSlot ? ` (Sent. ${l.sentinelaSlot})` : '') || '—',
+          ),
+          cell(l.setor || '-'),
+        ],
       }),
   );
   return [
@@ -307,6 +323,36 @@ function tabelaHorarioOuVazio(
     }),
   ];
 }
+
+// ── Tabela: Ronda Noturna ───────────────────────────────────────────────────
+
+function tabelaRondaOuVazio(linhas: readonly ParteDiariaRondaEntry[]): (Paragraph | Table)[] {
+  if (linhas.length === 0) {
+    return [paragrafo('Não houve.')];
+  }
+  const header = new TableRow({
+    tableHeader: true,
+    children: ['Horário', 'Militar', 'Área Responsável'].map((c) => cellHeader(c)),
+  });
+  const body = linhas.map(
+    (l) =>
+      new TableRow({
+        children: [
+          cell(`${l.horarioInicio} – ${l.horarioFim}`),
+          cell(l.militarRaw || '—'),
+          cell(l.area || '-'),
+        ],
+      }),
+  );
+  return [
+    new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [header, ...body],
+    }),
+  ];
+}
+
+// ── Tabela: Faxina (agrupa por militar; locais separados por " / ") ─────────
 
 function tabelaFaxinaOuVazio(linhas: readonly ParteDiariaFaxina[]): (Paragraph | Table)[] {
   if (linhas.length === 0) {
@@ -316,12 +362,12 @@ function tabelaFaxinaOuVazio(linhas: readonly ParteDiariaFaxina[]): (Paragraph |
     tableHeader: true,
     children: ['Militar', 'Local'].map((c) => cellHeader(c)),
   });
-  const body = linhas.map(
-    (l) =>
-      new TableRow({
-        children: [cell(l.militar), cell(l.local)],
-      }),
-  );
+  const body = linhas.map((l) => {
+    const local = l.local || (l.locaisIds.length > 0 ? l.locaisIds.join(' / ') : '-');
+    return new TableRow({
+      children: [cell(l.militar), cell(local)],
+    });
+  });
   return [
     new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
@@ -329,6 +375,8 @@ function tabelaFaxinaOuVazio(linhas: readonly ParteDiariaFaxina[]): (Paragraph |
     }),
   ];
 }
+
+// ── Tabela: Ocorrências (Confeccionadas | Não Confeccionadas) ───────────────
 
 function tabelaOcorrenciasOuVazio(linhas: readonly ParteDiariaOcorrencia[]): (Paragraph | Table)[] {
   if (linhas.length === 0) {
@@ -338,12 +386,12 @@ function tabelaOcorrenciasOuVazio(linhas: readonly ParteDiariaOcorrencia[]): (Pa
     tableHeader: true,
     children: ['VTR', 'Nº BAON', 'Código da Ocorrência'].map((c) => cellHeader(c)),
   });
-  const body = linhas.map(
-    (l) =>
-      new TableRow({
-        children: [cell(l.vtr), cell(l.numeroBaon), cell(l.codigo)],
-      }),
-  );
+  const body = linhas.map((l) => {
+    const codigo = l.descricao ? `${l.codigo} — ${l.descricao}` : l.codigo;
+    return new TableRow({
+      children: [cell(l.vtr), cell(l.numeroBaon), cell(codigo)],
+    });
+  });
   return [
     new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
@@ -359,13 +407,11 @@ function tabelaSimples(matriz: string[][]): Table {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Rodapé com 2 colunas de assinatura
-// ---------------------------------------------------------------------------
+// ── Rodapé com 2 colunas de assinatura ──────────────────────────────────────
 
 function rodapeAssinaturas(
-  fiscalQuePassa: ParteDiariaMilitarRef | null,
-  fiscalSubstituto: ParteDiariaMilitarRef | null,
+  fiscalQuePassaHoje: ParteDiariaMilitarRef | null,
+  fiscalQueAssumeAmanha: ParteDiariaMilitarRef | null,
 ): Table {
   const NO_BORDER = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
   const semBordas = {
@@ -388,7 +434,8 @@ function rodapeAssinaturas(
           alignment: AlignmentType.CENTER,
           children: [new TextRun({ text: titulo, bold: true })],
         }),
-        paragrafo(formatMilitar(militar), { alignment: AlignmentType.CENTER }),
+        paragrafo(formatMilitarFooter(militar), { alignment: AlignmentType.CENTER }),
+        paragrafo('1º Batalhão de Bombeiros — CBMES', { alignment: AlignmentType.CENTER }),
       ],
     });
   }
@@ -398,22 +445,22 @@ function rodapeAssinaturas(
     rows: [
       new TableRow({
         children: [
-          coluna('Fiscal que passa o serviço', fiscalQuePassa),
-          coluna('Fiscal que assume o serviço', fiscalSubstituto),
+          coluna('Fiscal que passa o serviço', fiscalQuePassaHoje),
+          coluna('Fiscal que assume o serviço', fiscalQueAssumeAmanha),
         ],
       }),
     ],
   });
 }
 
-function formatMilitar(m: ParteDiariaMilitarRef | null): string {
-  if (!m) return '';
-  return `${m.posto} ${m.nome}`.replace(/\s+/g, ' ').trim();
+function formatMilitarFooter(m: ParteDiariaMilitarRef | null): string {
+  if (!m) return '—';
+  const linha1 = `${m.posto} ${m.nome}`.replace(/\s+/g, ' ').trim();
+  const nf = m.nf ? ` · NF ${m.nf}` : '';
+  return `${linha1}${nf}`;
 }
 
-// ---------------------------------------------------------------------------
-// Cell helpers
-// ---------------------------------------------------------------------------
+// ── Cell helpers ────────────────────────────────────────────────────────────
 
 function cell(texto: string, opts?: { bold?: boolean; rowSpan?: number }): TableCell {
   return new TableCell({

@@ -1968,14 +1968,20 @@ function ModalAlteracaoDiversa({
   const [militarOriginalRaw, setMilitarOriginalRaw] = useState('');
   const [militarSubstitutoNf, setMilitarSubstitutoNf] = useState<string | undefined>();
   const [militarSubstitutoRaw, setMilitarSubstitutoRaw] = useState('');
+  const [horarioTroca, setHorarioTroca] = useState('');
   const [motivo, setMotivo] = useState('');
   const [observacao, setObservacao] = useState('');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const recursos = composicaoMf.map((c) => c.recurso);
+  const isChopRecurso = recurso === 'CHEFE DE OPERAÇÕES';
 
   const submit = async () => {
+    if (tipo === 'troca_militar' && horarioTroca && !/^\d{2}:\d{2}$/.test(horarioTroca)) {
+      setErr('Horário inválido — use formato HH:MM (ex.: 14:00).');
+      return;
+    }
     setSaving(true);
     setErr(null);
     try {
@@ -1989,6 +1995,7 @@ function ModalAlteracaoDiversa({
         militarSubstitutoRaw: militarSubstitutoRaw || undefined,
         motivo: motivo || undefined,
         observacao: observacao || undefined,
+        horarioTroca: horarioTroca && tipo === 'troca_militar' ? horarioTroca : undefined,
       });
       onSaved();
     } catch (e) {
@@ -2078,7 +2085,28 @@ function ModalAlteracaoDiversa({
                   }}
                   excluirNfs={militarOriginalNf ? [militarOriginalNf] : []}
                 />
+                {isChopRecurso && (
+                  <p className="mt-1 text-[11px] italic text-amber-700">
+                    ⚠ Para CHEFE DE OPERAÇÕES, o substituto deve constar na planilha externa de
+                    habilitados a ChOp (mesma restrição da Prévia).
+                  </p>
+                )}
               </div>
+              <label className="block">
+                <span className="text-xs font-medium text-slate-700">
+                  Horário da troca (durante o serviço)
+                </span>
+                <input
+                  type="time"
+                  value={horarioTroca}
+                  onChange={(e) => setHorarioTroca(e.target.value)}
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
+                />
+                <p className="mt-1 text-[11px] italic text-slate-500">
+                  Ex.: 14:00 — entra como "Às 14h00, X foi substituído por Y" em
+                  Alterações Diversas e na Parte Diária.
+                </p>
+              </label>
             </>
           )}
 

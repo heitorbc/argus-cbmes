@@ -123,6 +123,25 @@ class FakeMateriaisService {
   }
 }
 
+class FakeConferenciaViaturaService {
+  entries: Array<{ vtrPrefixo: string; statusMudanca?: string; motivoBaixa?: string; observacao?: string }> = [];
+  getByData(): Array<{ vtrPrefixo: string; statusMudanca?: string; motivoBaixa?: string; observacao?: string }> {
+    return this.entries;
+  }
+}
+
+class FakeViaturasService {
+  list(): Promise<unknown[]> {
+    return Promise.resolve([]);
+  }
+}
+
+class FakeLocaisFaxinaService {
+  list(): unknown[] {
+    return [];
+  }
+}
+
 describe('ParteDiariaService (S10)', () => {
   let prevSvc: FakePreviaService;
   let matSvc: FakeMateriaisService;
@@ -131,7 +150,13 @@ describe('ParteDiariaService (S10)', () => {
   beforeEach(() => {
     prevSvc = new FakePreviaService();
     matSvc = new FakeMateriaisService();
-    svc = new ParteDiariaService(prevSvc as unknown as PreviaService, matSvc as unknown as never);
+    svc = new ParteDiariaService(
+      prevSvc as unknown as PreviaService,
+      matSvc as unknown as never,
+      new FakeConferenciaViaturaService() as unknown as never,
+      new FakeViaturasService() as unknown as never,
+      new FakeLocaisFaxinaService() as unknown as never,
+    );
   });
 
   it('rascunho deriva equipe + Fiscal que assume + dia seguinte', async () => {
@@ -141,11 +166,13 @@ describe('ParteDiariaService (S10)', () => {
     expect(pd.equipe).toBe('B');
     expect(pd.equipeNome).toBe('BRAVO');
     expect(pd.fiscalQueAssume?.nf).toBe('2984946');
-    expect(pd.fiscalQuePassa).toBeNull();
+    // S0.x/parte-diaria — fiscalQuePassa vem do MapaForca D-1.
+    // O fake retorna o mesmo payload para qualquer data, então D-1 também resolve MARIANE.
+    expect(pd.fiscalQuePassa?.nf).toBe('2984946');
     expect(pd.textoAssuncao).toMatch(/MARIANE GUARNIER BRUMATTI/);
   });
 
-  it('troca_militar inclui horário "Às HHhMMmin," no texto de Alterações (S6n/0.2)', async () => {
+  it('troca_militar com horarioTroca formata "Às HHhMM," no texto de Alterações', async () => {
     prevSvc.payload = fakePrevia({
       alteracoesDiversas: [
         {
@@ -159,16 +186,17 @@ describe('ParteDiariaService (S10)', () => {
           militarSubstitutoRaw: 'CB FABRE',
           militarSubstitutoNf: '3055566',
           motivo: 'mal-estar',
+          horarioTroca: '14:30',
           registradoPorNf: '2984946',
           registradoEm: '2026-05-04T14:30:00.000Z',
         },
       ],
     });
     const pd = await svc.get('2026-05-04');
-    expect(pd.textoAlteracoesDiversas).toMatch(/Às 14h30min/);
-    expect(pd.textoAlteracoesDiversas).toMatch(/troca de militar no ABTS_01\/Mot/);
-    expect(pd.textoAlteracoesDiversas).toMatch(/CB FABRE.*substituiu.*CB ASSIS/);
+    expect(pd.textoAlteracoesDiversas).toMatch(/Às 14h30/);
+    expect(pd.textoAlteracoesDiversas).toMatch(/CB ASSIS.*substituído.*CB FABRE/);
     expect(pd.textoAlteracoesDiversas).toMatch(/mal-estar/);
+    expect(pd.textoAlteracoesDiversas).toMatch(/ABTS_01/);
   });
 
   it('1-militar (só motorista) vira "Chefe/Motorista" na PD (S6n/0.6)', async () => {
@@ -329,7 +357,8 @@ describe('ParteDiariaService (S10)', () => {
     expect(pd.textoAlteracaoViaturas).toMatch(/ATB 001/);
     expect(pd.escalasOperacionais.find((e) => e.recurso === 'AU 154')?.kmInicial).toBe(29345);
     expect(pd.fiscalQuePassa?.nome).toBe('JÚLIO CESAR NOYA LOPES');
-    expect(pd.textoAssuncao).toMatch(/em substituição ao 2ºSGT JÚLIO CESAR NOYA LOPES/);
+    // S0.x/parte-diaria — formato "{posto} BM {nome}".
+    expect(pd.textoAssuncao).toMatch(/em substituição ao 2ºSGT BM JÚLIO CESAR NOYA LOPES/);
     expect(pd.ultimoEditorNf).toBe('2984946');
     expect(pd.ultimaEdicaoEm).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });

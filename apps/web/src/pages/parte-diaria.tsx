@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type {
+  IncidenteBaon,
   ParteDiaria,
   ParteDiariaFaxina,
+  ParteDiariaGuardaEntry,
   ParteDiariaLinhaHorario,
   ParteDiariaMilitarRef,
   ParteDiariaOcorrencia,
+  ParteDiariaRondaEntry,
   UpsertParteDiariaInput,
 } from '@argus/shared-types';
 import { useAuth } from '@/lib/auth-context';
@@ -135,6 +138,14 @@ export function ParteDiariaPage() {
     const v = pd?.[key];
     return typeof v === 'string' ? v : '';
   };
+
+  // S0.x/parte-diaria — Viaturas em serviço hoje (para select de Ocorrências).
+  const viaturasEmServico = useMemo(() => {
+    if (!pd) return [] as string[];
+    return pd.escalasOperacionais
+      .filter((e) => e.vtrPrefixo)
+      .map((e) => e.vtrPrefixo as string);
+  }, [pd]);
 
   return (
     <main className="min-h-screen bg-slate-50 print:bg-white">
@@ -286,11 +297,10 @@ export function ParteDiariaPage() {
           </Secao>
 
           <Secao titulo="ESCALA DE GUARDA">
-            <TabelaHorario
+            <TabelaGuarda
               linhas={draft.escalaGuarda ?? pd.escalaGuarda}
               editavel={podeEditar}
               onChange={(v) => updateDraft('escalaGuarda', v)}
-              colunas={['Horário', 'Militar', 'Setor ou Área Responsável']}
             />
           </Secao>
 
@@ -303,11 +313,10 @@ export function ParteDiariaPage() {
           </Secao>
 
           <Secao titulo="RONDA NOTURNA">
-            <TabelaHorario
+            <TabelaRonda
               linhas={draft.rondaNoturna ?? pd.rondaNoturna}
               editavel={podeEditar}
               onChange={(v) => updateDraft('rondaNoturna', v)}
-              colunas={['Horário', 'Militar', 'Área']}
             />
           </Secao>
 
@@ -371,8 +380,18 @@ export function ParteDiariaPage() {
           <Secao titulo="OCORRÊNCIAS CONFECCIONADAS">
             <TabelaOcorrencias
               linhas={draft.ocorrenciasConfeccionadas ?? pd.ocorrenciasConfeccionadas}
+              viaturasDisponiveis={viaturasEmServico}
               editavel={podeEditar}
               onChange={(v) => updateDraft('ocorrenciasConfeccionadas', v)}
+            />
+          </Secao>
+
+          <Secao titulo="OCORRÊNCIAS NÃO CONFECCIONADAS">
+            <TabelaOcorrencias
+              linhas={draft.ocorrenciasNaoConfeccionadas ?? pd.ocorrenciasNaoConfeccionadas}
+              viaturasDisponiveis={viaturasEmServico}
+              editavel={podeEditar}
+              onChange={(v) => updateDraft('ocorrenciasNaoConfeccionadas', v)}
             />
           </Secao>
 
@@ -647,6 +666,161 @@ function TabelaHorario({
   );
 }
 
+function TabelaGuarda({
+  linhas,
+  editavel,
+  onChange,
+}: {
+  linhas: readonly ParteDiariaGuardaEntry[];
+  editavel: boolean | undefined;
+  onChange: (linhas: ParteDiariaGuardaEntry[]) => void;
+}) {
+  if (linhas.length === 0 && !editavel) {
+    return <p className="text-sm italic text-slate-500">Não houve.</p>;
+  }
+  return (
+    <div>
+      <table className="w-full border-collapse text-xs">
+        <thead className="bg-slate-100 print:bg-white">
+          <tr>
+            <th className="border border-slate-400 px-2 py-1 text-left">Horário</th>
+            <th className="border border-slate-400 px-2 py-1 text-left">Militar</th>
+            <th className="border border-slate-400 px-2 py-1 text-left">Setor</th>
+            {editavel && <th className="border-0 print:hidden"></th>}
+          </tr>
+        </thead>
+        <tbody>
+          {linhas.map((l, i) => (
+            <tr key={i}>
+              <td className="border border-slate-400 px-2 py-1">
+                {l.horarioInicio} – {l.horarioFim}
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                {editavel ? (
+                  <input
+                    value={l.militarRaw}
+                    onChange={(e) => {
+                      const next = [...linhas];
+                      next[i] = { ...l, militarRaw: e.target.value };
+                      onChange(next);
+                    }}
+                    className="w-full rounded border border-slate-200 px-1 text-xs"
+                  />
+                ) : (
+                  <>
+                    {l.militarRaw || '—'}
+                    {l.sentinelaSlot && (
+                      <span className="ml-1 text-[10px] text-slate-500">
+                        (Sent. {l.sentinelaSlot})
+                      </span>
+                    )}
+                  </>
+                )}
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                {editavel ? (
+                  <input
+                    value={l.setor}
+                    onChange={(e) => {
+                      const next = [...linhas];
+                      next[i] = { ...l, setor: e.target.value };
+                      onChange(next);
+                    }}
+                    className="w-full rounded border border-slate-200 px-1 text-xs"
+                  />
+                ) : (
+                  l.setor
+                )}
+              </td>
+              {editavel && (
+                <td className="px-2 print:hidden">
+                  <button
+                    type="button"
+                    onClick={() => onChange(linhas.filter((_, j) => j !== i))}
+                    className="text-xs text-red-600 hover:underline"
+                  >
+                    ×
+                  </button>
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TabelaRonda({
+  linhas,
+  editavel,
+  onChange,
+}: {
+  linhas: readonly ParteDiariaRondaEntry[];
+  editavel: boolean | undefined;
+  onChange: (linhas: ParteDiariaRondaEntry[]) => void;
+}) {
+  if (linhas.length === 0 && !editavel) {
+    return <p className="text-sm italic text-slate-500">Não houve.</p>;
+  }
+  return (
+    <div>
+      <p className="mb-1 text-[11px] italic text-slate-500 print:hidden">
+        Cobre 23:10–05:10 dividido entre os militares disponíveis (Mot ChOp + ABTS + Resgate
+        + ATB/Plat). 1 militar por horário.
+      </p>
+      <table className="w-full border-collapse text-xs">
+        <thead className="bg-slate-100 print:bg-white">
+          <tr>
+            <th className="border border-slate-400 px-2 py-1 text-left">Horário</th>
+            <th className="border border-slate-400 px-2 py-1 text-left">Militar</th>
+            <th className="border border-slate-400 px-2 py-1 text-left">Área</th>
+          </tr>
+        </thead>
+        <tbody>
+          {linhas.map((l, i) => (
+            <tr key={i}>
+              <td className="border border-slate-400 px-2 py-1">
+                {l.horarioInicio} – {l.horarioFim}
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                {editavel ? (
+                  <input
+                    value={l.militarRaw}
+                    onChange={(e) => {
+                      const next = [...linhas];
+                      next[i] = { ...l, militarRaw: e.target.value };
+                      onChange(next);
+                    }}
+                    className="w-full rounded border border-slate-200 px-1 text-xs"
+                  />
+                ) : (
+                  l.militarRaw || '—'
+                )}
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                {editavel ? (
+                  <input
+                    value={l.area}
+                    onChange={(e) => {
+                      const next = [...linhas];
+                      next[i] = { ...l, area: e.target.value };
+                      onChange(next);
+                    }}
+                    className="w-full rounded border border-slate-200 px-1 text-xs"
+                  />
+                ) : (
+                  l.area
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function TabelaFaxina({
   linhas,
   editavel,
@@ -720,7 +894,9 @@ function TabelaFaxina({
       {editavel && (
         <button
           type="button"
-          onClick={() => onChange([...linhas, { militar: '', local: '' }])}
+          onClick={() =>
+            onChange([...linhas, { militar: '', local: '', locaisIds: [], militarNf: undefined }])
+          }
           className="mt-1 text-xs text-cbmes-blue hover:underline print:hidden"
         >
           + linha
@@ -732,16 +908,23 @@ function TabelaFaxina({
 
 function TabelaOcorrencias({
   linhas,
+  viaturasDisponiveis,
   editavel,
   onChange,
 }: {
   linhas: readonly ParteDiariaOcorrencia[];
+  viaturasDisponiveis: readonly string[];
   editavel: boolean | undefined;
   onChange: (linhas: ParteDiariaOcorrencia[]) => void;
 }) {
   if (linhas.length === 0 && !editavel) {
     return <p className="text-sm italic text-slate-500">Não houve.</p>;
   }
+  const updateField = (i: number, patch: Partial<ParteDiariaOcorrencia>) => {
+    const next = [...linhas];
+    next[i] = { ...linhas[i]!, ...patch };
+    onChange(next);
+  };
   return (
     <div>
       <table className="w-full border-collapse text-xs">
@@ -756,23 +939,53 @@ function TabelaOcorrencias({
         <tbody>
           {linhas.map((l, i) => (
             <tr key={i}>
-              {(['vtr', 'numeroBaon', 'codigo'] as const).map((field) => (
-                <td key={field} className="border border-slate-400 px-2 py-1">
-                  {editavel ? (
-                    <input
-                      value={l[field]}
-                      onChange={(e) => {
-                        const next = [...linhas];
-                        next[i] = { ...l, [field]: e.target.value };
-                        onChange(next);
-                      }}
-                      className="w-full rounded border border-slate-200 px-1 text-xs"
-                    />
-                  ) : (
-                    l[field]
-                  )}
-                </td>
-              ))}
+              <td className="border border-slate-400 px-2 py-1">
+                {editavel ? (
+                  <select
+                    value={l.vtr}
+                    onChange={(e) => updateField(i, { vtr: e.target.value })}
+                    className="w-full rounded border border-slate-200 px-1 text-xs"
+                  >
+                    <option value="">—</option>
+                    {viaturasDisponiveis.map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                    {l.vtr && !viaturasDisponiveis.includes(l.vtr) && (
+                      <option value={l.vtr}>{l.vtr} (manual)</option>
+                    )}
+                  </select>
+                ) : (
+                  l.vtr
+                )}
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                {editavel ? (
+                  <input
+                    value={l.numeroBaon}
+                    onChange={(e) => updateField(i, { numeroBaon: e.target.value })}
+                    placeholder="Nº BAON"
+                    className="w-full rounded border border-slate-200 px-1 text-xs"
+                  />
+                ) : (
+                  l.numeroBaon
+                )}
+              </td>
+              <td className="border border-slate-400 px-2 py-1">
+                {editavel ? (
+                  <BaonAutocomplete
+                    valorCodigo={l.codigo}
+                    valorDescricao={l.descricao}
+                    onSelect={(c, d) => updateField(i, { codigo: c, descricao: d })}
+                  />
+                ) : (
+                  <>
+                    <strong>{l.codigo}</strong>
+                    {l.descricao && <span className="ml-1">— {l.descricao}</span>}
+                  </>
+                )}
+              </td>
               {editavel && (
                 <td className="px-2 print:hidden">
                   <button
@@ -791,11 +1004,84 @@ function TabelaOcorrencias({
       {editavel && (
         <button
           type="button"
-          onClick={() => onChange([...linhas, { vtr: '', numeroBaon: '', codigo: '' }])}
+          onClick={() =>
+            onChange([
+              ...linhas,
+              { vtr: '', numeroBaon: '', codigo: '', descricao: '' },
+            ])
+          }
           className="mt-1 text-xs text-cbmes-blue hover:underline print:hidden"
         >
           + ocorrência
         </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Autocomplete BAON — digita query, faz `api.incidentesBaonSearch` e mostra
+ * dropdown. Ao selecionar, propaga código + descrição.
+ */
+function BaonAutocomplete({
+  valorCodigo,
+  valorDescricao,
+  onSelect,
+}: {
+  valorCodigo: string;
+  valorDescricao: string;
+  onSelect: (codigo: string, descricao: string) => void;
+}) {
+  const [query, setQuery] = useState(
+    valorCodigo ? (valorDescricao ? `${valorCodigo} — ${valorDescricao}` : valorCodigo) : '',
+  );
+  const [hits, setHits] = useState<IncidenteBaon[]>([]);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!query || query.length < 1) {
+      setHits([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      api
+        .incidentesBaonSearch(query, 15)
+        .then(setHits)
+        .catch(() => setHits([]));
+    }, 200);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  return (
+    <div className="relative">
+      <input
+        value={query}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        placeholder="Digite código ou descrição"
+        className="w-full rounded border border-slate-200 px-1 text-xs"
+      />
+      {open && hits.length > 0 && (
+        <ul className="absolute left-0 right-0 top-full z-20 max-h-48 overflow-auto rounded border border-slate-300 bg-white text-xs shadow-lg">
+          {hits.map((h) => (
+            <li
+              key={h.codigo}
+              onClick={() => {
+                onSelect(h.codigo, h.descricao);
+                setQuery(`${h.codigo} — ${h.descricao}`);
+                setOpen(false);
+              }}
+              className="cursor-pointer px-2 py-1 hover:bg-slate-100"
+            >
+              <strong>{h.codigo}</strong>
+              <span className="ml-1 text-slate-700">— {h.descricao}</span>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

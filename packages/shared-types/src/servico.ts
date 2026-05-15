@@ -160,6 +160,16 @@ export const alteracaoDiversaSchema = z.object({
   statusViaturaNovo: z.enum(STATUS_VIATURA).optional(),
   motivo: z.string().optional(),
   observacao: z.string().optional(),
+  /**
+   * S0.x/parte-diaria — Hora HH:mm em que a alteração ocorreu durante o
+   * serviço. Usado por `tipo='troca_militar'` para registrar o instante
+   * exato da substituição (ex.: "Às 14h00, SD A foi substituído por SD B").
+   * Quando ausente, indica alteração não-cronometrada (raro).
+   */
+  horarioTroca: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/)
+    .optional(),
   registradoEm: z.string(),
   registradoPorNf: z.string(),
 });
