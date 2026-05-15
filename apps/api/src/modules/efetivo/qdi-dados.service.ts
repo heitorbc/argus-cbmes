@@ -42,6 +42,46 @@ export class QdiDadosService {
     };
   }
 
+  /**
+   * S0.x/dev-fixes — Busca militares por NF na aba DADOS sem filtro de
+   * LOCAL. Usado para resolver dados de ChOps que estão em outras Cias do
+   * BBM (não 1ª Cia) e não passariam pelo filtro padrão.
+   *
+   * Retorna apenas as NFs encontradas (sem filtro de LOCAL).
+   */
+  async findUnfilteredByNfs(nfs: Set<string>): Promise<Map<string, MilitarDados>> {
+    if (nfs.size === 0) return new Map();
+    try {
+      const csv = await this.fetchRawCsv();
+      const all = parseQdiDadosCsv(csv, []);
+      const out = new Map<string, MilitarDados>();
+      for (const m of all) {
+        if (nfs.has(m.nf)) out.set(m.nf, m);
+      }
+      return out;
+    } catch (err) {
+      this.logger.warn(`findUnfilteredByNfs falhou: ${(err as Error).message}`);
+      return new Map();
+    }
+  }
+
+  private async fetchRawCsv(): Promise<string> {
+    const sheetId =
+      this.config.get<string>('GOOGLE_SHEET_ID_QDI') ??
+      '12-XCsNwr34d625Wkkuq-mr4bmv2Fcr2QQ1C7WfVjwB0';
+    const gid = this.config.get<string>('GOOGLE_SHEET_GID_QDI_DADOS') ?? '1395786516';
+    const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { signal: controller.signal, redirect: 'follow' });
+      if (!res.ok) throw new Error(`HTTP ${res.status} ao baixar aba DADOS do QDI`);
+      return await res.text();
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
   private async getEntry(): Promise<{ entry: CacheEntry; stale: boolean }> {
     const now = Date.now();
     if (this.cache && now - this.cache.syncedAt < CACHE_TTL_MS) {
@@ -72,26 +112,7 @@ export class QdiDadosService {
   }
 
   private async fetchAndParse(): Promise<CacheEntry> {
-    const sheetId =
-      this.config.get<string>('GOOGLE_SHEET_ID_QDI') ??
-      '12-XCsNwr34d625Wkkuq-mr4bmv2Fcr2QQ1C7WfVjwB0';
-    const gid = this.config.get<string>('GOOGLE_SHEET_GID_QDI_DADOS') ?? '1395786516';
-    const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-    let csv: string;
-    try {
-      const res = await fetch(url, { signal: controller.signal, redirect: 'follow' });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status} ao baixar aba DADOS do QDI`);
-      }
-      csv = await res.text();
-    } finally {
-      clearTimeout(timeoutId);
-    }
-
+    const csv = await this.fetchRawCsv();
     const militares = parseQdiDadosCsv(csv);
     if (militares.length === 0) {
       throw new Error('QDI/DADOS retornou 0 militares após filtro LOCAL — formato pode ter mudado');

@@ -215,13 +215,32 @@ export class ServicoService {
    * S6h/2.1 — Marca início do preenchimento do MF (mock; transição
    * VIATURA_CONFERIDA → PREENCHENDO_MF). A escrita real do MF chega no S9.
    * Idempotente — chamadas repetidas mantêm timestamp.
+   *
+   * S0.x/dev-fixes — Aceita também `EQUIPE_CONFERIDA` como ponto de
+   * partida: promove implicitamente para `VIATURA_CONFERIDA` quando o auto
+   * detect (`maybePromover`) não disparou (ex.: composicaoMf sem viaturas
+   * DISPONIVEL ou divergência de prefixo). Resolve cenários em que o
+   * Fiscal concluiu todas as conferências visíveis mas o serviço ainda
+   * não promoveu sozinho.
    */
   marcarPreenchimentoMfIniciado(dataIso: string): ServicoEstado {
     const current = this.get(dataIso);
-    if (current.estado !== 'VIATURA_CONFERIDA' && current.estado !== 'PREENCHENDO_MF') {
+    if (
+      current.estado !== 'VIATURA_CONFERIDA' &&
+      current.estado !== 'PREENCHENDO_MF' &&
+      current.estado !== 'EQUIPE_CONFERIDA'
+    ) {
       throw new BadRequestException(
         `Preencher MF exige Conferência de Equipe + Viatura completas. Estado atual: "${current.estado}".`,
       );
+    }
+    // Soft-promote EQUIPE_CONFERIDA → VIATURA_CONFERIDA antes de preencher.
+    if (current.estado === 'EQUIPE_CONFERIDA') {
+      this.byData.set(dataIso, {
+        ...current,
+        estado: 'VIATURA_CONFERIDA',
+        conferenciaViaturaEm: current.conferenciaViaturaEm ?? new Date().toISOString(),
+      });
     }
     const now = new Date().toISOString();
     const updated: ServicoEstado = {

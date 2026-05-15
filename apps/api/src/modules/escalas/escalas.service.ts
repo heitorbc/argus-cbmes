@@ -1,4 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type {
   ComposicaoEntry,
   EscalaDiff,
@@ -6,6 +8,8 @@ import type {
   LetraEquipe,
   LetraEquipeRotativa,
 } from '@argus/shared-types';
+import { resolveDataDir } from '../../common/dev-fixtures';
+import { parseEscalaXlsx, parseFilename } from './escala-xlsx-parser';
 
 interface EscalaKey {
   ano: number;
@@ -74,8 +78,55 @@ export function computeDiff(antes: EscalaMensal, depois: EscalaMensal): EscalaDi
  * Mock service in-memory. Em S5 esse storage migra para Prisma+Supabase.
  */
 @Injectable()
-export class EscalasService {
+export class EscalasService implements OnModuleInit {
+  private readonly logger = new Logger(EscalasService.name);
   private readonly byMes = new Map<string, EscalaMensal>();
+
+  async onModuleInit(): Promise<void> {
+    if (process.env.NODE_ENV !== 'development') return;
+    if (this.byMes.size > 0) return;
+    await this.bootstrapFromFilesystem();
+  }
+
+  /**
+   * Dev-only — ao iniciar, se o cache está vazio, lê os 2 arquivos XLSX mais
+   * recentes em `data/Escala de Serviço/` e popula. Idempotente: roda uma
+   * única vez no startup. Não dispara em produção.
+   */
+  private async bootstrapFromFilesystem(): Promise<void> {
+    const dataDir = resolveDataDir('Escala de Serviço');
+    if (!dataDir) {
+      this.logger.warn('Bootstrap escalas: pasta "data/Escala de Serviço/" não encontrada — pulando.');
+      return;
+    }
+    const xlsxFiles = readdirSync(dataDir)
+      .filter((f) => f.toLowerCase().endsWith('.xlsx') && !f.startsWith('~$'))
+      .filter((f) => {
+        try {
+          parseFilename(f);
+          return true;
+        } catch {
+          return false;
+        }
+      })
+      .map((f) => {
+        const { mes, ano } = parseFilename(f);
+        return { f, mes, ano };
+      })
+      .sort((a, b) => b.ano - a.ano || b.mes - a.mes)
+      .slice(0, 2);
+
+    for (const { f } of xlsxFiles) {
+      const buffer = readFileSync(join(dataDir, f));
+      try {
+        const escala = await parseEscalaXlsx({ buffer, filename: f });
+        this.byMes.set(key(escala), escala);
+        this.logger.log(`Bootstrap escala: ${f} (${String(escala.mes).padStart(2, '0')}/${escala.ano})`);
+      } catch (err) {
+        this.logger.error(`Bootstrap escala falhou para "${f}": ${(err as Error).message}`);
+      }
+    }
+  }
 
   list(): { escalas: { ano: number; mes: number; origemArquivo: string; importadoEm: string }[] } {
     const escalas = [...this.byMes.values()]

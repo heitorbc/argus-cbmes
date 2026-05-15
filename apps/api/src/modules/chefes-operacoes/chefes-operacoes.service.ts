@@ -1,4 +1,10 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  forwardRef,
+  Inject,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { ChefeOperacoes } from '@argus/shared-types';
 import { EfetivoService } from '../efetivo/efetivo.service';
@@ -41,6 +47,7 @@ export class ChefesOperacoesService {
 
   constructor(
     private readonly config: ConfigService,
+    @Inject(forwardRef(() => EfetivoService))
     private readonly efetivo: EfetivoService,
   ) {}
 

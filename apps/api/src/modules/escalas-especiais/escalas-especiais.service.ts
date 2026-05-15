@@ -1,5 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { EscalaEspecialMensal } from '@argus/shared-types';
+import { resolveDataDir } from '../../common/dev-fixtures';
+import {
+  parseEscalaEspecialXlsm,
+  parseFilenameEspecial,
+} from './escala-especial-xlsm-parser';
 
 interface EscalaKey {
   ano: number;
@@ -15,8 +22,58 @@ function key(k: EscalaKey): string {
  * Padrão idêntico a `EscalasService` (escala mensal). Em S5b migra para Prisma.
  */
 @Injectable()
-export class EscalasEspeciaisService {
+export class EscalasEspeciaisService implements OnModuleInit {
+  private readonly logger = new Logger(EscalasEspeciaisService.name);
   private readonly byMes = new Map<string, EscalaEspecialMensal>();
+
+  async onModuleInit(): Promise<void> {
+    if (process.env.NODE_ENV !== 'development') return;
+    if (this.byMes.size > 0) return;
+    await this.bootstrapFromFilesystem();
+  }
+
+  /**
+   * Dev-only — ao iniciar, se o cache está vazio, lê o XLSM mais recente em
+   * `data/Escala Especial Tabela de Lançamento/` e popula. Idempotente.
+   */
+  private async bootstrapFromFilesystem(): Promise<void> {
+    const dataDir = resolveDataDir('Escala Especial Tabela de Lançamento');
+    if (!dataDir) {
+      this.logger.warn(
+        'Bootstrap escala especial: pasta "data/Escala Especial Tabela de Lançamento/" não encontrada — pulando.',
+      );
+      return;
+    }
+    const xlsmFiles = readdirSync(dataDir)
+      .filter((f) => f.toLowerCase().endsWith('.xlsm') && !f.startsWith('~$'))
+      .filter((f) => {
+        try {
+          parseFilenameEspecial(f);
+          return true;
+        } catch {
+          return false;
+        }
+      })
+      .map((f) => {
+        const { mes, ano } = parseFilenameEspecial(f);
+        return { f, mes, ano };
+      })
+      .sort((a, b) => b.ano - a.ano || b.mes - a.mes)
+      .slice(0, 1);
+
+    for (const { f } of xlsmFiles) {
+      const buffer = readFileSync(join(dataDir, f));
+      try {
+        const { escala } = await parseEscalaEspecialXlsm({ buffer, filename: f });
+        this.byMes.set(key(escala), escala);
+        this.logger.log(
+          `Bootstrap escala especial: ${f} (${String(escala.mes).padStart(2, '0')}/${escala.ano}, ${escala.atos.length} atos)`,
+        );
+      } catch (err) {
+        this.logger.error(`Bootstrap escala especial falhou para "${f}": ${(err as Error).message}`);
+      }
+    }
+  }
 
   list(): {
     escalas: {

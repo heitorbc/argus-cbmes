@@ -1,6 +1,14 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  forwardRef,
+  Inject,
+  Injectable,
+  Logger,
+  Optional,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { EfetivoListResponse, EfetivoQuery, Militar } from '@argus/shared-types';
+import { ChefesOperacoesService } from '../chefes-operacoes/chefes-operacoes.service';
 import { parseEfetivoCsv } from './efetivo-csv-parser';
 import type { MilitarDados } from './qdi-dados-csv-parser';
 import { QdiDadosService } from './qdi-dados.service';
@@ -37,6 +45,9 @@ export class EfetivoService {
     private readonly config: ConfigService,
     private readonly qdi: QdiService,
     private readonly qdiDados: QdiDadosService,
+    @Optional()
+    @Inject(forwardRef(() => ChefesOperacoesService))
+    private readonly chefesOperacoes?: ChefesOperacoesService,
   ) {}
 
   async list(query: EfetivoQuery): Promise<EfetivoListResponse> {
@@ -47,7 +58,9 @@ export class EfetivoService {
     let items = consolidated.items;
 
     if (query.somente1aCia) {
-      items = items.filter((m) => m.subSecao !== undefined);
+      // ChOps de outras Cias entram mesmo no filtro 1ª Cia (são parte do
+      // ecossistema operacional do dia a dia da 1ª Cia).
+      items = items.filter((m) => m.subSecao !== undefined || m.papelEspecial);
     }
 
     if (query.q) {
@@ -199,6 +212,40 @@ export class EfetivoService {
     const merged = mergeThreeSources(dadosByNf, qdiByNf, efetivo.entry.byNf, {
       incluirEfetivoOrfao: options.incluirEfetivoOrfao ?? false,
     });
+
+    // S0.x/dev-fixes — Enriquece com ChOps habilitados:
+    // 1. Marca papelEspecial='Chefe de Operações' nos militares já presentes.
+    // 2. Para ChOps que não estão no efetivo da 1ª Cia (estão em outras Cias
+    //    do BBM), busca em DADOS sem filtro de LOCAL e adiciona como entry
+    //    extra com papelEspecial.
+    if (this.chefesOperacoes) {
+      const chopsNfs = await this.chefesOperacoes.getHabilitadosNfs();
+      if (chopsNfs.size > 0) {
+        const presentes = new Set(merged.map((m) => m.nf));
+        for (const m of merged) {
+          if (chopsNfs.has(m.nf)) m.papelEspecial = 'Chefe de Operações';
+        }
+        const ausentes = new Set([...chopsNfs].filter((nf) => !presentes.has(nf)));
+        if (ausentes.size > 0) {
+          const extras = await this.qdiDados.findUnfilteredByNfs(ausentes);
+          for (const [nf, d] of extras) {
+            merged.push({
+              nf,
+              ant: d.ant,
+              posto: d.posto,
+              nome: d.nome,
+              nomeGuerra: d.nomeGuerra,
+              lotacao: d.lotacao,
+              municipio: d.municipio,
+              situacao: d.situacao,
+              origensFonte: ['DADOS'],
+              papelEspecial: 'Chefe de Operações',
+            });
+          }
+          merged.sort((a, b) => a.ant - b.ant);
+        }
+      }
+    }
 
     return {
       items: merged,
