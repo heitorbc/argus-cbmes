@@ -82,11 +82,14 @@ export function parseIseoHospitaisCsv(
     throw new Error('Colunas obrigatórias ausentes (POSTO, NOME, NF/MATRÍCULA, DATA, TURNO).');
   }
 
+  // Detecta se a aba tem 2 militares lado a lado (ABRIL 2026 em diante):
+  // procura uma SEGUNDA matrícula numérica nas colunas após `colNf`.
+  // Se houver, extrai também (posto+nome) do segundo bloco.
+  const colNf2 = findSecondNfColumn(rows, headerIdx, colNf);
+
   const out: IseoHospitalEntry[] = [];
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const row = rows[i] ?? [];
-    const nf = clean(row[colNf]);
-    if (!/^\d+$/.test(nf)) continue;
 
     const dataRaw = clean(row[colData]);
     const dataIso = parseDataBR(dataRaw);
@@ -95,32 +98,100 @@ export function parseIseoHospitaisCsv(
     const turno = parseTurno(clean(row[colTurno]));
     if (!turno) continue;
 
-    const posto = clean(row[colPosto]);
-    const nome = clean(row[colNome]);
-    if (!posto || !nome) continue;
-
     const obm = colObm >= 0 ? clean(row[colObm]) || undefined : undefined;
-    // Aba unificada (sem prefixo HPM/HIMABA no nome): tenta inferir de OBM.
-    // Se OBM ausente (caso ABRIL/MAIO 2026), assume default `unidadeDefault`.
     const unidade =
       opts.unidadeFromSheet ?? inferUnidadeFromObm(obm) ?? opts.unidadeDefault;
     if (!unidade) continue;
 
-    out.push({
-      unidade,
-      posto,
-      nome,
-      nf,
-      dataIso,
-      turno,
-      funcao: colFuncao >= 0 ? clean(row[colFuncao]) || undefined : undefined,
-      contato: colContato >= 0 ? clean(row[colContato]) || undefined : undefined,
-      cargaHoraria: colCarga >= 0 ? clean(row[colCarga]) || undefined : undefined,
-      obm,
-      lotacao: colLotacao >= 0 ? clean(row[colLotacao]) || undefined : undefined,
-    });
+    const funcao = colFuncao >= 0 ? clean(row[colFuncao]) || undefined : undefined;
+    const cargaHoraria = colCarga >= 0 ? clean(row[colCarga]) || undefined : undefined;
+    const lotacao = colLotacao >= 0 ? clean(row[colLotacao]) || undefined : undefined;
+    const postoCompartilhado = clean(row[colPosto]);
+
+    // 1º militar.
+    const nf1 = clean(row[colNf]);
+    const nome1 = clean(row[colNome]);
+    if (/^\d+$/.test(nf1) && nome1) {
+      const { posto, nome } = splitPostoNome(nome1, postoCompartilhado);
+      if (posto && nome) {
+        out.push({
+          unidade,
+          posto,
+          nome,
+          nf: nf1,
+          dataIso,
+          turno,
+          funcao,
+          contato: colContato >= 0 ? clean(row[colContato]) || undefined : undefined,
+          cargaHoraria,
+          obm,
+          lotacao,
+        });
+      }
+    }
+
+    // 2º militar (apenas se o layout tiver 2 colunas de matrícula).
+    if (colNf2 >= 0) {
+      const nf2 = clean(row[colNf2]);
+      const nome2 = clean(row[colNf2 + 1]);
+      const contato2 = clean(row[colNf2 + 2]) || undefined;
+      if (/^\d+$/.test(nf2) && nome2) {
+        const { posto, nome } = splitPostoNome(nome2, postoCompartilhado);
+        if (posto && nome) {
+          out.push({
+            unidade,
+            posto,
+            nome,
+            nf: nf2,
+            dataIso,
+            turno,
+            funcao,
+            contato: contato2,
+            cargaHoraria,
+            obm,
+            lotacao,
+          });
+        }
+      }
+    }
   }
   return out;
+}
+
+/**
+ * Procura uma segunda coluna de "matrícula" (numérica) à direita da primeira.
+ * Em layouts pareados (ABRIL/MAIO 2026), o cabeçalho repete "MATRÍCULA" e
+ * "NOME DO MILITAR" para o 2º militar. Como `findCol` retorna a primeira
+ * ocorrência, varremos manualmente o resto do header.
+ */
+function findSecondNfColumn(rows: string[][], headerIdx: number, colNf: number): number {
+  const header = (rows[headerIdx] ?? []).map(normalize);
+  for (let c = colNf + 1; c < header.length; c++) {
+    const cell = header[c] ?? '';
+    if (cell.includes('MATRICULA') || cell === 'NF') return c;
+  }
+  return -1;
+}
+
+/**
+ * O nome no XLSX vem como "2ºSGT BARCELLOS" (posto embebido) ou apenas
+ * "BARCELLOS" (posto separado em `colPosto`). Tenta separar; se não der,
+ * usa `postoFallback` (do header da linha).
+ */
+function splitPostoNome(
+  raw: string,
+  postoFallback: string,
+): { posto: string; nome: string } {
+  const re =
+    /^(?<posto>(?:[1-3]º\s*)?(?:CEL|TEN\s*CEL|MAJ|CAP|TEN(?:\s+QOC)?|SUB\s*TEN|SGT|CB|SD|AL))\s+(?<nome>.+)$/i;
+  const m = raw.match(re);
+  if (m?.groups) {
+    return {
+      posto: m.groups.posto.replace(/\s+/g, '').toUpperCase(),
+      nome: m.groups.nome.trim(),
+    };
+  }
+  return { posto: postoFallback, nome: raw };
 }
 
 function inferUnidadeFromObm(obm: string | undefined): IseoHospitalUnidade | undefined {

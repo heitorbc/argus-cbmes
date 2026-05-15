@@ -72,10 +72,23 @@ describe('parseIseoHospitaisCsv', () => {
     expect(items[0]).toMatchObject({
       unidade: 'HPM',
       nf: '3037509',
-      nome: '2ºSGT BARCELLOS',
+      nome: 'BARCELLOS',
+      posto: '2ºSGT',
       dataIso: '2026-05-29',
       turno: 'Diurno',
     });
+  });
+
+  it('layout pareado (2 militares por linha): extrai ambos', () => {
+    // ABRIL 2026: 11 colunas com 2 pares (matrícula, nome, contato) lado a lado.
+    const csv =
+      'ESCALA DE INDENIZAÇÃO SUPLEMENTAR DE ESCALA OPERACIONAL - HOSPITAIS\n' +
+      'POSTO/GRAD,DATA,TURNO,FUNÇÃO,CH,MATRÍCULA,NOME DO MILITAR,CONTATO,MATRÍCULA,NOME DO MILITAR,CONTATO\n' +
+      'CB,17/04/2026,Diurno,Condutor,12H,4190726,CB IERACITANO,(27) 99772-4174,3037509,2ºSGT BARCELLOS,(27) 99918-6697\n';
+    const items = parseIseoHospitaisCsv(csv, { unidadeDefault: 'HPM' });
+    expect(items.length).toBe(2);
+    expect(items[0]).toMatchObject({ nf: '4190726', nome: 'IERACITANO', posto: 'CB' });
+    expect(items[1]).toMatchObject({ nf: '3037509', nome: 'BARCELLOS', posto: '2ºSGT' });
   });
 
   it('descarta linhas com NF/data/turno inválidos', () => {

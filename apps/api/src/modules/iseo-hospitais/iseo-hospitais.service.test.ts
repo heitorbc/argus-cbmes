@@ -116,7 +116,7 @@ describe('IseoHospitaisService', () => {
     const svc = new IseoHospitaisService(makeConfig());
     const dia = await svc.listDoDia('2026-05-29');
     expect(dia.length).toBe(1);
-    expect(dia[0]?.nome).toBe('2ºSGT BARCELLOS');
+    expect(dia[0]?.nome).toBe('BARCELLOS');
   });
 
   it('cache evita refetch dentro do TTL', async () => {
