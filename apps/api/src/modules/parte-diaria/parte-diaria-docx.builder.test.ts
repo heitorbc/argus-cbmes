@@ -44,11 +44,14 @@ function basePd(): ParteDiaria {
     textoAlteracaoViaturas: 'Não houve.',
     textoAlteracoesDiversas: 'Não houve.',
     ocorrenciasConfeccionadas: [],
+    ocorrenciasNaoConfeccionadas: [],
     textoPassagemServico:
       'No horário regulamentar, passei o serviço ao meu substituto, informando-o todas as alterações e ordens em vigor.',
     geradoEm: '2026-05-04T07:00:00.000Z',
     ultimaEdicaoEm: null,
     ultimoEditorNf: null,
+    finalizadoEm: null,
+    finalizadoPorNf: null,
   };
 }
 
@@ -79,6 +82,8 @@ describe('buildParteDiariaDocx (S11)', () => {
     expect(xml).toContain('TROCAS DE SERVIÇO');
     expect(xml).toContain('INSPEÇÃO DIÁRIA DE EQUIPAMENTOS OPERACIONAIS');
     expect(xml).toContain('PASSAGEM DE SERVIÇO');
+    // S0.x/parte-diaria — nova seção fiel ao modelo institucional.
+    expect(xml).toContain('OCORRÊNCIAS NÃO CONFECCIONADAS');
     // Cabeçalho
     expect(xml).toContain('ESTADO DO ESPÍRITO SANTO');
     expect(xml).toMatch(/Parte Diária da Equipe BRAVO - B/);
@@ -121,8 +126,9 @@ describe('buildParteDiariaDocx (S11)', () => {
     expect(xml).toContain('Motorista');
     expect(xml).toContain('(Fiscal)');
     expect(xml).toContain('ABTS 011');
-    expect(xml).toContain('29345');
-    expect(xml).toContain('36865');
+    // S0.x/parte-diaria — KM formatado com separador locale (29.345).
+    expect(xml).toContain('29.345');
+    expect(xml).toContain('36.865');
     // 1 linha de cabeçalho + 2+1 linhas de corpo = 4 `<w:tr>` na tabela.
     // O documento total tem mais `<w:tr>` (cabeçalho/rodapé das outras
     // seções), então a checagem é por mínimo.

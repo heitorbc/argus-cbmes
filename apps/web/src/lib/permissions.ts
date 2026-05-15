@@ -53,10 +53,12 @@ export const ROUTE_TO_SECTION: Record<string, ModuloHome> = {
   '/cadastros/escalas-especiais': 'sargenteacao',
   '/cadastros/ferias': 'sargenteacao',
   '/cadastros/trocas': 'sargenteacao',
+  '/cadastros/iseo-hospitais': 'sargenteacao',
   '/cadastros/viaturas': 'logistica',
   '/logistica/recursos': 'logistica',
   '/configuracoes/unidades': 'configuracoes',
   '/configuracoes/integracoes': 'configuracoes',
+  '/cadastros/locais-faxina': 'configuracoes',
 };
 
 /**

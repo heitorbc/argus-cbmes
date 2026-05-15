@@ -29,6 +29,9 @@ import { ConferenciaViaturaPage } from '@/pages/conferencia-viatura';
 import { DispensasPage } from '@/pages/dispensas';
 import { FeriasPage } from '@/pages/ferias';
 import { IntegracoesPage } from '@/pages/integracoes';
+import { AgendaPage } from '@/pages/agenda';
+import { IseoHospitaisPage } from '@/pages/iseo-hospitais';
+import { LocaisFaxinaPage } from '@/pages/locais-faxina';
 import { TrocasPage } from '@/pages/trocas';
 import { NotasServicoPage } from '@/pages/notas-servico';
 import { ParteDiariaPage } from '@/pages/parte-diaria';
@@ -103,6 +106,7 @@ export const router = createBrowserRouter([
         element: <ProtectedRoute />,
         children: [
           { path: '/', element: <HomePage /> },
+          { path: '/agenda', element: <AgendaPage /> },
           { path: '/trocar-senha', element: <TrocarSenhaPage /> },
           { path: '/cadastros/efetivo', element: <EfetivoPage /> },
           { path: '/cadastros/efetivo/:nf', element: <EfetivoDetalhePage /> },
@@ -115,8 +119,10 @@ export const router = createBrowserRouter([
           { path: '/cadastros/dispensas', element: <DispensasPage /> },
           { path: '/cadastros/ferias', element: <FeriasPage /> },
           { path: '/cadastros/trocas', element: <TrocasPage /> },
+          { path: '/cadastros/iseo-hospitais', element: <IseoHospitaisPage /> },
           { path: '/cadastros/atestados', element: <AtestadosPage /> },
           { path: '/cadastros/notas-servico', element: <NotasServicoPage /> },
+          { path: '/cadastros/locais-faxina', element: <LocaisFaxinaPage /> },
           { path: '/configuracoes/unidades', element: <UnidadesPage /> },
           { path: '/configuracoes/recursos', element: <RecursosPage /> },
           { path: '/configuracoes/integracoes', element: <IntegracoesPage /> },

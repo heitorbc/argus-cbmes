@@ -1,3 +1,4 @@
+export * from './agenda.js';
 export * from './atestado.js';
 export * from './auth.js';
 export * from './conferencia-materiais.js';
@@ -8,7 +9,10 @@ export * from './escala-especial.js';
 export * from './ferias.js';
 export * from './fiscal.js';
 export * from './ideo.js';
+export * from './incidente-baon.js';
+export * from './iseo-hospital.js';
 export * from './integracao.js';
+export * from './local-faxina.js';
 export * from './mapa-forca.js';
 export * from './mapa-forca-ciodes.js';
 export * from './militar.js';

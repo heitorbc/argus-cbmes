@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth-context';
 import { canSeeSection } from '@/lib/permissions';
+import { AgendaCard } from '@/components/AgendaCard';
 
 const PAPEL_LABEL: Record<string, string> = {
   admin: 'Administrador',
@@ -72,6 +73,10 @@ export function HomePage() {
           </div>
         </div>
 
+        <div className="mt-4">
+          <AgendaCard />
+        </div>
+
         {/* S6c/F4 — reorganização modular: Sargenteação, Prontidão, Logística */}
 
         <ModuloSection
@@ -105,6 +110,7 @@ export function HomePage() {
             <CardLink to="/cadastros/trocas" icon="🔄" label="Trocas Autorizadas" />
             <CardLink to="/cadastros/atestados" icon="🏥" label="Atestados" />
             <CardLink to="/cadastros/notas-servico" icon="📋" label="Notas de Serviço" />
+            <CardLink to="/cadastros/iseo-hospitais" icon="🏥" label="ISEO Hospitais" />
           </ModuloSection>
         )}
 

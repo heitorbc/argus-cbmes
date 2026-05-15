@@ -93,8 +93,9 @@ export function MapaForcaDetalhePage() {
   const podeIniciarServico =
     estado === 'PREVIA_INICIADA' && (isAdmin || isPreviaInitiator);
 
-  // Pode cancelar Prévia: mesmo critério do iniciar serviço
-  const podeCancelarPrevia = podeIniciarServico;
+  // Pode salvar Prévia (fechar banner de edição mantendo PREVIA_INICIADA):
+  // mesmo critério do iniciar serviço.
+  const podeSalvarPrevia = podeIniciarServico;
 
   // S0.5 — Tap-to-swap (UX): primeiro tap registra a posição; segundo tap
   // em outra posição da mesma equipe dispara o swap via PUT /previa/ajustes.
@@ -287,18 +288,10 @@ export function MapaForcaDetalhePage() {
     }
   };
 
-  const handleCancelarPrevia = async () => {
-    if (!confirm('Cancelar Prévia em edição? Os ajustes ficam preservados, mas a Prévia volta a ser somente leitura.')) return;
-    setServicoActionInflight(true);
-    setError(null);
-    try {
-      await api.servicoCancelarPrevia(data);
-      reload();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Erro ao cancelar Prévia');
-    } finally {
-      setServicoActionInflight(false);
-    }
+  const [previaSavedFeedback, setPreviaSavedFeedback] = useState(false);
+  const handleSalvarPrevia = () => {
+    setPreviaSavedFeedback(true);
+    window.setTimeout(() => setPreviaSavedFeedback(false), 2200);
   };
 
   const handleEncerrarServico = async () => {
@@ -423,10 +416,11 @@ export function MapaForcaDetalhePage() {
           <PreviaEstadoBanner
             previa={previa}
             podeIniciarPrevia={podeIniciarPrevia}
-            podeCancelarPrevia={podeCancelarPrevia}
+            podeSalvarPrevia={podeSalvarPrevia}
             inflight={servicoActionInflight}
+            salvoFeedback={previaSavedFeedback}
             onIniciarPrevia={handleIniciarPrevia}
-            onCancelarPrevia={handleCancelarPrevia}
+            onSalvarPrevia={handleSalvarPrevia}
           />
         )}
 
@@ -1968,14 +1962,20 @@ function ModalAlteracaoDiversa({
   const [militarOriginalRaw, setMilitarOriginalRaw] = useState('');
   const [militarSubstitutoNf, setMilitarSubstitutoNf] = useState<string | undefined>();
   const [militarSubstitutoRaw, setMilitarSubstitutoRaw] = useState('');
+  const [horarioTroca, setHorarioTroca] = useState('');
   const [motivo, setMotivo] = useState('');
   const [observacao, setObservacao] = useState('');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const recursos = composicaoMf.map((c) => c.recurso);
+  const isChopRecurso = recurso === 'CHEFE DE OPERAÇÕES';
 
   const submit = async () => {
+    if (tipo === 'troca_militar' && horarioTroca && !/^\d{2}:\d{2}$/.test(horarioTroca)) {
+      setErr('Horário inválido — use formato HH:MM (ex.: 14:00).');
+      return;
+    }
     setSaving(true);
     setErr(null);
     try {
@@ -1989,6 +1989,7 @@ function ModalAlteracaoDiversa({
         militarSubstitutoRaw: militarSubstitutoRaw || undefined,
         motivo: motivo || undefined,
         observacao: observacao || undefined,
+        horarioTroca: horarioTroca && tipo === 'troca_militar' ? horarioTroca : undefined,
       });
       onSaved();
     } catch (e) {
@@ -2078,7 +2079,28 @@ function ModalAlteracaoDiversa({
                   }}
                   excluirNfs={militarOriginalNf ? [militarOriginalNf] : []}
                 />
+                {isChopRecurso && (
+                  <p className="mt-1 text-[11px] italic text-amber-700">
+                    ⚠ Para CHEFE DE OPERAÇÕES, o substituto deve constar na planilha externa de
+                    habilitados a ChOp (mesma restrição da Prévia).
+                  </p>
+                )}
               </div>
+              <label className="block">
+                <span className="text-xs font-medium text-slate-700">
+                  Horário da troca (durante o serviço)
+                </span>
+                <input
+                  type="time"
+                  value={horarioTroca}
+                  onChange={(e) => setHorarioTroca(e.target.value)}
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
+                />
+                <p className="mt-1 text-[11px] italic text-slate-500">
+                  Ex.: 14:00 — entra como "Às 14h00, X foi substituído por Y" em
+                  Alterações Diversas e na Parte Diária.
+                </p>
+              </label>
             </>
           )}
 
@@ -3144,23 +3166,27 @@ function AtivarRecursoCard({
  * Mostra:
  * - Estado atual (NAO_INICIADO / PREVIA_INICIADA / INICIADO+).
  * - Botão "Iniciar Prévia do Mapa Força" se NAO_INICIADO + (Fiscal escalado OR admin).
- * - Botão "Cancelar Prévia" se PREVIA_INICIADA + (iniciador OR admin).
+ * - Botão "Salvar Prévia" se PREVIA_INICIADA + (iniciador OR admin) — apenas
+ *   feedback visual; o auto-save é contínuo e o estado servidor permanece
+ *   PREVIA_INICIADA.
  * - Mensagem informativa quando o usuário não pode interagir naquele estado.
  */
 function PreviaEstadoBanner({
   previa,
   podeIniciarPrevia,
-  podeCancelarPrevia,
+  podeSalvarPrevia,
   inflight,
+  salvoFeedback,
   onIniciarPrevia,
-  onCancelarPrevia,
+  onSalvarPrevia,
 }: {
   previa: MapaForcaDoDia;
   podeIniciarPrevia: boolean;
-  podeCancelarPrevia: boolean;
+  podeSalvarPrevia: boolean;
   inflight: boolean;
+  salvoFeedback: boolean;
   onIniciarPrevia: () => void | Promise<void>;
-  onCancelarPrevia: () => void | Promise<void>;
+  onSalvarPrevia: () => void;
 }) {
   const estado = previa.estadoServico;
   if (estado === 'NAO_INICIADO') {
@@ -3214,23 +3240,34 @@ function PreviaEstadoBanner({
             </span>
           )}
         </p>
-        {podeCancelarPrevia ? (
+        {podeSalvarPrevia ? (
           <>
             <p className="mt-1 text-xs">
               Faça os ajustes necessários abaixo. Os ajustes ficam <strong>salvos
-              automaticamente</strong> a cada alteração e o Mapa Força permanece em
-              <strong> "Em prévia"</strong> até você clicar em <strong>"Iniciar Serviço"</strong>,
+              automaticamente</strong> a cada alteração. Quando terminar, clique em
+              <strong> "Salvar Prévia"</strong> para confirmar; o Mapa Força permanece em
+              <strong> "Em prévia"</strong> até alguém clicar em <strong>"Iniciar Serviço"</strong>,
               quando os dados são congelados e ficam disponíveis para o preenchimento do
               Mapa Força CIODES e da Parte Diária.
             </p>
-            <button
-              type="button"
-              onClick={() => void onCancelarPrevia()}
-              disabled={inflight}
-              className="mt-2 rounded-button border border-amber-700 bg-white px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-60"
-            >
-              {inflight ? 'Cancelando…' : 'Cancelar Prévia (volta a read-only)'}
-            </button>
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onSalvarPrevia()}
+                disabled={inflight}
+                className="rounded-button border border-amber-700 bg-white px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-60"
+              >
+                Salvar Prévia
+              </button>
+              {salvoFeedback && (
+                <span
+                  role="status"
+                  className="text-xs font-medium text-green-700"
+                >
+                  ✓ Prévia salva — ajustes preservados
+                </span>
+              )}
+            </div>
           </>
         ) : (
           <p className="mt-1 text-xs italic">

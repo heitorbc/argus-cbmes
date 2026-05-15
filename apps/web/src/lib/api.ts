@@ -34,7 +34,12 @@ import type {
   IdeoEntry,
   IdeoMatrix,
   IdeoStatusDoDia,
+  AgendaResponse,
+  IncidenteBaon,
   IntegracaoStatus,
+  IseoHospitalEntry,
+  IseoHospitalSyncStatus,
+  LocalFaxina,
   LetraEquipe,
   LetraEquipeRotativa,
   LoginInput,
@@ -647,6 +652,59 @@ export const api = {
 
   parteDiariaReabrir: (data: string) =>
     request<ParteDiaria>(`/parte-diaria/${data}/reabrir`, { method: 'POST' }),
+
+  // S0.x/parte-diaria — BAON (autocomplete códigos de ocorrência)
+  // Agenda — agregação das próximas escalas do militar logado.
+  agendaProxima: (dias = 30) => request<AgendaResponse>(`/agenda?dias=${dias}`),
+
+  agendaRange: (inicio: string, fim: string) =>
+    request<AgendaResponse>(`/agenda/range?inicio=${inicio}&fim=${fim}`),
+
+  // ISEO Hospitais — escala HPM + HIMABA (Google Sheets pública).
+  iseoHospitaisList: (unidade?: 'HPM' | 'HIMABA') => {
+    const p = new URLSearchParams();
+    if (unidade) p.set('unidade', unidade);
+    const qs = p.toString();
+    return request<IseoHospitalEntry[]>(`/iseo-hospitais${qs ? `?${qs}` : ''}`);
+  },
+
+  iseoHospitaisDia: (dataIso: string) =>
+    request<IseoHospitalEntry[]>(`/iseo-hospitais/dia/${dataIso}`),
+
+  iseoHospitaisMilitar: (nf: string) =>
+    request<IseoHospitalEntry[]>(`/iseo-hospitais/militar/${nf}`),
+
+  iseoHospitaisSyncStatus: () =>
+    request<IseoHospitalSyncStatus[]>('/iseo-hospitais/sync-status'),
+
+  incidentesBaonSearch: (q?: string, limit = 20) => {
+    const p = new URLSearchParams();
+    if (q) p.set('q', q);
+    p.set('limit', String(limit));
+    return request<IncidenteBaon[]>(`/incidentes-baon?${p.toString()}`);
+  },
+
+  // S0.x/parte-diaria — Locais de Faxina (CRUD admin)
+  locaisFaxinaList: (ativosOnly = false) =>
+    request<LocalFaxina[]>(`/locais-faxina${ativosOnly ? '?ativosOnly=true' : ''}`),
+
+  locaisFaxinaCreate: (input: { nome: string; ordem?: number }) =>
+    request<LocalFaxina>('/locais-faxina', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  locaisFaxinaUpdate: (
+    id: string,
+    input: { nome?: string; ordem?: number; ativo?: boolean },
+  ) =>
+    request<LocalFaxina>(`/locais-faxina/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+
+  locaisFaxinaDelete: (id: string) =>
+    request<LocalFaxina>(`/locais-faxina/${id}`, { method: 'DELETE' }),
 
   // Conferência de Materiais (S8)
   materiaisChecklistPadrao: (vtrPrefixo: string) =>
