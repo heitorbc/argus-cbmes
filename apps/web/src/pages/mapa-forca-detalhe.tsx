@@ -361,6 +361,15 @@ export function MapaForcaDetalhePage() {
       arr.push(t);
       map.set(key, arr);
     }
+    // S0.x/dev-fixes — Garante que recursos com viatura cadastrada no MF
+    // CIODES (composicaoMf) apareçam mesmo quando o XLSX não escalou ninguém
+    // (`semEquipe`). Útil para visualizar recursos como PLATAFORMA, SATURAÇÃO
+    // ou MERGULHO 02 sem equipe naquele dia.
+    for (const c of previa.composicaoMf) {
+      if (!c.vtrPrefixo) continue;
+      if (map.has(c.recurso)) continue;
+      map.set(c.recurso, []);
+    }
     return map;
   }, [previa]);
 
@@ -569,12 +578,12 @@ export function MapaForcaDetalhePage() {
                 )}
                 <div className="space-y-3">
                   {[...tripulacaoPorViatura.entries()].map(([viatura, linhas]) => {
+                    // S0.x/dev-fixes — MERGULHO agora usa o swap genérico
+                    // overridesParesRecursos (ABTS/RESGATE/...). Mantém o
+                    // override mergulho legado apenas para exibir o badge se
+                    // ainda houver entry persistida.
                     const isMergulho = viatura === 'MERGULHO 01' || viatura === 'MERGULHO 02';
-                    const showSwapMergulho =
-                      isMergulho &&
-                      podeSwap &&
-                      tripulacaoPorViatura.has('MERGULHO 01') &&
-                      tripulacaoPorViatura.has('MERGULHO 02');
+                    const showSwapMergulho = false;
                     const swapAtivo = previa.overridesMergulho.some((o) => o.data === data);
                     // Pares 01/02 (não-Mergulho): RESGATE/ABTS/SALVAMAR/QUADRICICLO.
                     // Botão "⇄ Trocar 01↔02" aparece quando há viatura escalada (XLSX)
@@ -630,6 +639,11 @@ export function MapaForcaDetalhePage() {
                           <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-cbmes-blue">
                             Próximo turno (XLSX)
                           </p>
+                          {linhas.length === 0 && (
+                            <p className="rounded border border-dashed border-slate-300 bg-slate-50 px-2 py-1.5 text-xs italic text-slate-500">
+                              Sem equipe escalada para esta viatura no XLSX.
+                            </p>
+                          )}
                           <ul className="divide-y divide-slate-100 text-sm">
                             {linhas.map((t, i) => {
                               const isOrigemSelecionada =
@@ -928,6 +942,7 @@ function detectarParRecurso(
     { par: 'RESGATE', v01: 'RESGATE 01', v02: 'RESGATE 02' },
     { par: 'SALVAMAR', v01: 'SALVAMAR 01', v02: 'SALVAMAR 02' },
     { par: 'QUADRICICLO', v01: 'QUADRICICLO 01', v02: 'QUADRICICLO 02' },
+    { par: 'MERGULHO', v01: 'MERGULHO 01', v02: 'MERGULHO 02' },
   ];
   return tabela.find((p) => p.v01 === viatura || p.v02 === viatura) ?? null;
 }
@@ -1481,7 +1496,11 @@ function ProgressoConferenciasBox({
   isAdmin: boolean;
 }) {
   const estado = previa.estadoServico;
-  const podePreencherInicial = estado === 'VIATURA_CONFERIDA';
+  // S0.x/dev-fixes — Aparece também em EQUIPE_CONFERIDA: o backend faz
+  // soft-promote para VIATURA_CONFERIDA quando o auto-detect não disparou
+  // (composicaoMf sem viaturas DISPONIVEL ou divergência de prefixo).
+  const podePreencherInicial =
+    estado === 'VIATURA_CONFERIDA' || estado === 'EQUIPE_CONFERIDA';
   const jaPreencheu = estado === 'PREENCHENDO_MF';
   const dirtyDesde = previa.mfDirtyDesde;
   const podeAtualizar = jaPreencheu && Boolean(dirtyDesde);

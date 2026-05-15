@@ -227,6 +227,11 @@ function MilitarRow({ m }: { m: Militar }) {
         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
           <span>NF: {m.nf}</span>
           {m.subSecao && <SubSecaoBadge subSecao={m.subSecao} />}
+          {m.papelEspecial && (
+            <span className="rounded bg-cbmes-blue/15 px-2 py-0.5 text-[10px] font-semibold text-cbmes-blue">
+              {m.papelEspecial}
+            </span>
+          )}
           {m.funcao && <span className="italic">{m.funcao}</span>}
           {m.situacao && m.situacao !== 'APTO' && (
             <span className="rounded bg-feedback-warn/15 px-2 py-0.5 text-[10px] font-medium text-feedback-warn">

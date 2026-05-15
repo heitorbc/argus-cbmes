@@ -345,7 +345,7 @@ export type OverrideMergulho = z.infer<typeof overrideMergulhoSchema>;
  * Mergulho usa `overrideMergulhoSchema` próprio (semântica diferente:
  * letras A/B/C de equipes paralelas).
  */
-export const PARES_RECURSOS = ['ABTS', 'RESGATE', 'SALVAMAR', 'QUADRICICLO'] as const;
+export const PARES_RECURSOS = ['ABTS', 'RESGATE', 'SALVAMAR', 'QUADRICICLO', 'MERGULHO'] as const;
 export type ParRecurso = (typeof PARES_RECURSOS)[number];
 
 export const overrideParRecursoSchema = z.object({

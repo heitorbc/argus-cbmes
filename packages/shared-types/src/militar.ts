@@ -90,6 +90,13 @@ export const militarSchema = z.object({
   censo: z.string().optional(),
   /** Origens das fontes que contribuíram para este militar (debug). */
   origensFonte: z.array(z.enum(['DADOS', '1ª1º', 'EFETIVO'])).optional(),
+
+  /**
+   * Papel especial atribuído ao militar (independente de posto/função).
+   * Hoje usado para marcar "Chefe de Operações" — militares cujo NF aparece
+   * na planilha externa de habilitados como ChOp.
+   */
+  papelEspecial: z.string().optional(),
 });
 export type Militar = z.infer<typeof militarSchema>;
 

@@ -67,7 +67,7 @@ describe('AuthService.login', () => {
     await expect(service.login({ nf: HEITOR.nf, senha: HEITOR.cpfFake })).rejects.toThrow(
       HttpException,
     );
-  });
+  }, 15_000); // bcrypt cost 12 × 6 compares pode ultrapassar 5s em hardware mais lento
 
   it('reseta contador de falhas após login bem-sucedido', async () => {
     // 4 falhas (não bloqueia)

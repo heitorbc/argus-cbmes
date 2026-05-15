@@ -166,19 +166,25 @@ export class MapaForcaService {
       vtrStatus: v.status,
     }));
 
-    // Detecta viaturas referenciadas pela composição mas não cadastradas.
+    // S0.x/dev-fixes — Detecta viaturas REALMENTE desconhecidas. A escala
+    // XLSX coloca o nome do recurso na coluna "viatura" (ex.: "ABTS_01",
+    // "RESGATE 01"), não o prefixo. O aviso só é emitido quando o valor
+    // referenciado não bate com nenhum prefixo de viatura cadastrada NEM
+    // com nenhum nome de recurso conhecido do MF CIODES — caso contrário
+    // é apenas o nome do recurso e a info já vem correta.
     const viaturasReferidasNaEscala = new Set(
       tripulacao.map((t) => normalizeViaturaCode(t.viatura)).filter((s) => s.length > 0),
     );
     const viaturasConhecidas = new Set(viaturasOp.map((v) => normalizeViaturaCode(v.codigo)));
+    const recursosConhecidos = new Set(mfRecursos.map((r) => normalizeViaturaCode(r.recurso)));
     for (const v of viaturasReferidasNaEscala) {
-      if (!viaturasConhecidas.has(v)) {
-        inconsistencias.push({
-          tipo: 'VIATURA_DESCONHECIDA',
-          mensagem: `A escala usa "${v}" que não está cadastrada como viatura operacional.`,
-          detalhe: { viatura: v },
-        });
-      }
+      if (viaturasConhecidas.has(v)) continue;
+      if (recursosConhecidos.has(v)) continue; // é nome de recurso, não de viatura — ok
+      inconsistencias.push({
+        tipo: 'VIATURA_DESCONHECIDA',
+        mensagem: `A escala usa "${v}" que não está cadastrada como viatura operacional.`,
+        detalhe: { viatura: v },
+      });
     }
 
     // F7a — Ajustes pré-turno (trocas/escala especial/NS/dispensas) persistidos por data.
@@ -421,8 +427,10 @@ export class MapaForcaService {
     // específica, carregamos a lista de NFs habilitados (1 vez por
     // request). Vazio se a planilha não está sincronizada.
     const chopHabilitados = await this.chefesOperacoes.getHabilitadosNfs();
-    const trocasAutComoPrevia = trocasAutorizadasDoDia.map((t) =>
-      converterTrocaAutorizadaEmPrevia(t, dataIso, matcher, inconsistencias, chopHabilitados),
+    const trocasAutComoPrevia = dedupTrocasAutorizadas(
+      trocasAutorizadasDoDia.map((t) =>
+        converterTrocaAutorizadaEmPrevia(t, dataIso, matcher, inconsistencias, chopHabilitados),
+      ),
     );
     const trocasFinalDoDia = [...trocasAutComoPrevia, ...ajustes.trocas];
 
@@ -818,6 +826,38 @@ function injetarAtivacaoRecurso(
  * `AMBIGUIDADE_NOME` em `inconsistencias` com `detalhe.origem =
  * 'trocas-autorizadas'` — Fiscal vê na UI da Prévia.
  */
+/**
+ * S0.x/dev-fixes — Dedup de trocas autorizadas por
+ * `substitutoNf|periodo` (fallback `substitutoRaw|periodo`). A planilha
+ * frequentemente contém 2 linhas para a mesma troca: uma incompleta
+ * (sem NF do substituído) e outra completa. Mantém a entry mais
+ * completa — a que tem `substituidoNf` preenchido.
+ */
+function dedupTrocasAutorizadas<
+  T extends {
+    substituidoNf?: string;
+    substitutoNf?: string;
+    substitutoRaw: string;
+    periodo: string;
+  },
+>(trocas: T[]): T[] {
+  const byKey = new Map<string, T>();
+  for (const t of trocas) {
+    const chaveSubstituto = t.substitutoNf ?? t.substitutoRaw.trim().toLowerCase();
+    const key = `${chaveSubstituto}|${t.periodo}`;
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, t);
+      continue;
+    }
+    // Preserva a entry mais completa: a que tem substituidoNf preenchido.
+    const novaTemNf = !!t.substituidoNf;
+    const existingTemNf = !!existing.substituidoNf;
+    if (novaTemNf && !existingTemNf) byKey.set(key, t);
+  }
+  return Array.from(byKey.values());
+}
+
 function converterTrocaAutorizadaEmPrevia(
   troca: {
     dataEscala: string;
@@ -1021,6 +1061,7 @@ const PARES_VIATURA: Record<ParRecurso, [string, string]> = {
   RESGATE: ['RESGATE 01', 'RESGATE 02'],
   SALVAMAR: ['SALVAMAR 01', 'SALVAMAR 02'],
   QUADRICICLO: ['QUADRICICLO 01', 'QUADRICICLO 02'],
+  MERGULHO: ['MERGULHO 01', 'MERGULHO 02'],
 };
 
 function aplicarOverrideParRecurso(

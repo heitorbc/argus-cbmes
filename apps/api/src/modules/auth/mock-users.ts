@@ -5,38 +5,28 @@ import type { Papel } from '@argus/shared-types';
  * Usuários mock para Sprint S1 — substituídos por dados reais do Supabase em S5.
  *
  * NFs são reais (extraídos do CSV público do Sargenteante em 2026-05-08).
- * CPFs ("senha inicial") são FAKE — gerados para teste, formato válido (11 dígitos),
- * NÃO correspondem a pessoas reais. Conformidade LGPD (PRD §7.2).
+ * A senha inicial é "batalhao01" para todos (decisão Tech Lead 2026-05-15);
+ * `primeiroAcesso=true` obriga troca via /trocar-senha no primeiro login.
  *
- * Cada usuário tem `senhaHash` (bcrypt cost 12) e `primeiroAcesso=true`. No primeiro login,
- * o sistema obriga troca via /trocar-senha.
+ * `cpfFake` é mantido como campo do tipo apenas para compat com testes
+ * existentes que referenciam `MOCK_USERS[i].cpfFake` como senha — ele
+ * agora carrega o mesmo valor de `DEFAULT_SENHA`.
  */
 export interface MockUser {
   nf: string;
   nome: string;
   posto: string;
   ant: number;
-  cpfFake: string; // só para o seed; NÃO exposto em runtime
+  /** Senha do primeiro acesso. Para todos: "batalhao01". */
+  cpfFake: string;
   senhaHash: string;
   papeis: Papel[];
   primeiroAcesso: boolean;
 }
 
-// Bcrypt hashes pré-computados (cost 12) para cada CPF fake.
-// Gerados deterministicamente na carga; não são senhas reais de ninguém.
-// Para testar localmente: usar `cpfFake` como senha em /auth/login.
-const FAKE_CPFS = {
-  HEITOR: '11122233344',
-  MATTOS: '22233344455',
-  LYRA: '33344455566',
-  VICENTE: '44455566677',
-  MARTINELLI: '55566677788',
-  BRUNO_MELO: '66677788899',
-  MARIANE: '77788899900',
-  JEZREEL: '88899900011',
-} as const;
-
 const COST = 12;
+const DEFAULT_SENHA = 'batalhao01';
+const DEFAULT_HASH = bcrypt.hashSync(DEFAULT_SENHA, COST);
 
 export const MOCK_USERS: MockUser[] = [
   {
@@ -44,8 +34,8 @@ export const MOCK_USERS: MockUser[] = [
     nome: 'HEITOR BARCELLOS COELHO',
     posto: '2ºSGT',
     ant: 419,
-    cpfFake: FAKE_CPFS.HEITOR,
-    senhaHash: bcrypt.hashSync(FAKE_CPFS.HEITOR, COST),
+    cpfFake: DEFAULT_SENHA,
+    senhaHash: DEFAULT_HASH,
     papeis: ['admin', 'fiscal'],
     primeiroAcesso: true,
   },
@@ -57,8 +47,8 @@ export const MOCK_USERS: MockUser[] = [
     nome: 'DANIEL DE AMORIM MATTOS',
     posto: '2ºSGT',
     ant: 366,
-    cpfFake: FAKE_CPFS.MATTOS,
-    senhaHash: bcrypt.hashSync(FAKE_CPFS.MATTOS, COST),
+    cpfFake: DEFAULT_SENHA,
+    senhaHash: DEFAULT_HASH,
     papeis: ['sargenteante'],
     primeiroAcesso: true,
   },
@@ -67,8 +57,8 @@ export const MOCK_USERS: MockUser[] = [
     nome: 'CAUE LYRA CASTRO',
     posto: 'SD',
     ant: 1164,
-    cpfFake: FAKE_CPFS.LYRA,
-    senhaHash: bcrypt.hashSync(FAKE_CPFS.LYRA, COST),
+    cpfFake: DEFAULT_SENHA,
+    senhaHash: DEFAULT_HASH,
     papeis: ['dro', 'sentinela', 'militar'],
     primeiroAcesso: true,
   },
@@ -77,8 +67,8 @@ export const MOCK_USERS: MockUser[] = [
     nome: 'DANILO VICENTE COELHO DA SILVA',
     posto: 'CB',
     ant: 891,
-    cpfFake: FAKE_CPFS.VICENTE,
-    senhaHash: bcrypt.hashSync(FAKE_CPFS.VICENTE, COST),
+    cpfFake: DEFAULT_SENHA,
+    senhaHash: DEFAULT_HASH,
     papeis: ['cov', 'motorista'],
     primeiroAcesso: true,
   },
@@ -87,47 +77,38 @@ export const MOCK_USERS: MockUser[] = [
     nome: 'FERNANDA FONSECA MARTINELLI',
     posto: 'SD',
     ant: 1096,
-    cpfFake: FAKE_CPFS.MARTINELLI,
-    senhaHash: bcrypt.hashSync(FAKE_CPFS.MARTINELLI, COST),
+    cpfFake: DEFAULT_SENHA,
+    senhaHash: DEFAULT_HASH,
     papeis: ['operador', 'socorrista'],
     primeiroAcesso: true,
   },
-  // Personas adicionadas para o persona-picker de homologação (env-gated).
-  // BRUNO MELO já aparece no efetivo CHARLIE (previa.service.test) — usar
-  // como Chefe de Equipe para testar conferência por equipe.
   {
     nf: '3022269',
     nome: 'BRUNO MELO',
     posto: '3ºSGT',
     ant: 650,
-    cpfFake: FAKE_CPFS.BRUNO_MELO,
-    senhaHash: bcrypt.hashSync(FAKE_CPFS.BRUNO_MELO, COST),
+    cpfFake: DEFAULT_SENHA,
+    senhaHash: DEFAULT_HASH,
     papeis: ['chefe_equipe', 'fiscal'],
     primeiroAcesso: true,
   },
-  // MARIANE GUARNIER é a Fiscal do exemplo de PD (2026.05.04). Persona
-  // fiscal-only (sem admin) para validar views isoladas do Fiscal.
   {
     nf: '2984946',
     nome: 'MARIANE GUARNIER BRUMATTI',
     posto: '2ºSGT',
     ant: 250,
-    cpfFake: FAKE_CPFS.MARIANE,
-    senhaHash: bcrypt.hashSync(FAKE_CPFS.MARIANE, COST),
+    cpfFake: DEFAULT_SENHA,
+    senhaHash: DEFAULT_HASH,
     papeis: ['fiscal'],
     primeiroAcesso: true,
   },
-  // JEZREEL — Logística dedicada (mantém o cadastro de Recursos do MF) +
-  // Almoxarifado. Sem admin, sem fiscal: persona "puramente logística +
-  // almoxarife" para validar a visão restrita do módulo Logística e
-  // futuras features de almoxarifado.
   {
     nf: '3037770',
     nome: 'JEZREEL',
     posto: 'SGT',
     ant: 420,
-    cpfFake: FAKE_CPFS.JEZREEL,
-    senhaHash: bcrypt.hashSync(FAKE_CPFS.JEZREEL, COST),
+    cpfFake: DEFAULT_SENHA,
+    senhaHash: DEFAULT_HASH,
     papeis: ['motorista', 'almoxarife'],
     primeiroAcesso: true,
   },

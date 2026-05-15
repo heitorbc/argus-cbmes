@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Toast } from '@/components/toast';
 import {
   ESTADO_IDEO,
   ESTADO_IDEO_LABEL,
@@ -34,13 +35,14 @@ export function ServicoIdeoPage() {
   const tipoFoco: TipoIdeo | null =
     tipoFocoParam === 'ABTS' || tipoFocoParam === 'RESGATE' ? tipoFocoParam : null;
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   const [previa, setPrevia] = useState<MapaForcaDoDia | null>(null);
   const [statusByTipo, setStatusByTipo] = useState<Record<TipoIdeo, IdeoStatusForm>>(emptyForm());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<TipoIdeo | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (!data) return;
@@ -128,7 +130,7 @@ export function ServicoIdeoPage() {
     }
     setSaving(tipo);
     setError(null);
-    setSavedMsg(null);
+    setToastMsg(null);
     try {
       const r = await api.ideoStatusUpsert(data, {
         tipo,
@@ -143,7 +145,9 @@ export function ServicoIdeoPage() {
           f.estado === 'NAO_REALIZADA' ? f.motivoNaoRealizacao.trim() : undefined,
       });
       setStatusByTipo((prev) => ({ ...prev, [tipo]: { ...prev[tipo], marcado: true } }));
-      setSavedMsg(`IDEO ${tipo} atestada por NF ${r.atestadoPorNf}.`);
+      setToastMsg(`✓ IDEO ${tipo} atestada (NF ${r.atestadoPorNf}). Voltando ao Mapa Força…`);
+      // Curta janela para o usuário ler o toast antes de redirecionar.
+      setTimeout(() => navigate(`/mapa-forca/${data}`), 1200);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : `Erro ao salvar IDEO ${tipo}`);
     } finally {
@@ -173,10 +177,13 @@ export function ServicoIdeoPage() {
             {error}
           </div>
         )}
-        {savedMsg && (
-          <div className="mt-2 rounded border border-emerald-300 bg-emerald-50 p-2 text-xs text-emerald-900">
-            {savedMsg}
-          </div>
+        {toastMsg && (
+          <Toast
+            message={toastMsg}
+            variant="success"
+            duration={1200}
+            onDone={() => setToastMsg(null)}
+          />
         )}
 
         <div className="mt-3 space-y-3">
