@@ -112,6 +112,39 @@ export const MOCK_USERS: MockUser[] = [
     papeis: ['motorista', 'almoxarife'],
     primeiroAcesso: true,
   },
+  // S2.x — 3 novos usuários liberados (identificados via planilha ISEO Hospitais).
+  // Papel `militar` dá acesso à Prontidão (Mapa Força, Parte Diária, IDEO, Agenda).
+  // Tech Lead pode promover papéis específicos depois conforme necessidade.
+  {
+    nf: '4151550',
+    nome: 'VIVIANE BARCELLOS COELHO',
+    posto: 'CB',
+    ant: 1100,
+    cpfFake: DEFAULT_SENHA,
+    senhaHash: DEFAULT_HASH,
+    papeis: ['militar'],
+    primeiroAcesso: true,
+  },
+  {
+    nf: '4750799',
+    nome: 'RITA CAROLINA BATISTA DE OLIVEIRA FILPO',
+    posto: 'SD',
+    ant: 1200,
+    cpfFake: DEFAULT_SENHA,
+    senhaHash: DEFAULT_HASH,
+    papeis: ['militar'],
+    primeiroAcesso: true,
+  },
+  {
+    nf: '4150600',
+    nome: 'CASSIO MONTEIRO FLEGLER',
+    posto: 'CB',
+    ant: 950,
+    cpfFake: DEFAULT_SENHA,
+    senhaHash: DEFAULT_HASH,
+    papeis: ['militar'],
+    primeiroAcesso: true,
+  },
 ];
 
 export function findMockUserByNf(nf: string): MockUser | undefined {

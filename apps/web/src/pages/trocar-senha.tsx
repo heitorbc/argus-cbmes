@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useForm, type UseFormRegisterReturn } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { changePasswordInputSchema, type ChangePasswordInput } from '@argus/shared-types';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError, api } from '@/lib/api';
@@ -9,8 +9,14 @@ import { ApiError, api } from '@/lib/api';
 export function TrocarSenhaPage() {
   const { user, setUser } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [serverError, setServerError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Pré-preenche "Senha atual" com a senha digitada na tela de login
+  // (transportada via location.state quando primeiroAcesso=true).
+  const senhaAtualPreenchida =
+    (location.state as { senhaAtual?: string } | null)?.senhaAtual ?? '';
 
   const {
     register,
@@ -18,7 +24,7 @@ export function TrocarSenhaPage() {
     formState: { errors },
   } = useForm<ChangePasswordInput>({
     resolver: zodResolver(changePasswordInputSchema),
-    defaultValues: { senhaAtual: '', novaSenha: '', confirmacao: '' },
+    defaultValues: { senhaAtual: senhaAtualPreenchida, novaSenha: '', confirmacao: '' },
   });
 
   const onSubmit = handleSubmit(async (data) => {
