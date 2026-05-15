@@ -3,16 +3,13 @@ import {
   Controller,
   Get,
   Query,
-  UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '../auth/guards/auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { UserSession } from '@argus/shared-types';
 import { AgendaService } from './agenda.service';
 import type { AgendaResponse } from '@argus/shared-types';
 
 @Controller('agenda')
-@UseGuards(AuthGuard)
 export class AgendaController {
   constructor(private readonly svc: AgendaService) {}
 

@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AgendaService } from './agenda.service';
 import { AgendaController } from './agenda.controller';
-import { AuthModule } from '../auth/auth.module';
 import { EscalasModule } from '../escalas/escalas.module';
 import { EscalasEspeciaisModule } from '../escalas-especiais/escalas-especiais.module';
 import { NotasServicoModule } from '../notas-servico/notas-servico.module';
@@ -10,7 +9,6 @@ import { IseoHospitaisModule } from '../iseo-hospitais/iseo-hospitais.module';
 
 @Module({
   imports: [
-    AuthModule,
     EscalasModule,
     EscalasEspeciaisModule,
     NotasServicoModule,

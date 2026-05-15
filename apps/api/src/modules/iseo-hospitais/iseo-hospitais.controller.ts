@@ -4,11 +4,8 @@ import {
   Get,
   Param,
   Query,
-  UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '../auth/guards/auth.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { RolesGuard } from '../auth/guards/roles.guard';
 import { IseoHospitaisService } from './iseo-hospitais.service';
 import type {
   IseoHospitalEntry,
@@ -17,7 +14,6 @@ import type {
 } from '@argus/shared-types';
 
 @Controller('iseo-hospitais')
-@UseGuards(AuthGuard, RolesGuard)
 export class IseoHospitaisController {
   constructor(private readonly svc: IseoHospitaisService) {}
 
