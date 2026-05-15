@@ -6,6 +6,10 @@ export const agendaFonteSchema = z.enum([
   'nota_servico',
   'iseo_hospitais',
   'chefe_operacoes',
+  'atestado',
+  'dispensa',
+  'ferias',
+  'troca_autorizada',
 ]);
 export type AgendaFonte = z.infer<typeof agendaFonteSchema>;
 

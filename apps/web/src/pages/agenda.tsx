@@ -12,6 +12,10 @@ const TODAS_FONTES: AgendaFonte[] = [
   'nota_servico',
   'iseo_hospitais',
   'chefe_operacoes',
+  'atestado',
+  'dispensa',
+  'ferias',
+  'troca_autorizada',
 ];
 
 /**
@@ -25,13 +29,23 @@ export function AgendaPage() {
   const [error, setError] = useState<string | null>(null);
   const [visao, setVisao] = useState<Visao>('lista');
   const [dias, setDias] = useState<number>(30);
+  const [incluirPassado, setIncluirPassado] = useState(false);
   const [fontesAtivas, setFontesAtivas] = useState<Set<AgendaFonte>>(new Set(TODAS_FONTES));
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    api
-      .agendaProxima(dias)
+    const fetchPromise = incluirPassado
+      ? (() => {
+          const hoje = new Date();
+          const inicio = new Date(hoje);
+          inicio.setUTCDate(inicio.getUTCDate() - 30);
+          const fim = new Date(hoje);
+          fim.setUTCDate(fim.getUTCDate() + dias);
+          return api.agendaRange(inicio.toISOString().slice(0, 10), fim.toISOString().slice(0, 10));
+        })()
+      : api.agendaProxima(dias);
+    fetchPromise
       .then((d) => {
         if (!cancelled) {
           setData(d);
@@ -47,7 +61,7 @@ export function AgendaPage() {
     return () => {
       cancelled = true;
     };
-  }, [dias]);
+  }, [dias, incluirPassado]);
 
   const itensFiltrados = useMemo(() => {
     if (!data) return [];
@@ -113,7 +127,16 @@ export function AgendaPage() {
             </button>
           </div>
 
-          <div className="ml-auto flex items-center gap-1 text-xs">
+          <div className="ml-auto flex items-center gap-2 text-xs">
+            <label className="flex items-center gap-1">
+              <input
+                type="checkbox"
+                checked={incluirPassado}
+                onChange={(e) => setIncluirPassado(e.target.checked)}
+                className="h-4 w-4"
+              />
+              <span className="text-slate-700">Incluir passado (30d)</span>
+            </label>
             <span className="text-slate-500">Range:</span>
             {[30, 60, 90].map((n) => (
               <button
@@ -341,6 +364,14 @@ function dotColor(fonte: AgendaFonte): string {
       return 'bg-amber-500';
     case 'chefe_operacoes':
       return 'bg-rose-500';
+    case 'atestado':
+      return 'bg-slate-400';
+    case 'dispensa':
+      return 'bg-slate-500';
+    case 'ferias':
+      return 'bg-sky-500';
+    case 'troca_autorizada':
+      return 'bg-orange-500';
   }
 }
 

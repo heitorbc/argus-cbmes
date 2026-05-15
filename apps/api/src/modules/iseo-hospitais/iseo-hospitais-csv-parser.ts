@@ -5,24 +5,38 @@ import type { IseoHospitalEntry, IseoHospitalUnidade, IseoHospitalTurno } from '
  * Layout da planilha "Escala ISEO Hospitais"
  * (https://docs.google.com/spreadsheets/d/1wmFOEsrU219fGMfksoSY5dvQu0UN7HdQ558UUiWRXuw/).
  *
- * Cada gid representa UMA unidade (HPM ou HIMABA). A unidade é injetada
- * pelo serviço (parâmetro `unidade`), não vem dentro do CSV.
+ * Cada aba representa um período (ex.: `HPM JANEIRO 2026`, `HIMABA JANEIRO 2026`,
+ * `ABRIL 2026`). A unidade pode vir do nome da aba (`unidadeFromSheet`) OU,
+ * em abas unificadas (sem prefixo HPM/HIMABA), da coluna `OBM` linha-a-linha.
  *
  * Cabeçalho na linha 1:
  *   `POSTO/GRAD,NOME DO MILITAR,NF,DATA DA ESCALA,TURNO,FUNÇÃO,CONTATO,CARGA HORÁRIA,OBM,LOTAÇÃO`
  *
- * Linhas com NF vazia ou data inválida são descartadas.
+ * Linhas com NF vazia, data inválida ou unidade não-resolvida são descartadas.
  */
 
 const HEADER_TOKENS = ['POSTO', 'NOME', 'NF', 'DATA'];
 
 export interface ParseIseoHospitaisOptions {
-  unidade: IseoHospitalUnidade;
+  /** Unidade fixa quando o nome da aba já discrimina (ex.: "HPM JANEIRO 2026"). */
+  unidadeFromSheet?: IseoHospitalUnidade;
+}
+
+/**
+ * Classifica o nome da aba: se começa com "HPM " ou "HIMABA " retorna a
+ * unidade; caso contrário retorna `undefined` (a aba é unificada e a
+ * unidade vem da coluna OBM).
+ */
+export function parseUnidadeFromSheetName(sheetName: string): IseoHospitalUnidade | undefined {
+  const n = normalize(sheetName);
+  if (n.startsWith('HPM ') || n === 'HPM') return 'HPM';
+  if (n.startsWith('HIMABA ') || n === 'HIMABA') return 'HIMABA';
+  return undefined;
 }
 
 export function parseIseoHospitaisCsv(
   csv: string,
-  opts: ParseIseoHospitaisOptions,
+  opts: ParseIseoHospitaisOptions = {},
 ): IseoHospitalEntry[] {
   let rows: string[][];
   try {
@@ -74,8 +88,12 @@ export function parseIseoHospitaisCsv(
     const nome = clean(row[colNome]);
     if (!posto || !nome) continue;
 
+    const obm = colObm >= 0 ? clean(row[colObm]) || undefined : undefined;
+    const unidade = opts.unidadeFromSheet ?? inferUnidadeFromObm(obm);
+    if (!unidade) continue;
+
     out.push({
-      unidade: opts.unidade,
+      unidade,
       posto,
       nome,
       nf,
@@ -84,11 +102,19 @@ export function parseIseoHospitaisCsv(
       funcao: colFuncao >= 0 ? clean(row[colFuncao]) || undefined : undefined,
       contato: colContato >= 0 ? clean(row[colContato]) || undefined : undefined,
       cargaHoraria: colCarga >= 0 ? clean(row[colCarga]) || undefined : undefined,
-      obm: colObm >= 0 ? clean(row[colObm]) || undefined : undefined,
+      obm,
       lotacao: colLotacao >= 0 ? clean(row[colLotacao]) || undefined : undefined,
     });
   }
   return out;
+}
+
+function inferUnidadeFromObm(obm: string | undefined): IseoHospitalUnidade | undefined {
+  if (!obm) return undefined;
+  const n = normalize(obm);
+  if (n.includes('HPM')) return 'HPM';
+  if (n.includes('HIMABA')) return 'HIMABA';
+  return undefined;
 }
 
 function findHeaderIndex(rows: string[][]): number {

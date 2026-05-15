@@ -26,7 +26,7 @@ export class AgendaController {
     const hoje = new Date();
     const fim = new Date(hoje);
     fim.setUTCDate(fim.getUTCDate() + dias);
-    return this.svc.forMilitar(user.nf, toIso(hoje), toIso(fim));
+    return this.svc.forMilitar(user.nf, toIso(hoje), toIso(fim), user.nome);
   }
 
   /**
@@ -54,7 +54,7 @@ export class AgendaController {
     if (dias > 90) {
       throw new BadRequestException('range > 90 dias');
     }
-    return this.svc.forMilitar(user.nf, inicio, fim);
+    return this.svc.forMilitar(user.nf, inicio, fim, user.nome);
   }
 }
 

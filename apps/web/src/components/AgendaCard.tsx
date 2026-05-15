@@ -116,6 +116,10 @@ export const FONTE_CFG: Record<
   nota_servico: { label: 'NS', classes: 'bg-green-100 text-green-800' },
   iseo_hospitais: { label: 'ISEO', classes: 'bg-amber-100 text-amber-800' },
   chefe_operacoes: { label: 'ChOp', classes: 'bg-rose-100 text-rose-800' },
+  atestado: { label: 'Atestado', classes: 'bg-slate-200 text-slate-700' },
+  dispensa: { label: 'Dispensa', classes: 'bg-slate-200 text-slate-700' },
+  ferias: { label: 'Férias', classes: 'bg-sky-100 text-sky-800' },
+  troca_autorizada: { label: 'Troca', classes: 'bg-orange-100 text-orange-800' },
 };
 
 function formatDataBR(iso: string): string {

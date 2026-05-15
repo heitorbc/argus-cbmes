@@ -9,16 +9,33 @@ import type {
   IseoHospitalSyncStatus,
   IseoHospitalUnidade,
 } from '@argus/shared-types';
-import { parseIseoHospitaisCsv } from './iseo-hospitais-csv-parser';
+import {
+  parseIseoHospitaisCsv,
+  parseUnidadeFromSheetName,
+} from './iseo-hospitais-csv-parser';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 15_000;
 
 const DEFAULT_SHEET_ID = '1wmFOEsrU219fGMfksoSY5dvQu0UN7HdQ558UUiWRXuw';
-const DEFAULT_HPM_GID = '0';
-// HIMABA: gid a ser confirmado. Permite override via env. Se vazio,
-// a unidade HIMABA é desabilitada (não bloqueia o startup).
-const DEFAULT_HIMABA_GID = '';
+
+/**
+ * Lista padrão de abas conhecidas (estado em 2026-05). Pode ser sobrescrita
+ * via env `ISEO_SHEET_NAMES` (CSV separado por vírgula). Quando a planilha
+ * ganhar novos meses, basta atualizar a env (ou esta lista) — o parser
+ * descarta meses ainda não lançados que retornem CSV vazio.
+ */
+const DEFAULT_SHEET_NAMES = [
+  'HIMABA DEZEMBRO 2025',
+  'HPM JANEIRO 2026',
+  'HIMABA JANEIRO 2026',
+  'HPM FEVEREIRO 2026',
+  'HIMABA FEVEREIRO 2026',
+  'HPM MARÇO 2026',
+  'HIMABA MARÇO 2026',
+  'ABRIL 2026',
+  'MAIO 2026',
+];
 
 interface CacheEntry {
   parsed: IseoHospitalEntry[];
@@ -26,43 +43,43 @@ interface CacheEntry {
 }
 
 /**
- * Lê a planilha "Escala ISEO Hospitais" via CSV público.
- * Cada unidade (HPM/HIMABA) está numa aba (gid) distinta. Mesmo padrão de
- * `ChefesOperacoesService` (cache TTL 5min, inflight dedup, stale fallback).
+ * Lê a planilha "Escala ISEO Hospitais" via CSV público (`gviz/tq?sheet=`).
+ * Cada aba representa um período (mês ou mês×unidade). O service combina
+ * todas as abas configuradas e dedupa entries.
  *
  * Configurável via env:
  *   `ISEO_HOSPITAIS_SHEET_ID` (default acima)
- *   `ISEO_HPM_GID`  (default `0`)
- *   `ISEO_HIMABA_GID` (default vazio — desabilita HIMABA até ser configurado)
+ *   `ISEO_SHEET_NAMES` (CSV — default lista conhecida)
  */
 @Injectable()
 export class IseoHospitaisService {
   private readonly logger = new Logger(IseoHospitaisService.name);
-  private readonly cache = new Map<IseoHospitalUnidade, CacheEntry>();
-  private readonly inflight = new Map<IseoHospitalUnidade, Promise<CacheEntry>>();
+  private readonly cache = new Map<string, CacheEntry>();
+  private readonly inflight = new Map<string, Promise<CacheEntry>>();
 
   constructor(private readonly config: ConfigService) {}
 
-  /** Lista todos os registros (HPM + HIMABA combinados). */
+  /** Lista deduplicada de todos os registros (todas as abas combinadas). */
   async list(): Promise<IseoHospitalEntry[]> {
-    const entries: IseoHospitalEntry[] = [];
-    for (const unidade of this.unidadesHabilitadas()) {
-      try {
-        const { entry } = await this.getEntry(unidade);
-        entries.push(...entry.parsed);
-      } catch (err) {
-        this.logger.warn(
-          `Falha ao listar ISEO ${unidade}: ${(err as Error).message}. Pulando.`,
-        );
-      }
-    }
-    return entries;
+    const all: IseoHospitalEntry[] = [];
+    const results = await Promise.all(
+      this.sheetNames().map(async (sheet) => {
+        try {
+          const { entry } = await this.getEntry(sheet);
+          return entry.parsed;
+        } catch (err) {
+          this.logger.warn(`ISEO: falha em "${sheet}": ${(err as Error).message}. Pulando.`);
+          return [] as IseoHospitalEntry[];
+        }
+      }),
+    );
+    for (const arr of results) all.push(...arr);
+    return dedupe(all);
   }
 
   async listByUnidade(unidade: IseoHospitalUnidade): Promise<IseoHospitalEntry[]> {
-    if (!this.isUnidadeHabilitada(unidade)) return [];
-    const { entry } = await this.getEntry(unidade);
-    return entry.parsed.slice();
+    const all = await this.list();
+    return all.filter((e) => e.unidade === unidade);
   }
 
   async listDoDia(dataIso: string): Promise<IseoHospitalEntry[]> {
@@ -75,11 +92,12 @@ export class IseoHospitaisService {
     return all.filter((e) => e.nf === nf);
   }
 
-  /** Status por unidade — usado em `/configuracoes/integracoes`. */
+  /** Status por aba — usado em `/configuracoes/integracoes`. */
   getSyncStatus(): IseoHospitalSyncStatus[] {
     const out: IseoHospitalSyncStatus[] = [];
-    for (const unidade of this.unidadesHabilitadas()) {
-      const c = this.cache.get(unidade);
+    for (const sheet of this.sheetNames()) {
+      const c = this.cache.get(sheet);
+      const unidade = parseUnidadeFromSheetName(sheet) ?? 'HPM';
       if (!c) {
         out.push({ unidade, syncedAt: null, count: 0, stale: false });
         continue;
@@ -95,78 +113,67 @@ export class IseoHospitaisService {
   }
 
   async forceSync(): Promise<IseoHospitalSyncStatus[]> {
-    for (const unidade of this.unidadesHabilitadas()) {
+    for (const sheet of this.sheetNames()) {
       try {
-        const entry = await this.fetchAndParse(unidade);
-        this.cache.set(unidade, entry);
+        const entry = await this.fetchAndParse(sheet);
+        this.cache.set(sheet, entry);
       } catch (err) {
-        this.logger.error(
-          `forceSync ISEO ${unidade} falhou: ${(err as Error).message}.`,
-        );
+        this.logger.error(`forceSync ISEO "${sheet}" falhou: ${(err as Error).message}.`);
       }
     }
     return this.getSyncStatus();
   }
 
-  private unidadesHabilitadas(): IseoHospitalUnidade[] {
-    const out: IseoHospitalUnidade[] = [];
-    if (this.gidFor('HPM')) out.push('HPM');
-    if (this.gidFor('HIMABA')) out.push('HIMABA');
-    return out;
-  }
-
-  private isUnidadeHabilitada(unidade: IseoHospitalUnidade): boolean {
-    return Boolean(this.gidFor(unidade));
-  }
-
-  private gidFor(unidade: IseoHospitalUnidade): string {
-    if (unidade === 'HPM') {
-      return this.config.get<string>('ISEO_HPM_GID') ?? DEFAULT_HPM_GID;
+  private sheetNames(): string[] {
+    const raw = this.config.get<string>('ISEO_SHEET_NAMES');
+    if (raw && raw.trim()) {
+      return raw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
     }
-    return this.config.get<string>('ISEO_HIMABA_GID') ?? DEFAULT_HIMABA_GID;
+    return DEFAULT_SHEET_NAMES;
   }
 
   private async getEntry(
-    unidade: IseoHospitalUnidade,
+    sheet: string,
   ): Promise<{ entry: CacheEntry; stale: boolean }> {
     const now = Date.now();
-    const cached = this.cache.get(unidade);
+    const cached = this.cache.get(sheet);
     if (cached && now - cached.syncedAt < CACHE_TTL_MS) {
       return { entry: cached, stale: false };
     }
-    const existing = this.inflight.get(unidade);
+    const existing = this.inflight.get(sheet);
     if (existing) {
       const entry = await existing;
       return { entry, stale: false };
     }
-    const promise = this.fetchAndParse(unidade).finally(() => {
-      this.inflight.delete(unidade);
+    const promise = this.fetchAndParse(sheet).finally(() => {
+      this.inflight.delete(sheet);
     });
-    this.inflight.set(unidade, promise);
+    this.inflight.set(sheet, promise);
     try {
       const entry = await promise;
-      this.cache.set(unidade, entry);
+      this.cache.set(sheet, entry);
       return { entry, stale: false };
     } catch (err) {
       this.logger.error(
-        `Falha ao sincronizar ISEO ${unidade}: ${(err as Error).message}. ${
+        `Falha ao sincronizar ISEO "${sheet}": ${(err as Error).message}. ${
           cached ? 'Servindo último snapshot.' : 'Sem snapshot anterior.'
         }`,
       );
       if (cached) return { entry: cached, stale: true };
       throw new ServiceUnavailableException(
-        `Não foi possível sincronizar com a planilha ISEO Hospitais (${unidade}).`,
+        `Não foi possível sincronizar a aba ISEO Hospitais "${sheet}".`,
       );
     }
   }
 
-  private async fetchAndParse(unidade: IseoHospitalUnidade): Promise<CacheEntry> {
+  private async fetchAndParse(sheet: string): Promise<CacheEntry> {
     const sheetId = this.config.get<string>('ISEO_HOSPITAIS_SHEET_ID') ?? DEFAULT_SHEET_ID;
-    const gid = this.gidFor(unidade);
-    if (!gid) {
-      throw new Error(`GID não configurado para unidade ${unidade}.`);
-    }
-    const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+    const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(
+      sheet,
+    )}`;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -174,13 +181,30 @@ export class IseoHospitaisService {
     let csv: string;
     try {
       const res = await fetch(url, { signal: controller.signal, redirect: 'follow' });
-      if (!res.ok) throw new Error(`HTTP ${res.status} ao baixar ISEO ${unidade}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status} ao baixar ISEO "${sheet}"`);
       csv = await res.text();
     } finally {
       clearTimeout(timeoutId);
     }
 
-    const parsed = parseIseoHospitaisCsv(csv, { unidade });
+    const unidadeFromSheet = parseUnidadeFromSheetName(sheet);
+    const parsed = parseIseoHospitaisCsv(csv, { unidadeFromSheet });
     return { parsed, syncedAt: Date.now() };
   }
+}
+
+/**
+ * Dedupa entries por (unidade, dataIso, turno, nf). Necessário porque
+ * abas duplicadas/repetidas podem produzir o mesmo registro mais de uma vez.
+ */
+function dedupe(entries: IseoHospitalEntry[]): IseoHospitalEntry[] {
+  const seen = new Set<string>();
+  const out: IseoHospitalEntry[] = [];
+  for (const e of entries) {
+    const key = `${e.unidade}|${e.dataIso}|${e.turno}|${e.nf}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(e);
+  }
+  return out;
 }

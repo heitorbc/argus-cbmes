@@ -4,45 +4,45 @@ import type {
   AgendaItem,
   AgendaResponse,
 } from '@argus/shared-types';
-import { EscalasService } from '../escalas/escalas.service';
-import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.service';
+import { MapaForcaService } from '../mapa-forca/mapa-forca.service';
 import { NotasServicoService } from '../notas-servico/notas-servico.service';
 import { ChefesOperacoesService } from '../chefes-operacoes/chefes-operacoes.service';
 import { IseoHospitaisService } from '../iseo-hospitais/iseo-hospitais.service';
+import { AtestadosService } from '../atestados/atestados.service';
+import { DispensasService } from '../dispensas/dispensas.service';
+import { FeriasService } from '../ferias/ferias.service';
+import { TrocasAutorizadasService } from '../trocas-autorizadas/trocas-autorizadas.service';
+import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.service';
 
 const CACHE_TTL_MS = 60_000;
-
-interface CacheKey {
-  nf: string;
-  inicio: string;
-  fim: string;
-}
 
 interface CacheEntry {
   response: AgendaResponse;
   expiresAt: number;
 }
 
-/**
- * Pares de fontes operacionalmente conflitantes (o militar não pode estar
- * em ambas no mesmo dia). Lista explícita: nem todo "mesmo dia" é conflito
- * (ex.: 2 NS no mesmo dia podem ser legítimos se em horários diferentes).
- */
 const CONFLICT_PAIRS: Array<[string, string]> = [
   ['escala_mensal', 'iseo_hospitais'],
   ['escala_mensal', 'chefe_operacoes'],
   ['escala_mensal', 'nota_servico'],
+  ['escala_mensal', 'atestado'],
+  ['escala_mensal', 'dispensa'],
+  ['escala_mensal', 'ferias'],
   ['iseo_hospitais', 'escala_especial'],
   ['iseo_hospitais', 'chefe_operacoes'],
+  ['iseo_hospitais', 'atestado'],
+  ['iseo_hospitais', 'dispensa'],
+  ['iseo_hospitais', 'ferias'],
   ['chefe_operacoes', 'nota_servico'],
 ];
 
 /**
- * Agrega as próximas escalas de um militar a partir de todas as fontes
- * (Escala Mensal, Especial, Notas de Serviço, ISEO Hospitais, ChOp).
+ * Agrega as próximas escalas + ausências de um militar a partir de TODAS
+ * as fontes operacionais, reusando o pipeline do `MapaForcaService` para
+ * resolver nome→NF (via `NomeMatcher`).
  *
- * Implementação pura — não persiste estado. Cache leve por (nf, range)
- * de 60s para evitar refetches em cliques rápidos de toggle list/calendar.
+ * Cache leve por (nf, range) de 60s para evitar refetches em cliques
+ * rápidos de toggle list/calendar.
  */
 @Injectable()
 export class AgendaService {
@@ -50,35 +50,57 @@ export class AgendaService {
   private readonly cache = new Map<string, CacheEntry>();
 
   constructor(
-    private readonly escalas: EscalasService,
+    private readonly mapaForca: MapaForcaService,
     private readonly escalasEspeciais: EscalasEspeciaisService,
     private readonly notasServico: NotasServicoService,
     private readonly chefesOperacoes: ChefesOperacoesService,
     private readonly iseoHospitais: IseoHospitaisService,
+    private readonly atestados: AtestadosService,
+    private readonly dispensas: DispensasService,
+    private readonly ferias: FeriasService,
+    private readonly trocasAutorizadas: TrocasAutorizadasService,
   ) {}
 
+  /**
+   * Retorna a Agenda do militar identificado por `nf`. `nome` é opcional —
+   * usado para casar trocas autorizadas (que armazenam só o nome do militar).
+   */
   async forMilitar(
     nf: string,
     dataInicioIso: string,
     dataFimIso: string,
+    nome?: string,
   ): Promise<AgendaResponse> {
-    const cacheKey = this.cacheKey({ nf, inicio: dataInicioIso, fim: dataFimIso });
+    const cacheKey = `${nf}|${dataInicioIso}|${dataFimIso}`;
     const cached = this.cache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.response;
     }
 
-    const [escalaMensal, escalaEspecial, notas, iseo, chop] = await Promise.all([
-      this.coletarEscalaMensal(nf, dataInicioIso, dataFimIso),
-      this.coletarEscalaEspecial(nf, dataInicioIso, dataFimIso),
-      this.coletarNotasServico(nf, dataInicioIso, dataFimIso),
-      this.coletarIseoHospitais(nf, dataInicioIso, dataFimIso),
-      this.coletarChefesOperacoes(nf, dataInicioIso, dataFimIso),
-    ]);
+    const [mapaForca, especiais, notas, iseo, chop, atestados, dispensas, ferias, trocas] =
+      await Promise.all([
+        this.coletarDoMapaForca(nf, dataInicioIso, dataFimIso),
+        this.coletarEscalaEspecial(nf, dataInicioIso, dataFimIso),
+        this.coletarNotasServico(nf, dataInicioIso, dataFimIso),
+        this.coletarIseoHospitais(nf, dataInicioIso, dataFimIso),
+        this.coletarChefesOperacoes(nf, dataInicioIso, dataFimIso),
+        this.coletarAtestados(nf, dataInicioIso, dataFimIso),
+        this.coletarDispensas(nf, dataInicioIso, dataFimIso),
+        this.coletarFerias(nf, dataInicioIso, dataFimIso),
+        this.coletarTrocasAutorizadas(nome, dataInicioIso, dataFimIso),
+      ]);
 
-    const itens = [...escalaMensal, ...escalaEspecial, ...notas, ...iseo, ...chop].sort(
-      this.compararItens,
-    );
+    const itens = [
+      ...mapaForca,
+      ...especiais,
+      ...notas,
+      ...iseo,
+      ...chop,
+      ...atestados,
+      ...dispensas,
+      ...ferias,
+      ...trocas,
+    ].sort(this.compararItens);
 
     const hoje = todayIso();
     const proximoItem = itens.find((i) => i.data >= hoje) ?? null;
@@ -95,40 +117,56 @@ export class AgendaService {
     return response;
   }
 
-  private cacheKey(k: CacheKey): string {
-    return `${k.nf}|${k.inicio}|${k.fim}`;
-  }
-
-  private async coletarEscalaMensal(
+  /**
+   * Coleta entries do militar via `MapaForcaService.getMapaForcaDoDia`
+   * por dia. Reaproveita o pipeline completo: NomeMatcher (NF resolvido),
+   * trocas autorizadas integradas na tripulação, fiscal, escala especial
+   * misturada na composição do dia.
+   */
+  private async coletarDoMapaForca(
     nf: string,
     inicio: string,
     fim: string,
   ): Promise<AgendaItem[]> {
     const out: AgendaItem[] = [];
-    for (const data of iterDias(inicio, fim)) {
-      const [ano, mes] = parseDataIso(data);
-      try {
-        const { equipe, entries } = this.escalas.getEscaladosDoDia(ano, mes, data);
-        if (!equipe) continue;
-        for (const e of entries) {
-          if (e.militar.nf !== nf) continue;
-          out.push({
-            data,
-            fonte: 'escala_mensal',
-            titulo: `Equipe ${equipe} · ${e.viatura}`,
-            subtitulo: e.funcao,
-            funcao: e.funcao,
-            detalheUrl: `/mapa-forca/${data}`,
-            id: `mensal|${data}|${e.viatura}|${e.funcao}`,
-          });
+    const dias = [...iterDias(inicio, fim)];
+    const resultados = await Promise.all(
+      dias.map(async (data) => {
+        try {
+          return { data, mf: await this.mapaForca.getMapaForcaDoDia(data) };
+        } catch (err) {
+          this.logger.debug(`getMapaForcaDoDia ${data}: ${(err as Error).message}`);
+          return null;
         }
-      } catch (err) {
-        this.logger.debug(`coletarEscalaMensal ${data}: ${(err as Error).message}`);
+      }),
+    );
+    for (const r of resultados) {
+      if (!r) continue;
+      const { data, mf } = r;
+      for (const t of mf.tripulacao) {
+        if (t.militarResolvido?.nf !== nf) continue;
+        const sub: string[] = [t.viatura];
+        if (t.funcao) sub.push(t.funcao);
+        if (t.isFiscal) sub.push('Fiscal');
+        out.push({
+          data,
+          fonte: 'escala_mensal',
+          titulo: `Equipe ${t.equipe}`,
+          subtitulo: sub.join(' · '),
+          funcao: t.funcao,
+          detalheUrl: `/mapa-forca/${data}`,
+          id: `mf|${data}|${t.viatura}|${t.funcao}`,
+        });
       }
     }
     return out;
   }
 
+  /**
+   * Escalas especiais (XLSM) — entries do militar com `militarNf === nf`.
+   * Mantemos como fonte separada (não vem na `tripulacao` de
+   * `getMapaForcaDoDia` pois são turnos pontuais, não composição).
+   */
   private async coletarEscalaEspecial(
     nf: string,
     inicio: string,
@@ -236,6 +274,122 @@ export class AgendaService {
     return out;
   }
 
+  private async coletarAtestados(
+    nf: string,
+    inicio: string,
+    fim: string,
+  ): Promise<AgendaItem[]> {
+    const out: AgendaItem[] = [];
+    for (const data of iterDias(inicio, fim)) {
+      const ativos = this.atestados.listAtivosNoDia(data);
+      for (const a of ativos) {
+        if (a.militarNf !== nf) continue;
+        out.push({
+          data,
+          fonte: 'atestado',
+          titulo: 'Atestado médico',
+          subtitulo: `${formatDataBR(a.dataInicio)} (${a.dias}d)`,
+          detalheUrl: '/cadastros/atestados',
+          id: `atestado|${a.id}|${data}`,
+        });
+      }
+    }
+    return out;
+  }
+
+  private async coletarDispensas(
+    nf: string,
+    inicio: string,
+    fim: string,
+  ): Promise<AgendaItem[]> {
+    const out: AgendaItem[] = [];
+    for (const data of iterDias(inicio, fim)) {
+      const ativas = this.dispensas.listAtivasNoDia(data);
+      for (const d of ativas) {
+        if (d.militarNf !== nf) continue;
+        out.push({
+          data,
+          fonte: 'dispensa',
+          titulo: `Dispensa · ${d.tipo}`,
+          subtitulo: `${formatDataBR(d.dataInicio)} (${d.dias}d)`,
+          detalheUrl: '/cadastros/dispensas',
+          id: `dispensa|${d.id}|${data}`,
+        });
+      }
+    }
+    return out;
+  }
+
+  private async coletarFerias(
+    nf: string,
+    inicio: string,
+    fim: string,
+  ): Promise<AgendaItem[]> {
+    const out: AgendaItem[] = [];
+    for (const data of iterDias(inicio, fim)) {
+      const ativas = this.ferias.listAtivasNoDia(data);
+      for (const f of ativas) {
+        if (f.militarNf !== nf) continue;
+        out.push({
+          data,
+          fonte: 'ferias',
+          titulo: 'Férias',
+          subtitulo: `${formatDataBR(f.dataInicio)} (${f.dias}d)`,
+          detalheUrl: '/cadastros/ferias',
+          id: `ferias|${f.id}|${data}`,
+        });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Trocas autorizadas (planilha externa) referem-se aos militares pelo
+   * nome (não NF). Faz match por substring case-insensitive contra o
+   * nome do militar logado. Inclui apenas as datas em que ele ASSUME
+   * (substituto OU escaladoPagamento) — saídas já são refletidas pela
+   * ausência da escala mensal naquele dia.
+   */
+  private async coletarTrocasAutorizadas(
+    nome: string | undefined,
+    inicio: string,
+    fim: string,
+  ): Promise<AgendaItem[]> {
+    if (!nome) return [];
+    const out: AgendaItem[] = [];
+    const needle = nome.toUpperCase();
+    try {
+      const todas = await this.trocasAutorizadas.listAll();
+      for (const t of todas) {
+        const matchSubstituto = t.substituto?.toUpperCase().includes(needle);
+        const matchPagamento = t.escaladoPagamento?.toUpperCase().includes(needle);
+        if (matchSubstituto && t.dataEscala >= inicio && t.dataEscala <= fim) {
+          out.push({
+            data: t.dataEscala,
+            fonte: 'troca_autorizada',
+            titulo: 'Troca: assume serviço',
+            subtitulo: `Cobre ${t.escaladoOriginal}`,
+            detalheUrl: '/cadastros/trocas',
+            id: `troca|${t.dataEscala}|sub`,
+          });
+        }
+        if (matchPagamento && t.dataPagamento >= inicio && t.dataPagamento <= fim) {
+          out.push({
+            data: t.dataPagamento,
+            fonte: 'troca_autorizada',
+            titulo: 'Troca: pagamento',
+            subtitulo: `Cobre ${t.substitutoPagamento}`,
+            detalheUrl: '/cadastros/trocas',
+            id: `troca|${t.dataPagamento}|pag`,
+          });
+        }
+      }
+    } catch (err) {
+      this.logger.warn(`coletarTrocasAutorizadas falhou: ${(err as Error).message}`);
+    }
+    return out;
+  }
+
   private detectarConflitos(itens: AgendaItem[]): AgendaConflito[] {
     const porData = new Map<string, AgendaItem[]>();
     for (const i of itens) {
@@ -299,4 +453,10 @@ function parseHorarioRange(raw: string): { inicio: string; fim: string } | null 
     inicio: `${m[1]!.padStart(2, '0')}:${m[2]}`,
     fim: `${m[3]!.padStart(2, '0')}:${m[4]}`,
   };
+}
+
+function formatDataBR(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return iso;
+  return `${m[3]}/${m[2]}/${m[1]}`;
 }

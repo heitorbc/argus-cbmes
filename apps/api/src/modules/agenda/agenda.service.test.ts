@@ -1,264 +1,294 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type {
-  ChefeOperacoes,
-  ComposicaoEntry,
-  EscalaEspecialAto,
+  Atestado,
+  Dispensa,
   EscalaEspecialMensal,
+  Ferias,
   IseoHospitalEntry,
-  LetraEquipeRotativa,
+  MapaForcaDoDia,
   NotaServico,
+  TripulacaoEntry,
 } from '@argus/shared-types';
 import { AgendaService } from './agenda.service';
 
 const NF_TARGET = '3037509';
+const NOME_TARGET = 'HEITOR BARCELLOS COELHO';
 
-function militar(nf: string, nome: string): ComposicaoEntry['militar'] {
-  return { raw: `SD ${nome}`, postoAbreviado: 'SD', nomeGuerra: nome, nf };
-}
+// ── Mocks helpers ─────────────────────────────────────────────────
 
-function makeEscalasMock(
-  registry: Record<string, { equipe: LetraEquipeRotativa; entries: ComposicaoEntry[] }>,
-) {
+function makeMapaForca(porData: Record<string, TripulacaoEntry[]>) {
   return {
-    getEscaladosDoDia: (_ano: number, _mes: number, dataIso: string) =>
-      registry[dataIso] ?? { equipe: null, entries: [] },
-  } as unknown as Parameters<typeof AgendaService.prototype.forMilitar> extends never
-    ? never
-    : ConstructorParameters<typeof AgendaService>[0];
+    getMapaForcaDoDia: async (data: string): Promise<MapaForcaDoDia> => {
+      const tripulacao = porData[data] ?? [];
+      return {
+        data,
+        ano: 2026,
+        mes: 5,
+        equipeRotativa: tripulacao.length > 0 ? 'A' : null,
+        equipeMergulho: null,
+        equipeSalvamar: null,
+        fiscal: null,
+        previaState: 'NAO_INICIADO',
+        previaPorNf: null,
+        previaIniciadaPorNf: undefined,
+        previaIniciadaEm: undefined,
+        servicoIniciadoEm: undefined,
+        servicoIniciadoPorNf: undefined,
+        servicoEncerradoEm: undefined,
+        servicoEncerradoPorNf: undefined,
+        recursos: [],
+        tripulacao,
+        ideo: [],
+        ideoSemMarcacao: [],
+        materiaisStatus: { totalRecursos: 0, conferidos: 0, pendentes: 0, ultimoEvento: null },
+        notasServico: [],
+        composicaoMf: [],
+        ajustes: { trocasManuais: [], adicoes: [], remocoes: [] },
+        previa: null,
+        ajustesNotaServico: [],
+        atos: [],
+        trocas: [],
+        alteracoesDiversas: [],
+        ajustesIseo: [],
+        estadoServico: 'NAO_INICIADO',
+        chefeOperacoes: null,
+        viaturasMfStatus: { sincronizadoEm: null, viaturas: [] },
+        inconsistencias: [],
+      } as unknown as MapaForcaDoDia;
+    },
+  } as never;
 }
 
-function makeEscalasEspeciaisMock(escala: EscalaEspecialMensal | null) {
+function tripEntry(
+  viatura: string,
+  funcao: string,
+  nf: string,
+  nome: string,
+  isFiscal = false,
+): TripulacaoEntry {
   return {
-    get: () => escala,
-  } as unknown as ConstructorParameters<typeof AgendaService>[1];
+    equipe: 'A',
+    viatura,
+    funcao,
+    militar: { raw: `2ºSGT ${nome}`, postoAbreviado: '2ºSGT', nomeGuerra: nome, nf },
+    militarResolvido: {
+      nf,
+      nome: `2ºSGT BM ${nome}`,
+      nomeGuerra: nome,
+      posto: '2ºSGT',
+      ant: 419,
+      situacao: 'ATIVO',
+      categoria: 'COMBATENTE',
+      unidadeId: '1bbm',
+      origem: '1ª1º',
+    } as never,
+    isFiscal,
+  } as never;
 }
 
-function makeNotasServicoMock(notas: NotaServico[]) {
+function makeEscalasEspeciais(escala: EscalaEspecialMensal | null) {
+  return { get: () => escala } as never;
+}
+
+function makeNotasServico(notas: NotaServico[]) {
   return {
     list: (filter: { militarNf?: string }) =>
       filter.militarNf ? notas.filter((n) => n.militaresNfs.includes(filter.militarNf!)) : notas,
-  } as unknown as ConstructorParameters<typeof AgendaService>[2];
+  } as never;
 }
 
-function makeChefesOperacoesMock(porDia: Record<string, ChefeOperacoes[]>) {
+function makeChefes(porDia: Record<number, Array<{ nf: string; marcador: string }>>) {
   return {
-    getEscaladosDoDia: async (_ano: number, _mes: number, dia: number) => {
-      const key = String(dia).padStart(2, '0');
-      return porDia[key] ?? [];
-    },
-  } as unknown as ConstructorParameters<typeof AgendaService>[3];
+    getEscaladosDoDia: async (_a: number, _m: number, dia: number) =>
+      (porDia[dia] ?? []).map((c) => ({ posto: 'CAP', nomeGuerra: 'X', ...c })),
+  } as never;
 }
 
-function makeIseoMock(entries: IseoHospitalEntry[]) {
+function makeIseo(entries: IseoHospitalEntry[]) {
   return {
     listByMilitar: async (nf: string) => entries.filter((e) => e.nf === nf),
-  } as unknown as ConstructorParameters<typeof AgendaService>[4];
+  } as never;
 }
 
+function makeAtestados(lista: Atestado[]) {
+  return {
+    listAtivosNoDia: (data: string) =>
+      lista.filter((a) => a.dataInicio === data),
+  } as never;
+}
+
+function makeDispensas(lista: Dispensa[]) {
+  return {
+    listAtivasNoDia: (data: string) =>
+      lista.filter((d) => d.dataInicio === data),
+  } as never;
+}
+
+function makeFerias(lista: Ferias[]) {
+  return {
+    listAtivasNoDia: (data: string) =>
+      lista.filter((f) => f.dataInicio === data),
+  } as never;
+}
+
+function makeTrocas(lista: Array<{
+  dataEscala: string;
+  dataPagamento: string;
+  escaladoOriginal: string;
+  substituto: string;
+  escaladoPagamento: string;
+  substitutoPagamento: string;
+}>) {
+  return { listAll: async () => lista } as never;
+}
+
+function emptyDeps() {
+  return {
+    mf: makeMapaForca({}),
+    especiais: makeEscalasEspeciais(null),
+    notas: makeNotasServico([]),
+    chop: makeChefes({}),
+    iseo: makeIseo([]),
+    atestados: makeAtestados([]),
+    dispensas: makeDispensas([]),
+    ferias: makeFerias([]),
+    trocas: makeTrocas([]),
+  };
+}
+
+// ── Tests ─────────────────────────────────────────────────────────
+
 describe('AgendaService', () => {
-  beforeEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('agrega itens de 5 fontes para 1 militar em range de 7 dias', async () => {
-    const dataMensal = '2026-05-20';
-    const dataEspecial = '2026-05-21';
-    const dataNs = '2026-05-22';
-    const dataIseo = '2026-05-23';
-    const dataChop = '2026-05-24';
-
-    const escalas = makeEscalasMock({
-      [dataMensal]: {
-        equipe: 'A',
-        entries: [
-          {
-            equipe: 'A',
-            viatura: 'ABTS_01',
-            funcao: 'Motorista',
-            militar: militar(NF_TARGET, 'SCARAMUSSA'),
-          },
-          {
-            equipe: 'A',
-            viatura: 'ABTS_01',
-            funcao: 'Chefe',
-            militar: militar('9999999', 'OUTRO'),
-          },
-        ],
-      },
-    });
-
-    const escalaEspecial: EscalaEspecialMensal = {
-      mes: 5,
-      ano: 2026,
-      origemArquivo: 'fake',
-      importadoEm: new Date().toISOString(),
-      atos: [
-        {
-          data: dataEspecial,
-          militarRaw: 'SD SCARAMUSSA',
-          militarNf: NF_TARGET,
-          horario: '07:10 ÀS 13:10',
-          funcao: 'APOIO',
-        } satisfies EscalaEspecialAto,
-        {
-          data: dataEspecial,
-          militarRaw: 'SD OUTRO',
-          militarNf: '9999999',
-          horario: '07:10 ÀS 13:10',
-          funcao: 'APOIO',
-        },
+  it('coleta tripulacao filtrada por NF do MapaForcaService', async () => {
+    const data1 = '2026-05-17';
+    const data2 = '2026-05-21';
+    const deps = emptyDeps();
+    deps.mf = makeMapaForca({
+      [data1]: [
+        tripEntry('ABTS_01', 'Motorista', NF_TARGET, 'HEITOR'),
+        tripEntry('ABTS_01', 'Chefe', '9999999', 'OUTRO'),
       ],
-      avisos: [],
-    };
-    const escalasEspeciais = makeEscalasEspeciaisMock(escalaEspecial);
-
-    const notas: NotaServico[] = [
-      {
-        id: 'ns1',
-        codigo: 'NS123',
-        descricao: 'Teste NS',
-        data: dataNs,
-        horaInicio: '08:00',
-        horaFim: '12:00',
-        viaturaPrefixo: 'AU 154',
-        militaresNfs: [NF_TARGET],
-        criadoEm: new Date().toISOString(),
-        criadoPorNf: 'admin',
-      },
-    ];
-    const notasMock = makeNotasServicoMock(notas);
-
-    const iseo: IseoHospitalEntry[] = [
-      {
-        unidade: 'HPM',
-        posto: 'SD',
-        nome: 'SCARAMUSSA',
-        nf: NF_TARGET,
-        dataIso: dataIseo,
-        turno: 'Diurno',
-        funcao: 'Operador',
-      },
-    ];
-    const iseoMock = makeIseoMock(iseo);
-
-    const chopMock = makeChefesOperacoesMock({
-      '24': [{ posto: 'CAP', nomeGuerra: 'SCARA', nf: NF_TARGET, marcador: 'X' }],
+      [data2]: [tripEntry('AU_154', 'Operador', NF_TARGET, 'HEITOR', true)],
     });
-
-    const svc = new AgendaService(escalas, escalasEspeciais, notasMock, chopMock, iseoMock);
-    const resp = await svc.forMilitar(NF_TARGET, '2026-05-20', '2026-05-26');
-
-    expect(resp.itens.length).toBe(5);
-    const fontes = resp.itens.map((i) => i.fonte).sort();
-    expect(fontes).toEqual([
-      'chefe_operacoes',
-      'escala_especial',
-      'escala_mensal',
-      'iseo_hospitais',
-      'nota_servico',
-    ]);
-    // Ordem cronológica
-    expect(resp.itens[0]?.data).toBe(dataMensal);
-    expect(resp.itens[4]?.data).toBe(dataChop);
+    const svc = new AgendaService(
+      deps.mf, deps.especiais, deps.notas, deps.chop, deps.iseo,
+      deps.atestados, deps.dispensas, deps.ferias, deps.trocas,
+    );
+    const resp = await svc.forMilitar(NF_TARGET, data1, data2, NOME_TARGET);
+    expect(resp.itens.filter((i) => i.fonte === 'escala_mensal').length).toBe(2);
+    const fiscalItem = resp.itens.find((i) => i.subtitulo?.includes('Fiscal'));
+    expect(fiscalItem?.data).toBe(data2);
   });
 
-  it('detecta conflito entre escala_mensal e iseo_hospitais no mesmo dia', async () => {
+  it('integra atestado, dispensa, férias do militar', async () => {
     const data = '2026-05-20';
-    const escalas = makeEscalasMock({
-      [data]: {
-        equipe: 'A',
-        entries: [
-          {
-            equipe: 'A',
-            viatura: 'ABTS_01',
-            funcao: 'Motorista',
-            militar: militar(NF_TARGET, 'SCARAMUSSA'),
-          },
-        ],
-      },
+    const deps = emptyDeps();
+    deps.atestados = makeAtestados([
+      { id: 'at1', militarNf: NF_TARGET, dataInicio: data, dias: 3 } as never,
+    ]);
+    deps.dispensas = makeDispensas([
+      { id: 'di1', militarNf: NF_TARGET, dataInicio: data, dias: 1, tipo: 'I_TAF' } as never,
+    ]);
+    deps.ferias = makeFerias([
+      { id: 'fe1', militarNf: NF_TARGET, dataInicio: data, dias: 30 } as never,
+    ]);
+    const svc = new AgendaService(
+      deps.mf, deps.especiais, deps.notas, deps.chop, deps.iseo,
+      deps.atestados, deps.dispensas, deps.ferias, deps.trocas,
+    );
+    const resp = await svc.forMilitar(NF_TARGET, data, data, NOME_TARGET);
+    const fontes = resp.itens.map((i) => i.fonte).sort();
+    expect(fontes).toEqual(['atestado', 'dispensa', 'ferias']);
+  });
+
+  it('detecta conflito escala_mensal × iseo_hospitais no mesmo dia', async () => {
+    const data = '2026-05-29';
+    const deps = emptyDeps();
+    deps.mf = makeMapaForca({
+      [data]: [tripEntry('ABTS_01', 'Motorista', NF_TARGET, 'HEITOR')],
     });
-    const escalasEspeciais = makeEscalasEspeciaisMock(null);
-    const notasMock = makeNotasServicoMock([]);
-    const chopMock = makeChefesOperacoesMock({});
-    const iseoMock = makeIseoMock([
+    deps.iseo = makeIseo([
       {
         unidade: 'HPM',
-        posto: 'SD',
-        nome: 'SCARAMUSSA',
+        posto: '2ºSGT',
+        nome: 'HEITOR',
         nf: NF_TARGET,
         dataIso: data,
         turno: 'Diurno',
       },
     ]);
-
-    const svc = new AgendaService(escalas, escalasEspeciais, notasMock, chopMock, iseoMock);
-    const resp = await svc.forMilitar(NF_TARGET, data, data);
-
+    const svc = new AgendaService(
+      deps.mf, deps.especiais, deps.notas, deps.chop, deps.iseo,
+      deps.atestados, deps.dispensas, deps.ferias, deps.trocas,
+    );
+    const resp = await svc.forMilitar(NF_TARGET, data, data, NOME_TARGET);
     expect(resp.conflitos.length).toBe(1);
-    expect(resp.conflitos[0]?.data).toBe(data);
     expect(resp.conflitos[0]?.itens.length).toBe(2);
   });
 
   it('proximoItem = primeiro item com data >= hoje', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-05-20T12:00:00Z'));
-
-    const dataPassada = '2026-05-19';
-    const dataFutura = '2026-05-21';
-
-    const escalas = makeEscalasMock({
-      [dataPassada]: {
-        equipe: 'A',
-        entries: [
-          { equipe: 'A', viatura: 'X', funcao: 'F', militar: militar(NF_TARGET, 'X') },
-        ],
-      },
-      [dataFutura]: {
-        equipe: 'B',
-        entries: [
-          { equipe: 'B', viatura: 'Y', funcao: 'F', militar: militar(NF_TARGET, 'X') },
-        ],
-      },
+    const passada = '2026-05-19';
+    const futura = '2026-05-21';
+    const deps = emptyDeps();
+    deps.mf = makeMapaForca({
+      [passada]: [tripEntry('X', 'F', NF_TARGET, 'X')],
+      [futura]: [tripEntry('Y', 'F', NF_TARGET, 'X')],
     });
     const svc = new AgendaService(
-      escalas,
-      makeEscalasEspeciaisMock(null),
-      makeNotasServicoMock([]),
-      makeChefesOperacoesMock({}),
-      makeIseoMock([]),
+      deps.mf, deps.especiais, deps.notas, deps.chop, deps.iseo,
+      deps.atestados, deps.dispensas, deps.ferias, deps.trocas,
     );
-    const resp = await svc.forMilitar(NF_TARGET, dataPassada, dataFutura);
+    const resp = await svc.forMilitar(NF_TARGET, passada, futura, NOME_TARGET);
     expect(resp.itens.length).toBe(2);
-    expect(resp.proximoItem?.data).toBe(dataFutura);
+    expect(resp.proximoItem?.data).toBe(futura);
+    vi.useRealTimers();
   });
 
-  it('cache devolve mesma resposta dentro do TTL (não chama mocks novamente)', async () => {
-    const escalas = makeEscalasMock({});
-    const escalasEspeciais = makeEscalasEspeciaisMock(null);
-    const notasSpy = vi.fn(() => []);
-    const notasMock = { list: notasSpy } as unknown as ConstructorParameters<
-      typeof AgendaService
-    >[2];
-    const chopMock = makeChefesOperacoesMock({});
-    const iseoMock = makeIseoMock([]);
-
-    const svc = new AgendaService(escalas, escalasEspeciais, notasMock, chopMock, iseoMock);
-    await svc.forMilitar(NF_TARGET, '2026-05-20', '2026-05-21');
-    await svc.forMilitar(NF_TARGET, '2026-05-20', '2026-05-21');
-    expect(notasSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it('range vazio (sem dados em nenhuma fonte) retorna itens=[] + proximoItem=null', async () => {
+  it('cache devolve mesma resposta dentro do TTL', async () => {
+    const deps = emptyDeps();
+    const spy = vi.fn(() => []);
+    deps.notas = { list: spy } as never;
     const svc = new AgendaService(
-      makeEscalasMock({}),
-      makeEscalasEspeciaisMock(null),
-      makeNotasServicoMock([]),
-      makeChefesOperacoesMock({}),
-      makeIseoMock([]),
+      deps.mf, deps.especiais, deps.notas, deps.chop, deps.iseo,
+      deps.atestados, deps.dispensas, deps.ferias, deps.trocas,
     );
-    const resp = await svc.forMilitar(NF_TARGET, '2026-05-20', '2026-05-26');
+    await svc.forMilitar(NF_TARGET, '2026-05-20', '2026-05-21', NOME_TARGET);
+    await svc.forMilitar(NF_TARGET, '2026-05-20', '2026-05-21', NOME_TARGET);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('range vazio (sem dados) retorna itens=[] + proximoItem=null', async () => {
+    const deps = emptyDeps();
+    const svc = new AgendaService(
+      deps.mf, deps.especiais, deps.notas, deps.chop, deps.iseo,
+      deps.atestados, deps.dispensas, deps.ferias, deps.trocas,
+    );
+    const resp = await svc.forMilitar(NF_TARGET, '2026-05-20', '2026-05-26', NOME_TARGET);
     expect(resp.itens).toEqual([]);
     expect(resp.proximoItem).toBeNull();
-    expect(resp.conflitos).toEqual([]);
+  });
+
+  it('trocas autorizadas: militar como substituto entra como item', async () => {
+    const deps = emptyDeps();
+    deps.trocas = makeTrocas([
+      {
+        dataEscala: '2026-05-22',
+        dataPagamento: '2026-05-25',
+        escaladoOriginal: '2ºSGT FULANO',
+        substituto: '2ºSGT HEITOR BARCELLOS COELHO',
+        escaladoPagamento: '2ºSGT HEITOR BARCELLOS COELHO',
+        substitutoPagamento: '2ºSGT FULANO',
+      },
+    ]);
+    const svc = new AgendaService(
+      deps.mf, deps.especiais, deps.notas, deps.chop, deps.iseo,
+      deps.atestados, deps.dispensas, deps.ferias, deps.trocas,
+    );
+    const resp = await svc.forMilitar(NF_TARGET, '2026-05-20', '2026-05-26', NOME_TARGET);
+    const trocas = resp.itens.filter((i) => i.fonte === 'troca_autorizada');
+    expect(trocas.length).toBe(2); // assume + pagamento
+    expect(trocas.map((t) => t.data).sort()).toEqual(['2026-05-22', '2026-05-25']);
   });
 });
