@@ -377,6 +377,19 @@ export const previaSwapMilitarSchema = z.object({
 export type PreviaSwapMilitar = z.infer<typeof previaSwapMilitarSchema>;
 
 /**
+ * S0.x/fixes-3 — Override do Chefe de Operações por dia. O Fiscal escolhe
+ * outro militar habilitado como ChOp (planilha externa) para substituir o
+ * escalado. Aplicado pelo `MapaForcaService` antes da injeção do ChOp em
+ * `tripulacao`. Modal dedicado lista apenas militares habilitados.
+ */
+export const overrideChefeOperacoesSchema = z.object({
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  /** NF do novo Chefe de Operações (deve estar habilitado na planilha ChOp). */
+  novoChefeNf: z.string().min(1),
+});
+export type OverrideChefeOperacoes = z.infer<typeof overrideChefeOperacoesSchema>;
+
+/**
  * "Ajustes pré-turno" da Prévia — campos adicionais editáveis pelo Fiscal antes do
  * início do serviço. Persistidos em `AjustesPreviaService` (mock in-memory; S5b → Prisma).
  */
@@ -393,6 +406,12 @@ export const ajustesPreviaSchema = z.object({
   overridesParesRecursos: z.array(overrideParRecursoSchema).default([]),
   /** S0.x/Fix-AtivarRecurso — Recursos do MF ativados ad-hoc pelo Fiscal. */
   ativacoesRecurso: z.array(ativacaoRecursoSchema).default([]),
+  /**
+   * S0.x/fixes-3 — Override do Chefe de Operações por dia. Substitui o ChOp
+   * escalado (vindo da planilha externa) por outro militar habilitado como
+   * ChOp na mesma planilha. Modal dedicado na UI lista apenas habilitados.
+   */
+  overridesChefeOperacoes: z.array(overrideChefeOperacoesSchema).default([]),
 });
 export type AjustesPrevia = z.infer<typeof ajustesPreviaSchema>;
 
@@ -490,6 +509,9 @@ export const mapaForcaDoDiaSchema = z.object({
 
   /** S0.x/Fix-AtivarRecurso — Recursos do MF ativados ad-hoc pelo Fiscal. */
   ativacoesRecurso: z.array(ativacaoRecursoSchema).default([]),
+
+  /** S0.x/fixes-3 — Overrides do Chefe de Operações por dia (modal dedicado). */
+  overridesChefeOperacoes: z.array(overrideChefeOperacoesSchema).default([]),
 
   /**
    * Composição "atual" do turno corrente conforme o Mapa Força (col E-J da

@@ -206,3 +206,59 @@ describe('AjustesPreviaService — gate de edição (S0.x/rename-mapa-forca)', (
     );
   });
 });
+
+describe('AjustesPreviaService.upsert — fix trocas duplicadas (S0.x/fixes-3)', () => {
+  let service: AjustesPreviaService;
+  let servico: ServicoService;
+  const dataIso = '2026-05-15';
+
+  beforeEach(() => {
+    servico = new ServicoService();
+    service = new AjustesPreviaService(servico);
+    iniciarPrevia(servico, dataIso);
+  });
+
+  it('descarta trocas com origemAutorizada=true (re-injetadas pelo PreviaService a cada GET)', () => {
+    service.upsert(
+      dataIso,
+      {
+        ...VAZIO_INPUT,
+        trocas: [
+          // Troca autorizada (vem da planilha) — deve ser DESCARTADA
+          {
+            substituidoRaw: 'CB LAUFF',
+            substituidoNf: '3477630',
+            substitutoRaw: 'CB VICENTE',
+            substitutoNf: '3670180',
+            periodo: '24h',
+            origemAutorizada: true,
+          },
+          // Troca manual — deve ser PERSISTIDA
+          {
+            substituidoRaw: 'SD A',
+            substitutoRaw: 'SD B',
+            periodo: '24h',
+          },
+        ],
+      },
+      FISCAL_NF,
+    );
+    const ajustes = service.get(dataIso);
+    expect(ajustes.trocas).toHaveLength(1);
+    expect(ajustes.trocas[0]?.substituidoRaw).toBe('SD A');
+  });
+
+  it('múltiplos upserts NÃO acumulam trocas autorizadas (idempotente)', () => {
+    const trocaAutorizada = {
+      substituidoRaw: 'CB LAUFF',
+      substitutoRaw: 'CB VICENTE',
+      periodo: '24h',
+      origemAutorizada: true,
+    };
+    service.upsert(dataIso, { ...VAZIO_INPUT, trocas: [trocaAutorizada] }, FISCAL_NF);
+    service.upsert(dataIso, { ...VAZIO_INPUT, trocas: [trocaAutorizada] }, FISCAL_NF);
+    service.upsert(dataIso, { ...VAZIO_INPUT, trocas: [trocaAutorizada] }, FISCAL_NF);
+    expect(service.get(dataIso).trocas).toHaveLength(0);
+  });
+});
+

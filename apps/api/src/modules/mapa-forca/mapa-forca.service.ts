@@ -199,7 +199,31 @@ export class MapaForcaService {
     // entry em `tripulacao` para que apareça no MESMO card "CHEFE DE OPERAÇÕES"
     // do motorista do XLSX (linha 16). Só 1 Chefe por dia (decisão Tech Lead
     // 2026-05-13); trocas seguem fluxo padrão de trocas autorizadas.
-    const chefeTitular = chefes[0];
+    //
+    // S0.x/fixes-3 — Aplica `ajustes.overridesChefeOperacoes` ANTES de
+    // injetar: se há override para este dia, substitui o chefe escalado
+    // pelo militar do override (deve estar habilitado na planilha ChOp).
+    let chefeTitular = chefes[0];
+    const overrideChop = ajustes.overridesChefeOperacoes.find((o) => o.data === dataIso);
+    if (overrideChop) {
+      const habilitados = await this.chefesOperacoes.getHabilitadosNfs();
+      if (!habilitados.has(overrideChop.novoChefeNf)) {
+        inconsistencias.push({
+          tipo: 'NF_NAO_RESOLVIDO',
+          mensagem: `Override de Chefe de Operações: NF ${overrideChop.novoChefeNf} não está habilitado na planilha ChOp.`,
+          detalhe: { origem: 'override-chop', novoChefeNf: overrideChop.novoChefeNf },
+        });
+      } else {
+        const novoMilitar = efetivoTotal.find((m) => m.nf === overrideChop.novoChefeNf);
+        if (novoMilitar) {
+          chefeTitular = {
+            posto: novoMilitar.posto,
+            nomeGuerra: novoMilitar.nomeGuerra ?? novoMilitar.nome.split(' ')[0] ?? novoMilitar.nome,
+            nf: novoMilitar.nf,
+          };
+        }
+      }
+    }
     if (chefeTitular) {
       const ref: MilitarRef = {
         raw: `${chefeTitular.posto} ${chefeTitular.nomeGuerra}`.trim(),
@@ -429,6 +453,7 @@ export class MapaForcaService {
       overridesMergulho: ajustes.overridesMergulho,
       overridesParesRecursos: ajustes.overridesParesRecursos,
       ativacoesRecurso: ajustes.ativacoesRecurso,
+      overridesChefeOperacoes: ajustes.overridesChefeOperacoes,
       composicaoAtualMf: mfRecursos
         .filter((r) => r.chefe || r.motorista || r.operadores.length > 0)
         .map((r) => ({

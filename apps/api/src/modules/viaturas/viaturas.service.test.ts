@@ -282,3 +282,110 @@ describe('ViaturasService (S0.x — histórico KM + upsertByPrefixo)', () => {
     expect(result.historicoKm).toHaveLength(1);
   });
 });
+
+describe('ViaturasService.aplicarConferencia (S0.x/fixes-3 — KM crescente + admin override)', () => {
+  let service: ViaturasService;
+
+  beforeEach(() => {
+    service = makeService();
+  });
+
+  it('conferência com KM novo crescente gera entrada com origem="conferencia"', async () => {
+    const v = await service.aplicarConferencia(
+      'AR_044',
+      { vtrPrefixo: 'AR_044', kmAtual: 12000, estadoTanquePercent: 80 },
+      '3037509',
+    );
+    expect(v.kmAtual).toBe(12000);
+    expect(v.historicoKm).toHaveLength(1);
+    expect(v.historicoKm[0]).toMatchObject({
+      kmRegistrado: 12000,
+      registradoPorNf: '3037509',
+      origem: 'conferencia',
+    });
+  });
+
+  it('conferência com KM igual ao atual NÃO gera entrada nova', async () => {
+    await service.aplicarConferencia(
+      'AR_044',
+      { vtrPrefixo: 'AR_044', kmAtual: 5000, estadoTanquePercent: 80 },
+      '3037509',
+    );
+    const v = await service.aplicarConferencia(
+      'AR_044',
+      { vtrPrefixo: 'AR_044', kmAtual: 5000, estadoTanquePercent: 75 },
+      '3037509',
+    );
+    expect(v.historicoKm).toHaveLength(1);
+  });
+
+  it('conferência com KM < último BLOQUEIA não-admin (BadRequest)', async () => {
+    await service.aplicarConferencia(
+      'AR_044',
+      { vtrPrefixo: 'AR_044', kmAtual: 12000, estadoTanquePercent: 80 },
+      '3037509',
+    );
+    await expect(
+      service.aplicarConferencia(
+        'AR_044',
+        { vtrPrefixo: 'AR_044', kmAtual: 11000, estadoTanquePercent: 70, observacao: 'qualquer' },
+        '3037509',
+        false, // não-admin
+      ),
+    ).rejects.toThrow(/menor que o último/);
+  });
+
+  it('conferência com KM < último para admin SEM observação BLOQUEIA (BadRequest)', async () => {
+    await service.aplicarConferencia(
+      'AR_044',
+      { vtrPrefixo: 'AR_044', kmAtual: 12000, estadoTanquePercent: 80 },
+      '3037509',
+    );
+    await expect(
+      service.aplicarConferencia(
+        'AR_044',
+        { vtrPrefixo: 'AR_044', kmAtual: 11000, estadoTanquePercent: 70 },
+        '3037509',
+        true, // admin
+      ),
+    ).rejects.toThrow(/exige observação obrigatória/);
+  });
+
+  it('conferência com KM < último para admin COM observação OK (origem="manual_admin")', async () => {
+    await service.aplicarConferencia(
+      'AR_044',
+      { vtrPrefixo: 'AR_044', kmAtual: 12000, estadoTanquePercent: 80 },
+      '3037509',
+    );
+    const v = await service.aplicarConferencia(
+      'AR_044',
+      {
+        vtrPrefixo: 'AR_044',
+        kmAtual: 11000,
+        estadoTanquePercent: 70,
+        observacao: 'Hodômetro substituído',
+      },
+      '3037509',
+      true,
+    );
+    expect(v.kmAtual).toBe(11000);
+    expect(v.historicoKm).toHaveLength(2);
+    expect(v.historicoKm[1]).toMatchObject({
+      kmRegistrado: 11000,
+      registradoPorNf: '3037509',
+      origem: 'manual_admin',
+    });
+  });
+
+  it('conferência sem kmAtual NÃO gera entrada em historicoKm', async () => {
+    const v = await service.aplicarConferencia(
+      'AR_044',
+      { vtrPrefixo: 'AR_044', estadoTanquePercent: 80, observacao: 'OK' },
+      '3037509',
+    );
+    expect(v.historicoKm).toEqual([]);
+    // Mas a observação datada é registrada.
+    expect(v.observacoesDataDas).toHaveLength(1);
+  });
+});
+

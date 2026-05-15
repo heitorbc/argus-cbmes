@@ -280,4 +280,44 @@ describe('ConferenciaViaturaService', () => {
     );
     expect(servico.get(dataIso).estado).toBe('VIATURA_CONFERIDA');
   });
+
+  // S0.x/fixes-3 — Recursos sem equipe vinculada (PLATAFORMA, SATURAÇÃO, etc.)
+  it('S0.x/fixes-3 — viatura de recurso semEquipe=true permite conferência sem gate de equipe + sem isOverride', async () => {
+    servico.iniciarPrevia(dataIso, motoristaNf, motoristaNf, true);
+    servico.iniciar(dataIso, motoristaNf);
+    // Marca recurso como semEquipe.
+    mapaForca.composicaoMf = [
+      {
+        recurso: 'ABTS_01',
+        vtrPrefixo: 'ABTS 011',
+        vtrStatus: 'DISPONIVEL',
+        semEquipe: true,
+        equipe: 'C',
+        operadores: [],
+      },
+    ];
+    // Sem conferência de equipe + sem override (qualquer autenticado).
+    const r = await svc.registrar(
+      dataIso,
+      'ABTS 011',
+      { vtrPrefixo: 'ABTS 011', estadoTanquePercent: 70 },
+      'usuario_qualquer_nf',
+      false,
+    );
+    expect(r.estadoTanquePercent).toBe(70);
+  });
+
+  it('S0.x/fixes-3 — viatura COM equipe escalada bloqueia usuário não-comandante (não-override)', async () => {
+    // Sem mudar composicaoMf (default é semEquipe=false).
+    await expect(
+      svc.registrar(
+        dataIso,
+        'ABTS 011',
+        { vtrPrefixo: 'ABTS 011', estadoTanquePercent: 50 },
+        'usuario_estranho_nf',
+        false,
+      ),
+    ).rejects.toThrow(/Motorista nem Chefe/i);
+  });
 });
+

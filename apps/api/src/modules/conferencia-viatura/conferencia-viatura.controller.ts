@@ -47,10 +47,16 @@ export class ConferenciaViaturaController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     }
+    const isAdmin = user.papeis.includes('admin');
     const isOverride =
-      user.papeis.includes('admin') ||
-      user.papeis.includes('fiscal') ||
-      user.papeis.includes('sargenteante');
-    return this.conferencia.registrar(data, vtrPrefixo, parsed.data, user.nf, isOverride);
+      isAdmin || user.papeis.includes('fiscal') || user.papeis.includes('sargenteante');
+    return this.conferencia.registrar(
+      data,
+      vtrPrefixo,
+      parsed.data,
+      user.nf,
+      isOverride,
+      isAdmin,
+    );
   }
 }

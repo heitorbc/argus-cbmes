@@ -80,6 +80,7 @@ const previaCharlie: MapaForcaDoDia = {
   overridesMergulho: [],
   overridesParesRecursos: [],
   ativacoesRecurso: [],
+  overridesChefeOperacoes: [],
   composicaoAtualMf: [],
   ferias: [],
   chefesOperacoes: [],

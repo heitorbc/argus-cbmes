@@ -18,6 +18,7 @@ const VAZIO: AjustesPrevia = {
   overridesMergulho: [],
   overridesParesRecursos: [],
   ativacoesRecurso: [],
+  overridesChefeOperacoes: [],
 };
 
 /**
@@ -82,7 +83,11 @@ export class AjustesPreviaService {
   ): AjustesPrevia {
     this.ensureEditable(dataIso, nf, isAdmin);
     const ajustes: AjustesPrevia = {
-      trocas: input.trocas,
+      // S0.x/fixes-3 — Filtra trocas com `origemAutorizada=true` antes de
+      // persistir. As trocas autorizadas vêm da planilha e são re-injetadas
+      // a cada GET via `MapaForcaService` (`trocasAutComoPrevia`); persisti-las
+      // aqui causaria duplicação a cada save.
+      trocas: input.trocas.filter((t) => !t.origemAutorizada),
       escalaEspecial: input.escalaEspecial,
       notasServico: input.notasServico,
       dispensas: input.dispensas,
@@ -97,6 +102,8 @@ export class AjustesPreviaService {
       overridesParesRecursos: input.overridesParesRecursos ?? [],
       // S0.x/Fix-AtivarRecurso — cliente gerencia ativacoesRecurso via PUT inteiro.
       ativacoesRecurso: input.ativacoesRecurso ?? [],
+      // S0.x/fixes-3 — Override do Chefe de Operações (modal dedicado).
+      overridesChefeOperacoes: input.overridesChefeOperacoes ?? [],
     };
     this.byData.set(dataIso, ajustes);
     return ajustes;

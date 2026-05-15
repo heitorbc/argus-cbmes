@@ -46,6 +46,10 @@ export class ConferenciaViaturaService {
   /**
    * S0.x — Valida que o usuário pode conferir a viatura: motorista escalado
    * do recurso, chefe escalado do recurso, ou admin/fiscal/sargenteante override.
+   *
+   * S0.x/fixes-3 — Recursos sem equipe vinculada (`semEquipe=true` na
+   * `composicaoMf`) podem ser conferidos por **qualquer usuário autenticado**
+   * (gating granular dispensado, pois não há chefe/motorista escalado).
    */
   private async ensurePodeConferir(
     dataIso: string,
@@ -54,11 +58,17 @@ export class ConferenciaViaturaService {
     isOverride: boolean,
   ): Promise<void> {
     if (isOverride) return;
-    // Recursos onde o usuário é chefe ou motorista no dia.
-    const recursosUsuario = await this.mapaForca.recursosOndeMotoristaOuChefe(userNf, dataIso);
-    // Identifica o recurso vinculado a esta viatura via funcaoOperacional.
     const viatura = await this.viaturas.findByPrefixo(vtrPrefixo);
     const recursoDaViatura = viatura?.funcaoOperacional;
+    // Carrega composicaoMf para checar se o recurso tem equipe escalada.
+    const payload = await this.mapaForca.getMapaForcaDoDia(dataIso);
+    const entryMf = recursoDaViatura
+      ? payload.composicaoMf.find((c) => c.recurso === recursoDaViatura)
+      : undefined;
+    // Recurso sem equipe vinculada → qualquer autenticado pode conferir.
+    if (!entryMf || entryMf.semEquipe) return;
+
+    const recursosUsuario = await this.mapaForca.recursosOndeMotoristaOuChefe(userNf, dataIso);
     if (!recursoDaViatura || !recursosUsuario.includes(recursoDaViatura)) {
       throw new ForbiddenException(
         `Você não é Motorista nem Chefe escalado do recurso vinculado à viatura "${vtrPrefixo}". ` +
@@ -74,18 +84,24 @@ export class ConferenciaViaturaService {
     input: UpsertConferenciaViaturaInput,
     registradoPorNf: string,
     isOverride = false,
+    isAdmin = false,
   ): Promise<ConferenciaViaturaEntry> {
     await this.ensurePodeConferir(dataIso, vtrPrefixo, registradoPorNf, isOverride);
 
     const viaturaAntes = await this.viaturas.findByPrefixo(vtrPrefixo);
     const statusAnterior = viaturaAntes?.status;
 
-    // S6h/2.1 — Conferência de Viatura só libera depois que a equipe correspondente
-    // foi conferida. Identifica a equipe pela `funcaoOperacional` da viatura
-    // (que é o nome do recurso, ex.: "ABTS_01").
+    // S6h/2.1 + S0.x/fixes-3 — Conferência de Viatura só exige equipe
+    // conferida quando o recurso TEM equipe vinculada. Recursos sem
+    // equipe (PLATAFORMA, EQUIPE SATURAÇÃO, viaturas administrativas)
+    // não passam pelo gate.
     const recurso = viaturaAntes?.funcaoOperacional;
+    const payloadMf = await this.mapaForca.getMapaForcaDoDia(dataIso);
+    const entryMf = recurso ? payloadMf.composicaoMf.find((c) => c.recurso === recurso) : undefined;
+    const recursoTemEquipe = entryMf !== undefined && !entryMf.semEquipe;
     if (
       recurso &&
+      recursoTemEquipe &&
       this.servico.get(dataIso).estado !== 'NAO_INICIADO' &&
       !this.conferenciaEquipe.equipeConferida(dataIso, recurso)
     ) {
@@ -94,7 +110,12 @@ export class ConferenciaViaturaService {
       );
     }
 
-    await this.viaturas.aplicarConferencia(vtrPrefixo, { ...input, vtrPrefixo }, registradoPorNf);
+    await this.viaturas.aplicarConferencia(
+      vtrPrefixo,
+      { ...input, vtrPrefixo },
+      registradoPorNf,
+      isAdmin,
+    );
 
     const now = new Date().toISOString();
     const entry: ConferenciaViaturaEntry = {

@@ -106,6 +106,10 @@ export function MapaForcaDetalhePage() {
   } | null>(null);
   const [swapInflight, setSwapInflight] = useState(false);
 
+  // S0.x/fixes-3 — Modal de troca de Chefe de Operações (lista filtrada
+  // de habilitados na planilha externa de ChOp).
+  const [chopModalOpen, setChopModalOpen] = useState(false);
+
   // Swap segue o mesmo gate: edição liberada apenas em PREVIA_INICIADA pelo iniciador (ou admin).
   const podeSwap = !isReadOnly;
 
@@ -670,24 +674,36 @@ export function MapaForcaDetalhePage() {
                                         </span>
                                       )}
                                     </span>
-                                    {podeSwap && (
+                                    {podeSwap && t.viatura === 'CHEFE DE OPERAÇÕES' && t.funcao === 'Ch' ? (
                                       <button
                                         type="button"
-                                        onClick={() =>
-                                          void handleSwapClick(t.equipe, t.viatura, t.funcao)
-                                        }
-                                        disabled={swapInflight || swapDisabled}
-                                        title={
-                                          swapDisabled
-                                            ? 'Swap apenas dentro da mesma equipe'
-                                            : isOrigemSelecionada
-                                              ? 'Cancelar swap'
-                                              : 'Trocar com outra posição'
-                                        }
-                                        className="rounded border border-slate-300 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-50 disabled:opacity-30"
+                                        onClick={() => setChopModalOpen(true)}
+                                        disabled={swapInflight}
+                                        title="Trocar Chefe de Operações (lista da planilha ChOp)"
+                                        className="rounded border border-cbmes-blue px-2 py-0.5 text-[10px] text-cbmes-blue hover:bg-cbmes-blue/10 disabled:opacity-30"
                                       >
-                                        {isOrigemSelecionada ? '×' : '🔄'}
+                                        🔄 ChOp
                                       </button>
+                                    ) : (
+                                      podeSwap && (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            void handleSwapClick(t.equipe, t.viatura, t.funcao)
+                                          }
+                                          disabled={swapInflight || swapDisabled}
+                                          title={
+                                            swapDisabled
+                                              ? 'Swap apenas dentro da mesma equipe'
+                                              : isOrigemSelecionada
+                                                ? 'Cancelar swap'
+                                                : 'Trocar com outra posição'
+                                          }
+                                          className="rounded border border-slate-300 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-50 disabled:opacity-30"
+                                        >
+                                          {isOrigemSelecionada ? '×' : '🔄'}
+                                        </button>
+                                      )
                                     )}
                                   </span>
                                 </li>
@@ -805,6 +821,8 @@ export function MapaForcaDetalhePage() {
               </section>
             )}
 
+            <TrocasAutorizadasReadOnly trocas={previa.trocas.filter((t) => t.origemAutorizada)} />
+
             <AjustesPreTurno
               data={data}
               initial={extractAjustes(previa)}
@@ -819,13 +837,29 @@ export function MapaForcaDetalhePage() {
           </>
         )}
       </section>
+
+      {chopModalOpen && previa && (
+        <ModalSwapChefeOperacoes
+          data={data}
+          previa={previa}
+          onClose={() => setChopModalOpen(false)}
+          onSaved={() => {
+            setChopModalOpen(false);
+            reload();
+          }}
+        />
+      )}
     </main>
   );
 }
 
 function extractAjustes(previa: MapaForcaDoDia): AjustesPrevia {
   return {
-    trocas: previa.trocas,
+    // S0.x/fixes-3 — Filtra trocas com `origemAutorizada=true` para evitar
+    // duplicação ao salvar. Autorizadas vêm da planilha e são re-injetadas
+    // pelo backend a cada GET; persisti-las como manuais causaria N entries
+    // a cada Save. Renderizadas em seção read-only separada (TrocasAutorizadasSection).
+    trocas: previa.trocas.filter((t) => !t.origemAutorizada),
     escalaEspecial: previa.escalaEspecial,
     notasServico: previa.notasServico,
     dispensas: previa.dispensas,
@@ -834,6 +868,7 @@ function extractAjustes(previa: MapaForcaDoDia): AjustesPrevia {
     overridesMergulho: previa.overridesMergulho,
     overridesParesRecursos: previa.overridesParesRecursos,
     ativacoesRecurso: previa.ativacoesRecurso,
+    overridesChefeOperacoes: previa.overridesChefeOperacoes,
   };
 }
 
@@ -3219,6 +3254,271 @@ function PreviaEstadoBanner({
       >
         📑 Editar Parte Diária do dia
       </Link>
+    </div>
+  );
+}
+
+/**
+ * S0.x/fixes-3 — Seção read-only que lista trocas vindas da planilha de
+ * Trocas Autorizadas. Antes essas trocas apareciam misturadas com as
+ * manuais no `state.trocas`, e cada save duplicava (loop infinito de
+ * concatenação). Agora ficam isoladas aqui, fora do estado editável.
+ */
+function TrocasAutorizadasReadOnly({
+  trocas,
+}: {
+  trocas: MapaForcaDoDia['trocas'];
+}) {
+  if (trocas.length === 0) return null;
+  return (
+    <details className="mt-4 rounded border border-cbmes-blue/30 bg-cbmes-blue/5 p-3">
+      <summary className="cursor-pointer text-sm font-semibold text-cbmes-blue">
+        📜 Trocas Autorizadas (planilha) — {trocas.length} ato(s)
+      </summary>
+      <p className="mt-1 text-[11px] italic text-slate-600">
+        Trocas vindas da planilha externa de Trocas Autorizadas. Read-only —
+        para alterar, edite a planilha. Não duplicam ao salvar ajustes.
+      </p>
+      <ul className="mt-2 space-y-1">
+        {trocas.map((t, i) => (
+          <li
+            key={`autorizada-${i}-${t.substituidoNf ?? t.substituidoRaw}`}
+            className="rounded border border-cbmes-blue/20 bg-white p-2 text-xs"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span>
+                <strong>{t.substituidoRaw}</strong>
+                {t.substituidoNf && <span className="ml-1 text-slate-500">(NF {t.substituidoNf})</span>}
+                {' → '}
+                <strong>{t.substitutoRaw}</strong>
+                {t.substitutoNf && <span className="ml-1 text-slate-500">(NF {t.substitutoNf})</span>}
+              </span>
+              <span className="rounded-full bg-cbmes-blue/15 px-2 py-0.5 text-[10px] font-bold uppercase text-cbmes-blue">
+                Autorizada
+              </span>
+            </div>
+            {(t.funcao || t.numeroEdocs) && (
+              <p className="mt-0.5 text-[10px] text-slate-500">
+                {t.funcao && <>Função: {t.funcao}</>}
+                {t.funcao && t.numeroEdocs && ' · '}
+                {t.numeroEdocs && <>E-Docs: {t.numeroEdocs}</>}
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/**
+ * S0.x/fixes-3 — Modal de troca de Chefe de Operações.
+ * Lista militares habilitados na planilha externa de ChOp e permite escolher
+ * um para substituir o ChOp escalado do dia. Persiste via PUT
+ * /mapa-forca/:data/ajustes em `overridesChefeOperacoes`.
+ */
+function ModalSwapChefeOperacoes({
+  data,
+  previa,
+  onClose,
+  onSaved,
+}: {
+  data: string;
+  previa: MapaForcaDoDia;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [habilitados, setHabilitados] = useState<
+    import('@/lib/api').ChefeOperacoesHabilitado[]
+  >([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [filtro, setFiltro] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .chefesOperacoesHabilitados()
+      .then((r) => {
+        if (!cancelled) {
+          setHabilitados(r);
+          setError(null);
+        }
+      })
+      .catch((e) => {
+        if (!cancelled)
+          setError(e instanceof ApiError ? e.message : 'Erro ao carregar habilitados ChOp');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const overrideAtivo = previa.overridesChefeOperacoes.find((o) => o.data === data);
+  const chefeAtual = previa.composicaoMf.find((c) => c.recurso === 'CHEFE DE OPERAÇÕES')?.chefe;
+
+  const persistir = async (
+    novosOverrides: MapaForcaDoDia['overridesChefeOperacoes'],
+  ): Promise<void> => {
+    setSaving(true);
+    setError(null);
+    try {
+      const ajustes = extractAjustes(previa);
+      await fetch(
+        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`,
+        {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...ajustes, overridesChefeOperacoes: novosOverrides }),
+        },
+      ).then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      });
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao salvar override');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSelecionar = async (nf: string): Promise<void> => {
+    const novos = previa.overridesChefeOperacoes.filter((o) => o.data !== data);
+    novos.push({ data, novoChefeNf: nf });
+    await persistir(novos);
+  };
+
+  const handleDesfazer = async (): Promise<void> => {
+    const novos = previa.overridesChefeOperacoes.filter((o) => o.data !== data);
+    await persistir(novos);
+  };
+
+  const termo = filtro.trim().toLowerCase();
+  const filtrados = termo
+    ? habilitados.filter(
+        (h) =>
+          h.nf.includes(termo) ||
+          h.nomeGuerra.toLowerCase().includes(termo) ||
+          h.nome.toLowerCase().includes(termo) ||
+          h.posto.toLowerCase().includes(termo),
+      )
+    : habilitados;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-[90vh] w-full max-w-md overflow-hidden rounded bg-white shadow-xl"
+      >
+        <header className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <div>
+            <h2 className="text-base font-semibold text-cbmes-blue">
+              Trocar Chefe de Operações
+            </h2>
+            {chefeAtual?.militarResolvido && (
+              <p className="text-xs text-slate-600">
+                Atual: <strong>{chefeAtual.militarResolvido.posto}{' '}
+                {chefeAtual.militarResolvido.nomeGuerra ??
+                  chefeAtual.militarResolvido.nome.split(' ')[0]}</strong> (NF{' '}
+                {chefeAtual.militarResolvido.nf})
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded border border-slate-300 px-2 py-1 text-sm text-slate-600 hover:bg-slate-50"
+          >
+            ×
+          </button>
+        </header>
+
+        <div className="p-4">
+          {overrideAtivo && (
+            <div className="mb-3 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+              ⚠ Override ativo para este dia (NF {overrideAtivo.novoChefeNf}).{' '}
+              <button
+                type="button"
+                onClick={() => void handleDesfazer()}
+                disabled={saving}
+                className="underline hover:no-underline disabled:opacity-50"
+              >
+                ↶ Desfazer override
+              </button>
+            </div>
+          )}
+
+          <input
+            type="search"
+            value={filtro}
+            onChange={(e) => setFiltro(e.target.value)}
+            placeholder="Filtrar por NF, posto ou nome…"
+            className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+            autoFocus
+          />
+
+          {loading && <p className="mt-3 text-center text-sm text-slate-500">Carregando…</p>}
+          {error && (
+            <p
+              role="alert"
+              className="mt-3 rounded border border-feedback-error/30 bg-feedback-error/10 p-2 text-xs text-feedback-error"
+            >
+              {error}
+            </p>
+          )}
+
+          {!loading && filtrados.length === 0 && (
+            <p className="mt-3 text-center text-sm text-slate-500">
+              {termo ? 'Nenhum habilitado encontrado.' : 'Planilha de ChOp vazia.'}
+            </p>
+          )}
+
+          {!loading && filtrados.length > 0 && (
+            <ul className="mt-3 max-h-[50vh] overflow-y-auto rounded border border-slate-200">
+              {filtrados.map((h) => {
+                const isOverrideAtual = overrideAtivo?.novoChefeNf === h.nf;
+                const isAtual = chefeAtual?.militarResolvido?.nf === h.nf;
+                return (
+                  <li
+                    key={h.nf}
+                    className="border-b border-slate-100 last:border-0"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => void handleSelecionar(h.nf)}
+                      disabled={saving || isAtual}
+                      className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition hover:bg-cbmes-blue/5 disabled:cursor-not-allowed disabled:opacity-50 ${
+                        isOverrideAtual ? 'bg-amber-50' : ''
+                      }`}
+                    >
+                      <span>
+                        <strong>{h.posto || '(sem posto)'} {h.nomeGuerra}</strong>
+                        <span className="ml-2 text-xs text-slate-500">NF {h.nf}</span>
+                      </span>
+                      {isAtual && (
+                        <span className="text-[10px] uppercase text-slate-500">atual</span>
+                      )}
+                      {isOverrideAtual && (
+                        <span className="text-[10px] uppercase text-amber-700">override ativo</span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

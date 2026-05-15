@@ -587,6 +587,11 @@ export const api = {
 
   atestadosRemove: (id: string) => request<void>(`/atestados/${id}`, { method: 'DELETE' }),
 
+  // Chefes de Operações (S0.x/fixes-3)
+  /** Lista militares habilitados como ChOp (planilha externa) com posto/nome enriquecido. */
+  chefesOperacoesHabilitados: () =>
+    request<ChefeOperacoesHabilitado[]>('/chefes-operacoes/habilitados'),
+
   // Notas de Serviço (S6l)
   notasServicoList: (filter: { data?: string; militarNf?: string } = {}) => {
     const params = new URLSearchParams();
@@ -692,6 +697,15 @@ export const api = {
     URL.revokeObjectURL(url);
   },
 };
+
+/** Shape devolvido por GET /chefes-operacoes/habilitados (S0.x/fixes-3). */
+export interface ChefeOperacoesHabilitado {
+  nf: string;
+  posto: string;
+  nomeGuerra: string;
+  nome: string;
+  telefone?: string;
+}
 
 /** Shape devolvido por GET /auth/dev/personas (persona picker, env-gated). */
 export interface PersonaSummary {
