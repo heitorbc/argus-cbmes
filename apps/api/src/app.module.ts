@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './modules/auth/auth.module';
+import { AgendaModule } from './modules/agenda/agenda.module';
 import { ChefesOperacoesModule } from './modules/chefes-operacoes/chefes-operacoes.module';
 import { ConferenciaEquipeModule } from './modules/conferencia-equipe/conferencia-equipe.module';
 import { AtestadosModule } from './modules/atestados/atestados.module';
@@ -15,6 +16,7 @@ import { HealthModule } from './modules/health/health.module';
 import { IdeoModule } from './modules/ideo/ideo.module';
 import { IncidentesBaonModule } from './modules/incidentes-baon/incidentes-baon.module';
 import { IntegracoesModule } from './modules/integracoes/integracoes.module';
+import { IseoHospitaisModule } from './modules/iseo-hospitais/iseo-hospitais.module';
 import { LocaisFaxinaModule } from './modules/locais-faxina/locais-faxina.module';
 import { MapaForcaModule } from './modules/mapa-forca/mapa-forca.module';
 import { MapaForcaCiodesModule } from './modules/mapa-forca-ciodes/mapa-forca-ciodes.module';
@@ -34,6 +36,7 @@ import { ViaturasModule } from './modules/viaturas/viaturas.module';
     }),
     AtestadosModule,
     AuthModule,
+    AgendaModule,
     ChefesOperacoesModule,
     ConferenciaEquipeModule,
     ConferenciaViaturaModule,
@@ -47,6 +50,7 @@ import { ViaturasModule } from './modules/viaturas/viaturas.module';
     IdeoModule,
     IncidentesBaonModule,
     IntegracoesModule,
+    IseoHospitaisModule,
     LocaisFaxinaModule,
     MapaForcaModule,
     MapaForcaCiodesModule,

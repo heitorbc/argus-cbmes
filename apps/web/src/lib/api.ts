@@ -34,8 +34,11 @@ import type {
   IdeoEntry,
   IdeoMatrix,
   IdeoStatusDoDia,
+  AgendaResponse,
   IncidenteBaon,
   IntegracaoStatus,
+  IseoHospitalEntry,
+  IseoHospitalSyncStatus,
   LocalFaxina,
   LetraEquipe,
   LetraEquipeRotativa,
@@ -651,6 +654,29 @@ export const api = {
     request<ParteDiaria>(`/parte-diaria/${data}/reabrir`, { method: 'POST' }),
 
   // S0.x/parte-diaria — BAON (autocomplete códigos de ocorrência)
+  // Agenda — agregação das próximas escalas do militar logado.
+  agendaProxima: (dias = 30) => request<AgendaResponse>(`/agenda?dias=${dias}`),
+
+  agendaRange: (inicio: string, fim: string) =>
+    request<AgendaResponse>(`/agenda/range?inicio=${inicio}&fim=${fim}`),
+
+  // ISEO Hospitais — escala HPM + HIMABA (Google Sheets pública).
+  iseoHospitaisList: (unidade?: 'HPM' | 'HIMABA') => {
+    const p = new URLSearchParams();
+    if (unidade) p.set('unidade', unidade);
+    const qs = p.toString();
+    return request<IseoHospitalEntry[]>(`/iseo-hospitais${qs ? `?${qs}` : ''}`);
+  },
+
+  iseoHospitaisDia: (dataIso: string) =>
+    request<IseoHospitalEntry[]>(`/iseo-hospitais/dia/${dataIso}`),
+
+  iseoHospitaisMilitar: (nf: string) =>
+    request<IseoHospitalEntry[]>(`/iseo-hospitais/militar/${nf}`),
+
+  iseoHospitaisSyncStatus: () =>
+    request<IseoHospitalSyncStatus[]>('/iseo-hospitais/sync-status'),
+
   incidentesBaonSearch: (q?: string, limit = 20) => {
     const p = new URLSearchParams();
     if (q) p.set('q', q);
