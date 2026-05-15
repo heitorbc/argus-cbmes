@@ -29,7 +29,10 @@ export function LoginPage() {
       const user = await login(data.nf, data.senha);
       const next = (location.state as { from?: string } | null)?.from ?? '/';
       if (user.primeiroAcesso) {
-        navigate('/trocar-senha', { replace: true });
+        // Transporta a senha digitada para pré-preencher "Senha atual" na
+        // troca obrigatória (location.state vive em memória, não persiste em
+        // URL nem em history serializado).
+        navigate('/trocar-senha', { replace: true, state: { senhaAtual: data.senha } });
       } else {
         navigate(next, { replace: true });
       }
@@ -91,9 +94,6 @@ export function LoginPage() {
                 {errors.senha.message}
               </p>
             )}
-            <p className="mt-1 text-xs text-slate-500">
-              No primeiro acesso, use seu CPF (apenas números).
-            </p>
           </div>
 
           {serverError && (
