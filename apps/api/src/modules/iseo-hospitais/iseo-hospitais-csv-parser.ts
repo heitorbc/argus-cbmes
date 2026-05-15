@@ -15,11 +15,22 @@ import type { IseoHospitalEntry, IseoHospitalUnidade, IseoHospitalTurno } from '
  * Linhas com NF vazia, data inválida ou unidade não-resolvida são descartadas.
  */
 
-const HEADER_TOKENS = ['POSTO', 'NOME', 'NF', 'DATA'];
+/**
+ * Tokens que devem aparecer no header. NF é sinônimo de MATRÍCULA (algumas
+ * abas mais novas usam "MATRÍCULA" no lugar de "NF").
+ */
+const HEADER_TOKENS_REQUIRED = ['POSTO', 'NOME', 'DATA'];
+const HEADER_TOKENS_NF_OR_MATRICULA = ['NF', 'MATRICULA'];
 
 export interface ParseIseoHospitaisOptions {
   /** Unidade fixa quando o nome da aba já discrimina (ex.: "HPM JANEIRO 2026"). */
   unidadeFromSheet?: IseoHospitalUnidade;
+  /**
+   * Default usado em abas unificadas (ex.: "ABRIL 2026") quando a coluna OBM
+   * está ausente E o nome da aba não traz prefixo HPM/HIMABA. Se omitido, a
+   * linha é descartada nesse caso.
+   */
+  unidadeDefault?: IseoHospitalUnidade;
 }
 
 /**
@@ -58,7 +69,7 @@ export function parseIseoHospitaisCsv(
   const header = rows[headerIdx]!.map(normalize);
   const colPosto = findCol(header, ['POSTO', 'GRADUACAO', 'GRAD']);
   const colNome = findCol(header, ['NOME']);
-  const colNf = findCol(header, ['NF']);
+  const colNf = findCol(header, ['NF', 'MATRICULA']);
   const colData = findCol(header, ['DATA']);
   const colTurno = findCol(header, ['TURNO']);
   const colFuncao = findCol(header, ['FUNCAO', 'FUNÇÃO']);
@@ -68,7 +79,7 @@ export function parseIseoHospitaisCsv(
   const colLotacao = findCol(header, ['LOTACAO', 'LOTAÇÃO']);
 
   if (colPosto < 0 || colNome < 0 || colNf < 0 || colData < 0 || colTurno < 0) {
-    throw new Error('Colunas obrigatórias ausentes (POSTO, NOME, NF, DATA, TURNO).');
+    throw new Error('Colunas obrigatórias ausentes (POSTO, NOME, NF/MATRÍCULA, DATA, TURNO).');
   }
 
   const out: IseoHospitalEntry[] = [];
@@ -89,7 +100,10 @@ export function parseIseoHospitaisCsv(
     if (!posto || !nome) continue;
 
     const obm = colObm >= 0 ? clean(row[colObm]) || undefined : undefined;
-    const unidade = opts.unidadeFromSheet ?? inferUnidadeFromObm(obm);
+    // Aba unificada (sem prefixo HPM/HIMABA no nome): tenta inferir de OBM.
+    // Se OBM ausente (caso ABRIL/MAIO 2026), assume default `unidadeDefault`.
+    const unidade =
+      opts.unidadeFromSheet ?? inferUnidadeFromObm(obm) ?? opts.unidadeDefault;
     if (!unidade) continue;
 
     out.push({
@@ -118,12 +132,16 @@ function inferUnidadeFromObm(obm: string | undefined): IseoHospitalUnidade | und
 }
 
 function findHeaderIndex(rows: string[][]): number {
+  // Procura nas 10 primeiras linhas (algumas abas têm título institucional + linha vazia + header).
   for (let i = 0; i < Math.min(rows.length, 10); i++) {
     const normalized = (rows[i] ?? []).map(normalize);
-    const hits = HEADER_TOKENS.filter((tok) =>
+    const hasRequired = HEADER_TOKENS_REQUIRED.every((tok) =>
       normalized.some((cell) => cell.includes(tok)),
-    ).length;
-    if (hits >= HEADER_TOKENS.length) return i;
+    );
+    const hasNfOrMatricula = HEADER_TOKENS_NF_OR_MATRICULA.some((tok) =>
+      normalized.some((cell) => cell.includes(tok)),
+    );
+    if (hasRequired && hasNfOrMatricula) return i;
   }
   return -1;
 }

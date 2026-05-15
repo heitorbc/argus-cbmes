@@ -10,6 +10,7 @@ import { AtestadosModule } from '../atestados/atestados.module';
 import { DispensasModule } from '../dispensas/dispensas.module';
 import { FeriasModule } from '../ferias/ferias.module';
 import { TrocasAutorizadasModule } from '../trocas-autorizadas/trocas-autorizadas.module';
+import { EfetivoModule } from '../efetivo/efetivo.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { TrocasAutorizadasModule } from '../trocas-autorizadas/trocas-autorizada
     DispensasModule,
     FeriasModule,
     TrocasAutorizadasModule,
+    EfetivoModule,
   ],
   controllers: [AgendaController],
   providers: [AgendaService],

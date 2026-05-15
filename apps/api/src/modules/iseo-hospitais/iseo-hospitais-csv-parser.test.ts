@@ -46,9 +46,36 @@ describe('parseIseoHospitaisCsv', () => {
       'CB,B,2222,01/04/2026,Noturno,Operador,,,HIMABA,DOP\n' +
       'CB,SEM_OBM,3333,01/04/2026,Diurno,Operador,,,,\n';
     const items = parseIseoHospitaisCsv(csv);
-    expect(items.length).toBe(2); // SEM_OBM descartado
+    expect(items.length).toBe(2); // SEM_OBM descartado (sem OBM e sem default)
     expect(items.find((i) => i.nf === '1111')?.unidade).toBe('HPM');
     expect(items.find((i) => i.nf === '2222')?.unidade).toBe('HIMABA');
+  });
+
+  it('aba unificada com unidadeDefault: usa quando OBM ausente', () => {
+    const csv =
+      HEADER +
+      '\n' +
+      'CB,SEM_OBM,3333,01/04/2026,Diurno,Operador,,,,\n';
+    const items = parseIseoHospitaisCsv(csv, { unidadeDefault: 'HPM' });
+    expect(items.length).toBe(1);
+    expect(items[0]?.unidade).toBe('HPM');
+  });
+
+  it('aceita header alternativo "MATRÍCULA" no lugar de "NF"', () => {
+    // Estrutura das abas ABRIL/MAIO 2026 (cabeçalho institucional na linha 1).
+    const csv =
+      'ESCALA DE INDENIZAÇÃO SUPLEMENTAR DE ESCALA OPERACIONAL - HOSPITAIS\n' +
+      'POSTO/GRAD,DATA,TURNO,FUNÇÃO,CH,MATRÍCULA,NOME DO MILITAR,CONTATO\n' +
+      '2ºSGT,29/05/2026,Diurno,Condutor,12H,3037509,2ºSGT BARCELLOS,(27) 99918-6697\n';
+    const items = parseIseoHospitaisCsv(csv, { unidadeDefault: 'HPM' });
+    expect(items.length).toBe(1);
+    expect(items[0]).toMatchObject({
+      unidade: 'HPM',
+      nf: '3037509',
+      nome: '2ºSGT BARCELLOS',
+      dataIso: '2026-05-29',
+      turno: 'Diurno',
+    });
   });
 
   it('descarta linhas com NF/data/turno inválidos', () => {

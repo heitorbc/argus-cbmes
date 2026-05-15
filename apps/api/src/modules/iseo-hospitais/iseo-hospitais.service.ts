@@ -188,7 +188,14 @@ export class IseoHospitaisService {
     }
 
     const unidadeFromSheet = parseUnidadeFromSheetName(sheet);
-    const parsed = parseIseoHospitaisCsv(csv, { unidadeFromSheet });
+    // Abas unificadas (ABRIL/MAIO 2026 em diante) não têm coluna OBM nem
+    // prefixo de unidade no nome. Por convenção institucional, marcamos
+    // como HPM (escala principal). Se a planilha futuramente discriminar
+    // via OBM, o `inferUnidadeFromObm` ganha precedência.
+    const parsed = parseIseoHospitaisCsv(csv, {
+      unidadeFromSheet,
+      unidadeDefault: unidadeFromSheet ? undefined : 'HPM',
+    });
     return { parsed, syncedAt: Date.now() };
   }
 }

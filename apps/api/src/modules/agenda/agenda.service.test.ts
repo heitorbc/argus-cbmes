@@ -142,6 +142,10 @@ function makeTrocas(lista: Array<{
   return { listAll: async () => lista } as never;
 }
 
+function makeEfetivo() {
+  return { getAll: async () => [] } as never;
+}
+
 function emptyDeps() {
   return {
     mf: makeMapaForca({}),
@@ -153,6 +157,7 @@ function emptyDeps() {
     dispensas: makeDispensas([]),
     ferias: makeFerias([]),
     trocas: makeTrocas([]),
+    efetivo: makeEfetivo(),
   };
 }
 
@@ -172,7 +177,7 @@ describe('AgendaService', () => {
     });
     const svc = new AgendaService(
       deps.mf, deps.especiais, deps.notas, deps.chop, deps.iseo,
-      deps.atestados, deps.dispensas, deps.ferias, deps.trocas,
+      deps.atestados, deps.dispensas, deps.ferias, deps.trocas, deps.efetivo,
     );
     const resp = await svc.forMilitar(NF_TARGET, data1, data2, NOME_TARGET);
     expect(resp.itens.filter((i) => i.fonte === 'escala_mensal').length).toBe(2);
@@ -194,7 +199,7 @@ describe('AgendaService', () => {
     ]);
     const svc = new AgendaService(
       deps.mf, deps.especiais, deps.notas, deps.chop, deps.iseo,
-      deps.atestados, deps.dispensas, deps.ferias, deps.trocas,
+      deps.atestados, deps.dispensas, deps.ferias, deps.trocas, deps.efetivo,
     );
     const resp = await svc.forMilitar(NF_TARGET, data, data, NOME_TARGET);
     const fontes = resp.itens.map((i) => i.fonte).sort();
@@ -219,7 +224,7 @@ describe('AgendaService', () => {
     ]);
     const svc = new AgendaService(
       deps.mf, deps.especiais, deps.notas, deps.chop, deps.iseo,
-      deps.atestados, deps.dispensas, deps.ferias, deps.trocas,
+      deps.atestados, deps.dispensas, deps.ferias, deps.trocas, deps.efetivo,
     );
     const resp = await svc.forMilitar(NF_TARGET, data, data, NOME_TARGET);
     expect(resp.conflitos.length).toBe(1);
@@ -238,7 +243,7 @@ describe('AgendaService', () => {
     });
     const svc = new AgendaService(
       deps.mf, deps.especiais, deps.notas, deps.chop, deps.iseo,
-      deps.atestados, deps.dispensas, deps.ferias, deps.trocas,
+      deps.atestados, deps.dispensas, deps.ferias, deps.trocas, deps.efetivo,
     );
     const resp = await svc.forMilitar(NF_TARGET, passada, futura, NOME_TARGET);
     expect(resp.itens.length).toBe(2);
@@ -252,7 +257,7 @@ describe('AgendaService', () => {
     deps.notas = { list: spy } as never;
     const svc = new AgendaService(
       deps.mf, deps.especiais, deps.notas, deps.chop, deps.iseo,
-      deps.atestados, deps.dispensas, deps.ferias, deps.trocas,
+      deps.atestados, deps.dispensas, deps.ferias, deps.trocas, deps.efetivo,
     );
     await svc.forMilitar(NF_TARGET, '2026-05-20', '2026-05-21', NOME_TARGET);
     await svc.forMilitar(NF_TARGET, '2026-05-20', '2026-05-21', NOME_TARGET);
@@ -263,7 +268,7 @@ describe('AgendaService', () => {
     const deps = emptyDeps();
     const svc = new AgendaService(
       deps.mf, deps.especiais, deps.notas, deps.chop, deps.iseo,
-      deps.atestados, deps.dispensas, deps.ferias, deps.trocas,
+      deps.atestados, deps.dispensas, deps.ferias, deps.trocas, deps.efetivo,
     );
     const resp = await svc.forMilitar(NF_TARGET, '2026-05-20', '2026-05-26', NOME_TARGET);
     expect(resp.itens).toEqual([]);
@@ -284,7 +289,7 @@ describe('AgendaService', () => {
     ]);
     const svc = new AgendaService(
       deps.mf, deps.especiais, deps.notas, deps.chop, deps.iseo,
-      deps.atestados, deps.dispensas, deps.ferias, deps.trocas,
+      deps.atestados, deps.dispensas, deps.ferias, deps.trocas, deps.efetivo,
     );
     const resp = await svc.forMilitar(NF_TARGET, '2026-05-20', '2026-05-26', NOME_TARGET);
     const trocas = resp.itens.filter((i) => i.fonte === 'troca_autorizada');

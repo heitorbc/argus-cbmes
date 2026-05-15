@@ -5,6 +5,7 @@ import type {
   AgendaResponse,
 } from '@argus/shared-types';
 import { MapaForcaService } from '../mapa-forca/mapa-forca.service';
+import { NomeMatcher } from '../mapa-forca/nome-matching';
 import { NotasServicoService } from '../notas-servico/notas-servico.service';
 import { ChefesOperacoesService } from '../chefes-operacoes/chefes-operacoes.service';
 import { IseoHospitaisService } from '../iseo-hospitais/iseo-hospitais.service';
@@ -13,6 +14,8 @@ import { DispensasService } from '../dispensas/dispensas.service';
 import { FeriasService } from '../ferias/ferias.service';
 import { TrocasAutorizadasService } from '../trocas-autorizadas/trocas-autorizadas.service';
 import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.service';
+import { EfetivoService } from '../efetivo/efetivo.service';
+import { parseMilitarCell } from '../escalas/escala-xlsx-parser';
 
 const CACHE_TTL_MS = 60_000;
 
@@ -59,6 +62,7 @@ export class AgendaService {
     private readonly dispensas: DispensasService,
     private readonly ferias: FeriasService,
     private readonly trocasAutorizadas: TrocasAutorizadasService,
+    private readonly efetivo: EfetivoService,
   ) {}
 
   /**
@@ -163,27 +167,57 @@ export class AgendaService {
   }
 
   /**
-   * Escalas especiais (XLSM) — entries do militar com `militarNf === nf`.
-   * Mantemos como fonte separada (não vem na `tripulacao` de
-   * `getMapaForcaDoDia` pois são turnos pontuais, não composição).
+   * Escalas especiais (XLSM) — entries do militar. O parser do XLSM não
+   * resolve `militarNf` (deixa undefined), por isso resolvemos sob demanda
+   * via `NomeMatcher` cruzando `militarRaw` com o efetivo consolidado.
    */
   private async coletarEscalaEspecial(
     nf: string,
     inicio: string,
     fim: string,
   ): Promise<AgendaItem[]> {
-    const out: AgendaItem[] = [];
-    const mesesVisitados = new Set<string>();
+    const mesesNoRange = new Set<string>();
     for (const data of iterDias(inicio, fim)) {
       const [ano, mes] = parseDataIso(data);
-      const k = `${ano}-${mes}`;
-      if (mesesVisitados.has(k)) continue;
-      mesesVisitados.add(k);
-      const escala = this.escalasEspeciais.get(ano, mes);
-      if (!escala) continue;
+      mesesNoRange.add(`${ano}-${mes}`);
+    }
+    const escalas = [...mesesNoRange]
+      .map((k) => {
+        const [ano, mes] = k.split('-').map((s) => Number.parseInt(s, 10)) as [number, number];
+        return this.escalasEspeciais.get(ano, mes);
+      })
+      .filter((e): e is NonNullable<typeof e> => e !== null);
+    if (escalas.length === 0) return [];
+
+    let matcher: NomeMatcher | null = null;
+    const matcherCache = new Map<string, string | null>();
+    const out: AgendaItem[] = [];
+
+    for (const escala of escalas) {
       for (const ato of escala.atos) {
         if (ato.data < inicio || ato.data > fim) continue;
-        if (ato.militarNf !== nf) continue;
+        // 1) Se o ato já tem NF resolvido (importação futura), use-o.
+        // 2) Caso contrário, parse `militarRaw` e resolva via NomeMatcher.
+        let atoNf = ato.militarNf;
+        if (!atoNf) {
+          if (!matcher) {
+            const efetivoTotal = await this.efetivo.getAll({
+              somente1aCia: false,
+              incluirEfetivoOrfao: true,
+            });
+            matcher = new NomeMatcher(efetivoTotal);
+          }
+          const cached = matcherCache.get(ato.militarRaw);
+          if (cached !== undefined) {
+            atoNf = cached ?? undefined;
+          } else {
+            const ref = parseMilitarCell(ato.militarRaw);
+            const r = ref ? matcher.resolve(ref) : null;
+            atoNf = r?.resolved?.nf;
+            matcherCache.set(ato.militarRaw, atoNf ?? null);
+          }
+        }
+        if (atoNf !== nf) continue;
         const horarios = parseHorarioRange(ato.horario);
         out.push({
           data: ato.data,
