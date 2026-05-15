@@ -1,21 +1,30 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  forwardRef,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
 import type { ConferenciaViaturaEntry, UpsertConferenciaViaturaInput } from '@argus/shared-types';
 import { ConferenciaEquipeService } from '../conferencia-equipe/conferencia-equipe.service';
+import { MapaForcaService } from '../mapa-forca/mapa-forca.service';
 import { ServicoService } from '../servico/servico.service';
 import { ViaturasService } from '../viaturas/viaturas.service';
 
 /**
- * Conferência da Viatura (S6b/F4).
+ * Conferência da Viatura (S6b/F4 + S0.x).
  *
- * O Motorista da viatura registra KM atual, estado do tanque, observação,
- * e opcionalmente muda o status. A operação:
+ * O Motorista escalado da viatura (ou o Chefe do recurso vinculado, ou
+ * admin/fiscal/sargenteante) registra KM atual, estado do tanque,
+ * observação, e opcionalmente muda o status. A operação:
  *   1. Atualiza a Viatura via `ViaturasService.aplicarConferencia()` (que
  *      bypassa o bloqueio ADR-009 — esta é a "porta" autorizada).
  *   2. Persiste a marcação por dataIso/vtrPrefixo.
- *   3. Se mudou status para BAIXADA durante o serviço, registra
- *      `AlteracaoDiversa` (S6b/F6).
- *   4. Quando todas as viaturas da composicaoMf forem conferidas, transiciona
- *      o Servico para `VIATURA_CONFERIDA`.
+ *   3. Se mudou status durante o serviço, registra `AlteracaoDiversa`
+ *      (S6b/F6) — `ServicoService.addAlteracao` automaticamente marca
+ *      o MF CIODES como dirty.
+ *   4. Quando todas as viaturas DISPONIVEL/EMPRESTADA da composicaoMf
+ *      forem conferidas, transiciona o Servico para `VIATURA_CONFERIDA`.
  */
 @Injectable()
 export class ConferenciaViaturaService {
@@ -25,6 +34,8 @@ export class ConferenciaViaturaService {
     private readonly servico: ServicoService,
     private readonly viaturas: ViaturasService,
     private readonly conferenciaEquipe: ConferenciaEquipeService,
+    @Inject(forwardRef(() => MapaForcaService))
+    private readonly mapaForca: MapaForcaService,
   ) {}
 
   getByData(dataIso: string): ConferenciaViaturaEntry[] {
@@ -32,21 +43,65 @@ export class ConferenciaViaturaService {
     return m ? Array.from(m.values()) : [];
   }
 
+  /**
+   * S0.x — Valida que o usuário pode conferir a viatura: motorista escalado
+   * do recurso, chefe escalado do recurso, ou admin/fiscal/sargenteante override.
+   *
+   * S0.x/fixes-3 — Recursos sem equipe vinculada (`semEquipe=true` na
+   * `composicaoMf`) podem ser conferidos por **qualquer usuário autenticado**
+   * (gating granular dispensado, pois não há chefe/motorista escalado).
+   */
+  private async ensurePodeConferir(
+    dataIso: string,
+    vtrPrefixo: string,
+    userNf: string,
+    isOverride: boolean,
+  ): Promise<void> {
+    if (isOverride) return;
+    const viatura = await this.viaturas.findByPrefixo(vtrPrefixo);
+    const recursoDaViatura = viatura?.funcaoOperacional;
+    // Carrega composicaoMf para checar se o recurso tem equipe escalada.
+    const payload = await this.mapaForca.getMapaForcaDoDia(dataIso);
+    const entryMf = recursoDaViatura
+      ? payload.composicaoMf.find((c) => c.recurso === recursoDaViatura)
+      : undefined;
+    // Recurso sem equipe vinculada → qualquer autenticado pode conferir.
+    if (!entryMf || entryMf.semEquipe) return;
+
+    const recursosUsuario = await this.mapaForca.recursosOndeMotoristaOuChefe(userNf, dataIso);
+    if (!recursoDaViatura || !recursosUsuario.includes(recursoDaViatura)) {
+      throw new ForbiddenException(
+        `Você não é Motorista nem Chefe escalado do recurso vinculado à viatura "${vtrPrefixo}". ` +
+          `Apenas o Motorista escalado ou o Chefe do recurso podem realizar esta conferência ` +
+          `(admin/fiscal/sargenteante podem fazer override).`,
+      );
+    }
+  }
+
   async registrar(
     dataIso: string,
     vtrPrefixo: string,
     input: UpsertConferenciaViaturaInput,
     registradoPorNf: string,
+    isOverride = false,
+    isAdmin = false,
   ): Promise<ConferenciaViaturaEntry> {
+    await this.ensurePodeConferir(dataIso, vtrPrefixo, registradoPorNf, isOverride);
+
     const viaturaAntes = await this.viaturas.findByPrefixo(vtrPrefixo);
     const statusAnterior = viaturaAntes?.status;
 
-    // S6h/2.1 — Conferência de Viatura só libera depois que a equipe correspondente
-    // foi conferida. Identifica a equipe pela `funcaoOperacional` da viatura
-    // (que é o nome do recurso, ex.: "ABTS_01").
+    // S6h/2.1 + S0.x/fixes-3 — Conferência de Viatura só exige equipe
+    // conferida quando o recurso TEM equipe vinculada. Recursos sem
+    // equipe (PLATAFORMA, EQUIPE SATURAÇÃO, viaturas administrativas)
+    // não passam pelo gate.
     const recurso = viaturaAntes?.funcaoOperacional;
+    const payloadMf = await this.mapaForca.getMapaForcaDoDia(dataIso);
+    const entryMf = recurso ? payloadMf.composicaoMf.find((c) => c.recurso === recurso) : undefined;
+    const recursoTemEquipe = entryMf !== undefined && !entryMf.semEquipe;
     if (
       recurso &&
+      recursoTemEquipe &&
       this.servico.get(dataIso).estado !== 'NAO_INICIADO' &&
       !this.conferenciaEquipe.equipeConferida(dataIso, recurso)
     ) {
@@ -55,7 +110,12 @@ export class ConferenciaViaturaService {
       );
     }
 
-    await this.viaturas.aplicarConferencia(vtrPrefixo, { ...input, vtrPrefixo }, registradoPorNf);
+    await this.viaturas.aplicarConferencia(
+      vtrPrefixo,
+      { ...input, vtrPrefixo },
+      registradoPorNf,
+      isAdmin,
+    );
 
     const now = new Date().toISOString();
     const entry: ConferenciaViaturaEntry = {
@@ -70,6 +130,7 @@ export class ConferenciaViaturaService {
     this.byData.set(dataIso, map);
 
     // Se status mudou durante o serviço, registra AlteracaoDiversa
+    // (Servico.addAlteracao automaticamente marca MF dirty).
     if (
       input.statusMudanca &&
       statusAnterior &&
@@ -90,7 +151,38 @@ export class ConferenciaViaturaService {
       );
     }
 
+    // S0.x — Auto-promote para VIATURA_CONFERIDA quando TODAS as viaturas
+    // operacionais (DISPONIVEL/EMPRESTADA) do dia foram conferidas.
+    await this.maybePromover(dataIso);
+
     return entry;
+  }
+
+  /**
+   * Identifica o conjunto de viaturas que precisam ser conferidas:
+   * `composicaoMf` filtrado por `vtrStatus IN (DISPONIVEL, EMPRESTADA)` e
+   * com `vtrPrefixo` definido. Promove o Servico se todas têm entry.
+   */
+  private async maybePromover(dataIso: string): Promise<void> {
+    const estado = this.servico.get(dataIso).estado;
+    if (estado !== 'EQUIPE_CONFERIDA' && estado !== 'INICIADO') return;
+    const payload = await this.mapaForca.getMapaForcaDoDia(dataIso);
+    const viaturasParaConferir = payload.composicaoMf
+      .filter(
+        (c) =>
+          c.vtrPrefixo &&
+          (c.vtrStatus === 'DISPONIVEL' || c.vtrStatus === 'EMPRESTADA'),
+      )
+      .map((c) => c.vtrPrefixo as string);
+    if (viaturasParaConferir.length === 0) return;
+    const conferidas = this.byData.get(dataIso) ?? new Map();
+    const todasConferidas = viaturasParaConferir.every((vtr) => conferidas.has(vtr));
+    if (!todasConferidas) return;
+    try {
+      this.servico.marcarViaturaConferida(dataIso);
+    } catch {
+      // Idempotente — ignora se já promovido.
+    }
   }
 
   reset(dataIso?: string): void {

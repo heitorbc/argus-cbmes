@@ -31,7 +31,7 @@ export class ConferenciaViaturaController {
     return this.conferencia.getByData(data);
   }
 
-  @Roles('admin', 'fiscal', 'motorista', 'sargenteante')
+  @Roles('admin', 'fiscal', 'motorista', 'sargenteante', 'chefe_equipe')
   @Put(':data/:vtrPrefixo')
   @HttpCode(HttpStatus.OK)
   async registrar(
@@ -47,6 +47,16 @@ export class ConferenciaViaturaController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     }
-    return this.conferencia.registrar(data, vtrPrefixo, parsed.data, user.nf);
+    const isAdmin = user.papeis.includes('admin');
+    const isOverride =
+      isAdmin || user.papeis.includes('fiscal') || user.papeis.includes('sargenteante');
+    return this.conferencia.registrar(
+      data,
+      vtrPrefixo,
+      parsed.data,
+      user.nf,
+      isOverride,
+      isAdmin,
+    );
   }
 }

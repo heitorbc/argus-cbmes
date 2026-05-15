@@ -1,7 +1,21 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { ChefeOperacoes } from '@argus/shared-types';
+import { EfetivoService } from '../efetivo/efetivo.service';
 import { chefesDoDia, parseChefesOperacoesCsv } from './chefes-operacoes-csv-parser';
+
+/**
+ * S0.x/fixes-3 — DTO retornado por `listHabilitadosEnriquecido` para o
+ * modal de troca de Chefe de Operações na Prévia. Combina a NF do
+ * habilitado (planilha ChOp) com posto/nome vindos do efetivo.
+ */
+export interface ChefeOperacoesHabilitado {
+  nf: string;
+  posto: string;
+  nomeGuerra: string;
+  nome: string;
+  telefone?: string;
+}
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 15_000;
@@ -25,7 +39,45 @@ export class ChefesOperacoesService {
   private cache: CacheEntry | null = null;
   private inflight: Promise<CacheEntry> | null = null;
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly efetivo: EfetivoService,
+  ) {}
+
+  /**
+   * S0.x/fixes-3 — Lista todos os militares habilitados como ChOp na
+   * planilha externa, enriquecidos com posto/nome via `EfetivoService`.
+   * Usado pelo modal de troca de ChOp no Mapa Força. Ordena por posto
+   * (mais alto primeiro) + nomeGuerra alfabético.
+   */
+  async listHabilitadosEnriquecido(): Promise<ChefeOperacoesHabilitado[]> {
+    const habilitados = await this.getHabilitadosNfs();
+    if (habilitados.size === 0) return [];
+    const efetivoTotal = await this.efetivo.getAll({
+      somente1aCia: false,
+      incluirEfetivoOrfao: true,
+    });
+    const enriquecidos: ChefeOperacoesHabilitado[] = [];
+    for (const nf of habilitados) {
+      const m = efetivoTotal.find((mil) => mil.nf === nf);
+      if (m) {
+        enriquecidos.push({
+          nf: m.nf,
+          posto: m.posto,
+          nomeGuerra: m.nomeGuerra ?? m.nome.split(' ')[0] ?? m.nome,
+          nome: m.nome,
+        });
+      } else {
+        enriquecidos.push({
+          nf,
+          posto: '',
+          nomeGuerra: '(não resolvido)',
+          nome: `NF ${nf}`,
+        });
+      }
+    }
+    return enriquecidos.sort((a, b) => a.nomeGuerra.localeCompare(b.nomeGuerra));
+  }
 
   async getEscaladosDoDia(_ano: number, _mes: number, dia: number): Promise<ChefeOperacoes[]> {
     const { entry } = await this.getEntry();

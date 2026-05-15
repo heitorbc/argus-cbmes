@@ -45,7 +45,7 @@ import type {
   NotaServico,
   ParteDiaria,
   UpsertParteDiariaInput,
-  PreviaDoDia,
+  MapaForcaDoDia,
   PreviewEscalaEspecialResponse,
   PreviewEscalaResponse,
   Recurso,
@@ -312,11 +312,26 @@ export const api = {
       body: JSON.stringify({ quinzena, ...entry }),
     }),
 
-  // Prévia do Mapa Força (S4)
-  previaDoDia: (data: string) => request<PreviaDoDia>(`/previa?data=${data}`),
+  // Mapa Força do dia (S4 + S0.x/rename-mapa-forca)
+  mapaForcaDoDia: (data: string) => request<MapaForcaDoDia>(`/mapa-forca?data=${data}`),
+
+  /** Retorna apenas o Fiscal escalado do dia, sem carregar o payload completo. */
+  mapaForcaFiscalDoDia: (data: string) =>
+    request<{ fiscal: import('@argus/shared-types').FiscalDoDia | null }>(
+      `/mapa-forca/${data}/fiscal`,
+    ),
+
+  /** S0.x/rename-mapa-forca — Lista dias do mês com escala XLSX importada. */
+  escalasDiasDisponiveis: (ano: number, mes: number) =>
+    request<{
+      ano: number;
+      mes: number;
+      dias: string[];
+      equipePorDia: Record<string, string>;
+    }>(`/escalas/${ano}/${mes}/dias-disponiveis`),
 
   // Trocas de Escala Especial (S6a-fix item 4)
-  previaAddTrocaEscalaEspecial: (
+  mapaForcaAddTrocaEscalaEspecial: (
     data: string,
     input: {
       atoOriginal: { data: string; militarRaw: string; horario: string; funcao: string };
@@ -326,30 +341,47 @@ export const api = {
       substitutoNf?: string;
     },
   ) =>
-    request<TrocaEscalaEspecial>(`/previa/${data}/ajustes/escala-especial/trocas`, {
+    request<TrocaEscalaEspecial>(`/mapa-forca/${data}/ajustes/escala-especial/trocas`, {
       method: 'POST',
       body: JSON.stringify(input),
     }),
 
-  previaRemoveTrocaEscalaEspecial: (data: string, atoKey: string) =>
-    request<void>(`/previa/${data}/ajustes/escala-especial/trocas/${encodeURIComponent(atoKey)}`, {
-      method: 'DELETE',
-    }),
+  mapaForcaRemoveTrocaEscalaEspecial: (data: string, atoKey: string) =>
+    request<void>(
+      `/mapa-forca/${data}/ajustes/escala-especial/trocas/${encodeURIComponent(atoKey)}`,
+      { method: 'DELETE' },
+    ),
 
-  // Servico — estado do dia (S6b/F1)
+  // Servico — estado do dia (S6b/F1 + S0.x/rename-mapa-forca)
   servicoGet: (data: string) => request<ServicoEstado>(`/servico/${data}`),
+
+  /** S0.x/rename-mapa-forca — Fiscal escalado/admin abre Prévia para edição. */
+  servicoIniciarPrevia: (data: string) =>
+    request<ServicoEstado>(`/servico/${data}/iniciar-previa`, { method: 'POST' }),
+
+  /** S0.x/rename-mapa-forca — Cancela a Prévia em edição. */
+  servicoCancelarPrevia: (data: string) =>
+    request<ServicoEstado>(`/servico/${data}/cancelar-previa`, { method: 'POST' }),
 
   servicoIniciar: (data: string) =>
     request<ServicoEstado>(`/servico/${data}/iniciar`, { method: 'POST' }),
 
-  servicoEncerrar: (data: string, force?: boolean) =>
-    request<ServicoEstado>(`/servico/${data}/encerrar${force ? '?force=true' : ''}`, {
+  /**
+   * S0.x — Encerramento manual (admin only). O fluxo institucional normal é a
+   * auto-finalização ao iniciar serviço do dia seguinte (passagem de serviço).
+   */
+  servicoEncerrar: (data: string) =>
+    request<ServicoEstado>(`/servico/${data}/encerrar`, { method: 'POST' }),
+
+  // S6h/2.1 — mock do Preencher Mapa Força CIODES
+  servicoPreencherMf: (data: string) =>
+    request<{ estado: ServicoEstado; mensagem: string }>(`/servico/${data}/preencher-mf`, {
       method: 'POST',
     }),
 
-  // S6h/2.1 — mock do Preencher Mapa Força
-  servicoPreencherMf: (data: string) =>
-    request<{ estado: ServicoEstado; mensagem: string }>(`/servico/${data}/preencher-mf`, {
+  // S0.x — mock do Atualizar Mapa Força CIODES (após dirty)
+  servicoAtualizarMf: (data: string) =>
+    request<{ estado: ServicoEstado; mensagem: string }>(`/servico/${data}/atualizar-mf`, {
       method: 'POST',
     }),
 
@@ -555,6 +587,11 @@ export const api = {
 
   atestadosRemove: (id: string) => request<void>(`/atestados/${id}`, { method: 'DELETE' }),
 
+  // Chefes de Operações (S0.x/fixes-3)
+  /** Lista militares habilitados como ChOp (planilha externa) com posto/nome enriquecido. */
+  chefesOperacoesHabilitados: () =>
+    request<ChefeOperacoesHabilitado[]>('/chefes-operacoes/habilitados'),
+
   // Notas de Serviço (S6l)
   notasServicoList: (filter: { data?: string; militarNf?: string } = {}) => {
     const params = new URLSearchParams();
@@ -660,6 +697,15 @@ export const api = {
     URL.revokeObjectURL(url);
   },
 };
+
+/** Shape devolvido por GET /chefes-operacoes/habilitados (S0.x/fixes-3). */
+export interface ChefeOperacoesHabilitado {
+  nf: string;
+  posto: string;
+  nomeGuerra: string;
+  nome: string;
+  telefone?: string;
+}
 
 /** Shape devolvido por GET /auth/dev/personas (persona picker, env-gated). */
 export interface PersonaSummary {

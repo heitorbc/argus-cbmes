@@ -1,15 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { PreviaDoDia } from '@argus/shared-types';
+import type { MapaForcaDoDia } from '@argus/shared-types';
 import { ParteDiariaService } from './parte-diaria.service';
-import type { PreviaService } from '../previa/previa.service';
+import type { PreviaService } from '../mapa-forca/mapa-forca.service';
 
 /**
  * S10 — Tests do ParteDiariaService.
  *
- * Mocka `PreviaService.getPreviaDoDia` para isolar a lógica de composição
+ * Mocka `PreviaService.getMapaForcaDoDia` para isolar a lógica de composição
  * + override sem precisar do setup pesado da Prévia (escala, MF, efetivo).
  */
-function fakePrevia(overrides: Partial<PreviaDoDia> = {}): PreviaDoDia {
+function fakePrevia(overrides: Partial<MapaForcaDoDia> = {}): MapaForcaDoDia {
   return {
     data: '2026-05-04',
     ano: 2026,
@@ -104,8 +104,8 @@ function fakePrevia(overrides: Partial<PreviaDoDia> = {}): PreviaDoDia {
 }
 
 class FakePreviaService {
-  payload: PreviaDoDia = fakePrevia();
-  async getPreviaDoDia(): Promise<PreviaDoDia> {
+  payload: MapaForcaDoDia = fakePrevia();
+  async getMapaForcaDoDia(): Promise<MapaForcaDoDia> {
     return this.payload;
   }
 }

@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, forwardRef, Inject, Injectable } from '@nestjs/common';
 import type {
   ConferenciaEquipeEntry,
   StatusConferenciaEquipe,
   UpsertConferenciaEquipeInput,
 } from '@argus/shared-types';
+import { MapaForcaService } from '../mapa-forca/mapa-forca.service';
 import { ServicoService } from '../servico/servico.service';
 
 /**
@@ -21,7 +22,37 @@ import { ServicoService } from '../servico/servico.service';
 export class ConferenciaEquipeService {
   private readonly byData: Map<string, Map<string, ConferenciaEquipeEntry>> = new Map();
 
-  constructor(private readonly servico: ServicoService) {}
+  constructor(
+    private readonly servico: ServicoService,
+    @Inject(forwardRef(() => MapaForcaService))
+    private readonly mapaForca: MapaForcaService,
+  ) {}
+
+  /**
+   * S0.x — Valida granularmente que `userNf` pode marcar entries dos
+   * recursos `recursosAlvo`. Admin/fiscal/sargenteante override; demais
+   * usuários só podem marcar recursos onde são Chefe escalado.
+   *
+   * Lança `ForbiddenException` se houver pelo menos 1 recurso fora do
+   * comando do usuário (e ele não for override).
+   */
+  private async ensurePodeMarcar(
+    dataIso: string,
+    recursosAlvo: readonly string[],
+    userNf: string,
+    isOverride: boolean,
+  ): Promise<void> {
+    if (isOverride) return;
+    const comandados = new Set(await this.mapaForca.recursosComandadosPor(userNf, dataIso));
+    const naoAutorizados = Array.from(new Set(recursosAlvo)).filter((r) => !comandados.has(r));
+    if (naoAutorizados.length > 0) {
+      throw new ForbiddenException(
+        `Você não é Chefe escalado dos recursos: ${naoAutorizados.join(', ')}. ` +
+          `Apenas o Chefe escalado pode realizar a Conferência de Equipe destes recursos ` +
+          `(admin/fiscal/sargenteante podem fazer override).`,
+      );
+    }
+  }
 
   getByData(dataIso: string): ConferenciaEquipeEntry[] {
     const m = this.byData.get(dataIso);
@@ -32,12 +63,32 @@ export class ConferenciaEquipeService {
    * Atualização em lote (PUT). O Chefe envia toda a lista de marcações de
    * uma vez. Substitui completamente o estado da data.
    */
-  bulkUpdate(
+  /**
+   * S0.x — `isOverride=true` permite admin/fiscal/sargenteante editar qualquer
+   * recurso (gating fino bypassado). Para chefe_equipe, valida via composicaoMf.
+   *
+   * Implementação preserva entries existentes de recursos NÃO incluídos no
+   * input (chefe X não apaga marcações de chefe Y) — apenas substitui as
+   * entries dos recursos que o usuário tem permissão para alterar.
+   */
+  async bulkUpdate(
     dataIso: string,
     input: UpsertConferenciaEquipeInput,
     marcadoPorNf: string,
-  ): ConferenciaEquipeEntry[] {
-    const map = new Map<string, ConferenciaEquipeEntry>();
+    isOverride = false,
+  ): Promise<ConferenciaEquipeEntry[]> {
+    const recursosAlvo = input.entries.map((e) => e.recurso);
+    await this.ensurePodeMarcar(dataIso, recursosAlvo, marcadoPorNf, isOverride);
+
+    const recursosAlvoSet = new Set(recursosAlvo);
+    const map = isOverride
+      ? new Map<string, ConferenciaEquipeEntry>()
+      : new Map(
+          // Preserva entries de outros recursos que o usuário não comanda.
+          Array.from((this.byData.get(dataIso) ?? new Map()).entries()).filter(
+            ([, entry]) => !recursosAlvoSet.has((entry as ConferenciaEquipeEntry).recurso),
+          ) as [string, ConferenciaEquipeEntry][],
+        );
     const now = new Date().toISOString();
     for (const e of input.entries) {
       const key = entryKey(e.recurso, e.funcao, e.militarOriginalNf);
@@ -53,11 +104,13 @@ export class ConferenciaEquipeService {
   }
 
   /** Marcação granular (1 militar). Útil para UI offline-first ou ad-hoc. */
-  marcarPresenca(
+  async marcarPresenca(
     dataIso: string,
     entry: Omit<ConferenciaEquipeEntry, 'marcadoEm' | 'marcadoPorNf'>,
     marcadoPorNf: string,
-  ): ConferenciaEquipeEntry {
+    isOverride = false,
+  ): Promise<ConferenciaEquipeEntry> {
+    await this.ensurePodeMarcar(dataIso, [entry.recurso], marcadoPorNf, isOverride);
     const map = this.byData.get(dataIso) ?? new Map<string, ConferenciaEquipeEntry>();
     const key = entryKey(entry.recurso, entry.funcao, entry.militarOriginalNf);
     const updated: ConferenciaEquipeEntry = {

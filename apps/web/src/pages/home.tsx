@@ -76,18 +76,18 @@ export function HomePage() {
 
         <ModuloSection
           titulo="Prontidão"
-          descricao="Operação do dia: Prévia do MF, Conferências, Fiscais, IDEO."
+          descricao="Operação do dia: Mapa Força, Conferências, Fiscais, IDEO."
           accent="border-l-cbmes-red"
           destaque
         >
-          <CardLink to="/previa" icon="🗺️" label="Prévia do Mapa Força" destaque />
+          <CardLink to="/mapa-forca" icon="🗺️" label="Mapa Força" destaque />
           <CardLink to="/parte-diaria" icon="📑" label="Parte Diária" />
           <CardLink to="/cadastros/fiscais" icon="⭐" label="Fiscais (override)" />
           <CardLink to="/cadastros/ideo" icon="📋" label="IDEO" />
           <CardInfo
             icon="✅"
             label="Conferências"
-            descricao="Acesse via Prévia do dia → Iniciar Serviço"
+            descricao="Acesse via Mapa Força → Iniciar Prévia → Iniciar Serviço"
           />
         </ModuloSection>
 

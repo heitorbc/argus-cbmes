@@ -15,7 +15,7 @@ import type {
   UpsertConferenciaViaturaInput,
   Viatura,
 } from '@argus/shared-types';
-import { MapaForcaService } from '../mapa-forca/mapa-forca.service';
+import { MapaForcaCiodesService } from '../mapa-forca-ciodes/mapa-forca-ciodes.service';
 
 /** Mapeia o prefixo da viatura (ABTS_011, AR_044) para o tipo institucional. */
 function tipoFromPrefixo(prefixo: string): TipoViatura {
@@ -63,7 +63,7 @@ function viaturaFromRecurso(r: RecursoMapaForca): Viatura | null {
 }
 
 /**
- * Source of truth: aba "1º BBM" do Mapa Força (via `MapaForcaService`).
+ * Source of truth: aba "1º BBM" do Mapa Força (via `MapaForcaCiodesService`).
  * Overrides locais ficam em memória (Fase 1) e sobrepõem por `prefixo`.
  *
  * S6a/ADR-009 — nova regra:
@@ -77,7 +77,7 @@ export class ViaturasService {
   /** Storage in-memory de overrides (admin criou/editou). Key = prefixo. */
   private readonly overrides: Map<string, Viatura> = new Map();
 
-  constructor(private readonly mapaForca: MapaForcaService) {}
+  constructor(private readonly mapaForca: MapaForcaCiodesService) {}
 
   async list(): Promise<Viatura[]> {
     const recursos = await this.mapaForca.getRecursos().catch(() => []);
@@ -287,18 +287,24 @@ export class ViaturasService {
   }
 
   /**
-   * S6b/F4 — "porta autorizada" da Conferência da Viatura.
+   * S6b/F4 + S0.x/fixes-3 — "porta autorizada" da Conferência da Viatura.
    *
    * Bypassa o bloqueio do ADR-009 (status de viatura MF) — registrar mudanças
    * via Conferência é o caminho institucional correto. Adiciona observação
    * datada ao histórico e atualiza KM, tanque, e opcionalmente status.
    *
-   * Se `statusMudanca='BAIXADA'`, exige `motivoBaixa`.
+   * - Se `statusMudanca='BAIXADA'`, exige `motivoBaixa`.
+   * - KM novo deve ser ≥ último registrado em `historicoKm[]` (ou
+   *   `kmAtual` atual). Decremento permitido apenas para admin com
+   *   `observacao` obrigatória — gera entrada `origem='manual_admin'`.
+   * - Conferência normal sempre gera entrada em `historicoKm` com
+   *   `origem='conferencia'` quando o KM muda.
    */
   async aplicarConferencia(
     prefixo: string,
     input: UpsertConferenciaViaturaInput,
     registradoPorNf: string,
+    isAdmin = false,
   ): Promise<Viatura> {
     const current = await this.findByPrefixo(prefixo);
     if (!current) {
@@ -307,6 +313,29 @@ export class ViaturasService {
     if (input.statusMudanca === 'BAIXADA' && !input.motivoBaixa) {
       throw new BadRequestException('motivoBaixa é obrigatório quando statusMudanca=BAIXADA.');
     }
+
+    // S0.x/fixes-3 — Validação de KM crescente + admin override.
+    const ultimoKm = (current.historicoKm ?? []).reduce(
+      (acc, h) => Math.max(acc, h.kmRegistrado),
+      current.kmAtual ?? 0,
+    );
+    const novoKm = input.kmAtual;
+    let origemKm: 'conferencia' | 'manual_admin' = 'conferencia';
+    if (novoKm !== undefined && novoKm < ultimoKm) {
+      if (!isAdmin) {
+        throw new BadRequestException(
+          `KM informado (${novoKm}) é menor que o último registrado (${ultimoKm}). ` +
+            `Apenas admin pode forçar decremento, e exige observação obrigatória.`,
+        );
+      }
+      if (!input.observacao || !input.observacao.trim()) {
+        throw new BadRequestException(
+          `Decremento de KM (${novoKm} < ${ultimoKm}) exige observação obrigatória do admin.`,
+        );
+      }
+      origemKm = 'manual_admin';
+    }
+
     const now = new Date().toISOString();
     const novaObservacao = input.observacao
       ? [
@@ -315,12 +344,27 @@ export class ViaturasService {
         ]
       : current.observacoesDataDas;
 
+    // S0.x/fixes-3 — Append em historicoKm quando KM mudou.
+    const kmMudou = novoKm !== undefined && novoKm !== current.kmAtual;
+    const historicoKm = kmMudou
+      ? [
+          ...(current.historicoKm ?? []),
+          {
+            kmRegistrado: novoKm,
+            registradoEm: now,
+            registradoPorNf,
+            origem: origemKm,
+          },
+        ]
+      : current.historicoKm;
+
     const updated: Viatura = {
       ...current,
       kmAtual: input.kmAtual ?? current.kmAtual,
       estadoTanquePercent: input.estadoTanquePercent,
       status: input.statusMudanca ?? current.status,
       observacoesDataDas: novaObservacao,
+      historicoKm,
       atualizadoEm: now,
     };
     this.overrides.set(updated.prefixo, updated);

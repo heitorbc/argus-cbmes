@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
   ESTADO_SERVICO_LABEL,
   TIPO_DISPENSA,
@@ -13,7 +13,7 @@ import {
   type PeriodoTrocaPredefinido,
   type PreviaAtestado,
   type PreviaDispensa,
-  type PreviaDoDia,
+  type MapaForcaDoDia,
   type PreviaNotaServico,
   type Viatura,
   type TipoDispensa,
@@ -51,32 +51,50 @@ const INCONSISTENCIA_LABEL: Record<TipoInconsistencia, string> = {
   TROCAS_AUTORIZADAS_INDISPONIVEIS: 'Trocas autorizadas indisponíveis',
 };
 
-function todayIso(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 function formatDataBr(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
   return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
 }
 
-export function PreviaPage() {
+/**
+ * S0.x/rename-mapa-forca — Tela de detalhe do Mapa Força para uma data.
+ *
+ * - Sempre carrega em modo read-only por padrão.
+ * - Botão "Iniciar Prévia do Mapa Força" libera edição APENAS para o
+ *   Fiscal escalado do dia (computado pelo backend) ou admin.
+ * - Edição efetiva (swaps, ajustes, ativações) só fica habilitada quando
+ *   estadoServico === 'PREVIA_INICIADA' E o usuário é o iniciador (ou admin).
+ */
+export function MapaForcaDetalhePage() {
+  const { data: dataParam } = useParams<{ data: string }>();
   const { user } = useAuth();
-  const podeIniciarServico =
-    user?.papeis.includes('admin') ||
-    user?.papeis.includes('fiscal') ||
-    user?.papeis.includes('sargenteante') ||
-    false;
+  const isAdmin = user?.papeis.includes('admin') ?? false;
 
-  const [data, setData] = useState<string>(todayIso());
-  const [previa, setPrevia] = useState<PreviaDoDia | null>(null);
+  const data = dataParam ?? '';
+  const [previa, setPrevia] = useState<MapaForcaDoDia | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [servicoActionInflight, setServicoActionInflight] = useState(false);
 
-  const isReadOnly = (previa?.estadoServico ?? 'NAO_INICIADO') !== 'NAO_INICIADO';
+  // Edição liberada SOMENTE quando o serviço está em PREVIA_INICIADA e o
+  // usuário é o iniciador da Prévia (ou admin). Para os demais casos
+  // (NAO_INICIADO, PREVIA_INICIADA por outro NF, INICIADO+) é read-only.
+  const estado = previa?.estadoServico ?? 'NAO_INICIADO';
+  const isPreviaInitiator = previa?.previaIniciadaPorNf === user?.nf;
+  const isReadOnly = !(estado === 'PREVIA_INICIADA' && (isAdmin || isPreviaInitiator));
+
+  // Pode iniciar Prévia se: estado é NAO_INICIADO E (user.nf == fiscal escalado OR admin)
+  const fiscalNf = previa?.fiscal?.militarNf ?? null;
+  const podeIniciarPrevia =
+    estado === 'NAO_INICIADO' && (isAdmin || (fiscalNf !== null && fiscalNf === user?.nf));
+
+  // Pode iniciar Serviço se: estado é PREVIA_INICIADA E (admin OR initiator)
+  const podeIniciarServico =
+    estado === 'PREVIA_INICIADA' && (isAdmin || isPreviaInitiator);
+
+  // Pode cancelar Prévia: mesmo critério do iniciar serviço
+  const podeCancelarPrevia = podeIniciarServico;
 
   // S0.5 — Tap-to-swap (UX): primeiro tap registra a posição; segundo tap
   // em outra posição da mesma equipe dispara o swap via PUT /previa/ajustes.
@@ -88,10 +106,12 @@ export function PreviaPage() {
   } | null>(null);
   const [swapInflight, setSwapInflight] = useState(false);
 
-  const podeSwap = !isReadOnly && (user?.papeis.includes('admin') ||
-    user?.papeis.includes('fiscal') ||
-    user?.papeis.includes('sargenteante') ||
-    false);
+  // S0.x/fixes-3 — Modal de troca de Chefe de Operações (lista filtrada
+  // de habilitados na planilha externa de ChOp).
+  const [chopModalOpen, setChopModalOpen] = useState(false);
+
+  // Swap segue o mesmo gate: edição liberada apenas em PREVIA_INICIADA pelo iniciador (ou admin).
+  const podeSwap = !isReadOnly;
 
   const handleSwapClick = async (
     equipe: LetraEquipe,
@@ -130,7 +150,7 @@ export function PreviaPage() {
           funcaoB: funcao,
         },
       ];
-      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/previa/${data}/ajustes`, {
+      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -154,7 +174,7 @@ export function PreviaPage() {
     try {
       const ajustes = extractAjustes(previa);
       const novosSwaps = ajustes.swapsMilitares.filter((_, i) => i !== index);
-      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/previa/${data}/ajustes`, {
+      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -185,7 +205,7 @@ export function PreviaPage() {
       const novos = existe
         ? ajustes.overridesMergulho.filter((o) => o.data !== data)
         : [...ajustes.overridesMergulho, { data, swap: true as const }];
-      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/previa/${data}/ajustes`, {
+      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -217,7 +237,7 @@ export function PreviaPage() {
       const novos = existe
         ? ajustes.overridesParesRecursos.filter((o) => !(o.data === data && o.par === par))
         : [...ajustes.overridesParesRecursos, { data, par, swap: true as const }];
-      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/previa/${data}/ajustes`, {
+      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -235,7 +255,7 @@ export function PreviaPage() {
 
   const reload = () => {
     api
-      .previaDoDia(data)
+      .mapaForcaDoDia(data)
       .then(setPrevia)
       .catch((e) => setError(e instanceof ApiError ? e.message : 'Erro ao recarregar'));
   };
@@ -253,12 +273,46 @@ export function PreviaPage() {
     }
   };
 
-  const handleEncerrarServico = async (force = false) => {
-    if (!confirm(`Encerrar serviço de ${data}?`)) return;
+  // S0.x/rename-mapa-forca — Iniciar Prévia (libera edição para Fiscal/admin).
+  const handleIniciarPrevia = async () => {
     setServicoActionInflight(true);
     setError(null);
     try {
-      await api.servicoEncerrar(data, force);
+      await api.servicoIniciarPrevia(data);
+      reload();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Erro ao iniciar Prévia');
+    } finally {
+      setServicoActionInflight(false);
+    }
+  };
+
+  const handleCancelarPrevia = async () => {
+    if (!confirm('Cancelar Prévia em edição? Os ajustes ficam preservados, mas a Prévia volta a ser somente leitura.')) return;
+    setServicoActionInflight(true);
+    setError(null);
+    try {
+      await api.servicoCancelarPrevia(data);
+      reload();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Erro ao cancelar Prévia');
+    } finally {
+      setServicoActionInflight(false);
+    }
+  };
+
+  const handleEncerrarServico = async () => {
+    if (
+      !confirm(
+        `Encerrar serviço de ${data} manualmente? O fluxo normal é a auto-finalização ` +
+          `quando o próximo Fiscal iniciar o serviço (passagem de serviço).`,
+      )
+    )
+      return;
+    setServicoActionInflight(true);
+    setError(null);
+    try {
+      await api.servicoEncerrar(data);
       reload();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Erro ao encerrar serviço');
@@ -283,7 +337,7 @@ export function PreviaPage() {
     setLoading(true);
     setError(null);
     api
-      .previaDoDia(data)
+      .mapaForcaDoDia(data)
       .then((r) => {
         if (!cancelled) setPrevia(r);
       })
@@ -299,8 +353,8 @@ export function PreviaPage() {
   }, [data]);
 
   const tripulacaoPorViatura = useMemo(() => {
-    if (!previa) return new Map<string, PreviaDoDia['tripulacao']>();
-    const map = new Map<string, PreviaDoDia['tripulacao']>();
+    if (!previa) return new Map<string, MapaForcaDoDia['tripulacao']>();
+    const map = new Map<string, MapaForcaDoDia['tripulacao']>();
     for (const t of previa.tripulacao) {
       const key = t.viatura || '(sem viatura)';
       const arr = map.get(key) ?? [];
@@ -316,7 +370,7 @@ export function PreviaPage() {
    * RESGATE 01, etc.) — o parser do MF normaliza os nomes para a mesma forma.
    */
   const mfAtualPorRecurso = useMemo(() => {
-    const m = new Map<string, PreviaDoDia['composicaoAtualMf'][number]>();
+    const m = new Map<string, MapaForcaDoDia['composicaoAtualMf'][number]>();
     if (!previa) return m;
     for (const r of previa.composicaoAtualMf) m.set(r.recurso, r);
     return m;
@@ -325,34 +379,25 @@ export function PreviaPage() {
   return (
     <main className="min-h-screen bg-slate-50">
       <header className="bg-cbmes-red px-4 py-4 text-white">
-        <Link to="/" className="text-sm opacity-90 hover:opacity-100">
-          ← Início
+        <Link to="/mapa-forca" className="text-sm opacity-90 hover:opacity-100">
+          ← Voltar para o calendário
         </Link>
-        <h1 className="mt-1 text-lg font-bold">Prévia do Mapa Força</h1>
-        <p className="text-xs opacity-90">Composição diária consolidada</p>
+        <h1 className="mt-1 text-lg font-bold">Mapa Força — {formatDataBr(data)}</h1>
+        <p className="text-xs opacity-90">
+          Composição do dia · {ESTADO_SERVICO_LABEL[estado]}
+        </p>
       </header>
 
       <section className="mx-auto max-w-3xl p-4">
-        <div className="flex items-end gap-3 rounded border border-slate-200 bg-white p-3">
-          <div className="flex-1">
-            <label htmlFor="data" className="mb-1 block text-xs font-medium text-slate-700">
-              Data
-            </label>
-            <input
-              id="data"
-              type="date"
-              value={data}
-              onChange={(e) => setData(e.target.value)}
-              className="w-full rounded border border-slate-300 px-3 py-2 text-base"
-            />
+        <div className="flex items-center justify-between rounded border border-slate-200 bg-white p-3">
+          <div className="text-sm text-slate-700">
+            <span className="font-medium">Data:</span> {formatDataBr(data)}
+            {previa && previa.equipe && (
+              <span className="ml-2 text-xs uppercase text-slate-500">
+                · Equipe {previa.equipe} ({previa.equipeNome})
+              </span>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={() => setData(todayIso())}
-            className="rounded-button border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
-          >
-            Hoje
-          </button>
           <button
             type="button"
             disabled={!previa}
@@ -363,6 +408,18 @@ export function PreviaPage() {
             {copied ? '✓ Copiado!' : '📋 WhatsApp'}
           </button>
         </div>
+
+        {/* S0.x/rename-mapa-forca — Banner do estado + ações da Prévia */}
+        {previa && (
+          <PreviaEstadoBanner
+            previa={previa}
+            podeIniciarPrevia={podeIniciarPrevia}
+            podeCancelarPrevia={podeCancelarPrevia}
+            inflight={servicoActionInflight}
+            onIniciarPrevia={handleIniciarPrevia}
+            onCancelarPrevia={handleCancelarPrevia}
+          />
+        )}
 
         {error && (
           <div
@@ -434,6 +491,7 @@ export function PreviaPage() {
             <ServicoCard
               previa={previa}
               podeIniciar={podeIniciarServico}
+              isAdmin={isAdmin}
               inflight={servicoActionInflight}
               onIniciar={handleIniciarServico}
               onEncerrar={handleEncerrarServico}
@@ -482,8 +540,12 @@ export function PreviaPage() {
                 {previa.swapsMilitares.length > 0 && (
                   <details className="mb-2 rounded border border-slate-200 bg-white p-2 text-xs">
                     <summary className="cursor-pointer font-medium text-slate-700">
-                      Swaps aplicados ({previa.swapsMilitares.length})
+                      Realocações internas da equipe ({previa.swapsMilitares.length})
                     </summary>
+                    <p className="mt-1 text-[10px] italic text-slate-500">
+                      Movimentações da prévia do dia. Não constituem trocas de serviço — não
+                      são registradas em Parte Diária nem como ajuste pré-escala.
+                    </p>
                     <ul className="mt-2 space-y-1">
                       {previa.swapsMilitares.map((s, i) => (
                         <li key={i} className="flex items-center justify-between gap-2">
@@ -612,24 +674,36 @@ export function PreviaPage() {
                                         </span>
                                       )}
                                     </span>
-                                    {podeSwap && (
+                                    {podeSwap && t.viatura === 'CHEFE DE OPERAÇÕES' && t.funcao === 'Ch' ? (
                                       <button
                                         type="button"
-                                        onClick={() =>
-                                          void handleSwapClick(t.equipe, t.viatura, t.funcao)
-                                        }
-                                        disabled={swapInflight || swapDisabled}
-                                        title={
-                                          swapDisabled
-                                            ? 'Swap apenas dentro da mesma equipe'
-                                            : isOrigemSelecionada
-                                              ? 'Cancelar swap'
-                                              : 'Trocar com outra posição'
-                                        }
-                                        className="rounded border border-slate-300 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-50 disabled:opacity-30"
+                                        onClick={() => setChopModalOpen(true)}
+                                        disabled={swapInflight}
+                                        title="Trocar Chefe de Operações (lista da planilha ChOp)"
+                                        className="rounded border border-cbmes-blue px-2 py-0.5 text-[10px] text-cbmes-blue hover:bg-cbmes-blue/10 disabled:opacity-30"
                                       >
-                                        {isOrigemSelecionada ? '×' : '🔄'}
+                                        🔄 ChOp
                                       </button>
+                                    ) : (
+                                      podeSwap && (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            void handleSwapClick(t.equipe, t.viatura, t.funcao)
+                                          }
+                                          disabled={swapInflight || swapDisabled}
+                                          title={
+                                            swapDisabled
+                                              ? 'Swap apenas dentro da mesma equipe'
+                                              : isOrigemSelecionada
+                                                ? 'Cancelar swap'
+                                                : 'Trocar com outra posição'
+                                          }
+                                          className="rounded border border-slate-300 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-50 disabled:opacity-30"
+                                        >
+                                          {isOrigemSelecionada ? '×' : '🔄'}
+                                        </button>
+                                      )
                                     )}
                                   </span>
                                 </li>
@@ -747,6 +821,8 @@ export function PreviaPage() {
               </section>
             )}
 
+            <TrocasAutorizadasReadOnly trocas={previa.trocas.filter((t) => t.origemAutorizada)} />
+
             <AjustesPreTurno
               data={data}
               initial={extractAjustes(previa)}
@@ -761,13 +837,29 @@ export function PreviaPage() {
           </>
         )}
       </section>
+
+      {chopModalOpen && previa && (
+        <ModalSwapChefeOperacoes
+          data={data}
+          previa={previa}
+          onClose={() => setChopModalOpen(false)}
+          onSaved={() => {
+            setChopModalOpen(false);
+            reload();
+          }}
+        />
+      )}
     </main>
   );
 }
 
-function extractAjustes(previa: PreviaDoDia): AjustesPrevia {
+function extractAjustes(previa: MapaForcaDoDia): AjustesPrevia {
   return {
-    trocas: previa.trocas,
+    // S0.x/fixes-3 — Filtra trocas com `origemAutorizada=true` para evitar
+    // duplicação ao salvar. Autorizadas vêm da planilha e são re-injetadas
+    // pelo backend a cada GET; persisti-las como manuais causaria N entries
+    // a cada Save. Renderizadas em seção read-only separada (TrocasAutorizadasSection).
+    trocas: previa.trocas.filter((t) => !t.origemAutorizada),
     escalaEspecial: previa.escalaEspecial,
     notasServico: previa.notasServico,
     dispensas: previa.dispensas,
@@ -776,6 +868,7 @@ function extractAjustes(previa: PreviaDoDia): AjustesPrevia {
     overridesMergulho: previa.overridesMergulho,
     overridesParesRecursos: previa.overridesParesRecursos,
     ativacoesRecurso: previa.ativacoesRecurso,
+    overridesChefeOperacoes: previa.overridesChefeOperacoes,
   };
 }
 
@@ -870,7 +963,7 @@ function EscalaEspecialBox({
 
   const removerTrocaEspecial = async (ato: EscalaEspecialAtoLight) => {
     try {
-      await api.previaRemoveTrocaEscalaEspecial(data, atoKey(ato));
+      await api.mapaForcaRemoveTrocaEscalaEspecial(data, atoKey(ato));
       onSaved();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Erro ao remover troca');
@@ -971,7 +1064,7 @@ function AjustesPreTurno({
   data: string;
   isReadOnly: boolean;
   initial: AjustesPrevia;
-  atestadosAtivos: PreviaDoDia['atestados'];
+  atestadosAtivos: MapaForcaDoDia['atestados'];
   onSaved: () => void;
 }) {
   const [state, setState] = useState<AjustesPrevia>(initial);
@@ -988,7 +1081,7 @@ function AjustesPreTurno({
     setErr(null);
     try {
       await fetch(
-        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/previa/${data}/ajustes`,
+        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`,
         {
           method: 'PUT',
           credentials: 'include',
@@ -1169,7 +1262,7 @@ function ModalTrocaEscalaEspecial({
     setSaving(true);
     setErr(null);
     try {
-      await api.previaAddTrocaEscalaEspecial(data, {
+      await api.mapaForcaAddTrocaEscalaEspecial(data, {
         atoOriginal: ato,
         substituidoRaw: ato.militarRaw,
         substitutoRaw,
@@ -1263,68 +1356,61 @@ function formatDataExtenso(iso: string): string {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// S6b — ServicoCard: estado do dia + Conferências + Alterações Diversas
+// S6b + S0.x — ServicoCard: estado do dia + 3 boxes de progresso + MF dirty
 // ════════════════════════════════════════════════════════════════════════════
 
 function ServicoCard({
   previa,
   podeIniciar,
+  isAdmin,
   inflight,
   onIniciar,
   onEncerrar,
   onSaved,
 }: {
-  previa: PreviaDoDia;
+  previa: MapaForcaDoDia;
   podeIniciar: boolean;
+  isAdmin: boolean;
   inflight: boolean;
   onIniciar: () => Promise<void>;
-  onEncerrar: (force?: boolean) => Promise<void>;
+  onEncerrar: () => Promise<void>;
   onSaved: () => void;
 }) {
   const estado = previa.estadoServico;
   const isEncerrado = estado === 'ENCERRADO';
-  const podePreencherMf = estado === 'VIATURA_CONFERIDA';
-  const [preenchendoMf, setPreenchendoMf] = useState(false);
-  const [mfMsg, setMfMsg] = useState<string | null>(null);
+  const isPosIniciado =
+    estado === 'INICIADO' ||
+    estado === 'EQUIPE_CONFERIDA' ||
+    estado === 'VIATURA_CONFERIDA' ||
+    estado === 'PREENCHENDO_MF';
 
-  const handlePreencherMf = async () => {
-    if (!confirm('Iniciar preenchimento do Mapa Força? (mock — escrita real chega no S9)')) return;
-    setPreenchendoMf(true);
-    setMfMsg(null);
-    try {
-      const r = await api.servicoPreencherMf(previa.data);
-      setMfMsg(r.mensagem);
-      onSaved();
-    } catch (e) {
-      setMfMsg(e instanceof ApiError ? e.message : 'Erro ao iniciar preenchimento do MF');
-    } finally {
-      setPreenchendoMf(false);
-    }
-  };
-
-  if (estado === 'NAO_INICIADO') {
-    if (!podeIniciar) return null;
-    return (
-      <section className="mt-4 rounded border border-cbmes-blue/30 bg-cbmes-blue/5 p-3">
-        <div className="flex items-baseline justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-semibold text-cbmes-blue">Serviço do dia</h3>
-            <p className="text-xs text-slate-600">
-              Estado: <strong>{ESTADO_SERVICO_LABEL[estado]}</strong> — clique para iniciar e
-              começar as Conferências.
-            </p>
+  if (estado === 'NAO_INICIADO' || estado === 'PREVIA_INICIADA') {
+    // PREVIA_INICIADA + NAO_INICIADO: gerencia pelo banner principal (PreviaEstadoBanner).
+    // O botão "Iniciar Serviço" aparece quando podeIniciar (permitido em PREVIA_INICIADA).
+    if (estado === 'PREVIA_INICIADA' && podeIniciar) {
+      return (
+        <section className="mt-4 rounded border border-cbmes-red/40 bg-cbmes-red/5 p-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-cbmes-red">Pronto para iniciar serviço</h3>
+              <p className="text-xs text-slate-700">
+                Quando os ajustes pré-turno estiverem revisados, clique para congelar a Prévia
+                e abrir as Conferências.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onIniciar}
+              disabled={inflight}
+              className="rounded-button bg-cbmes-red px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {inflight ? '…' : 'Iniciar Serviço'}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onIniciar}
-            disabled={inflight}
-            className="rounded-button bg-cbmes-red px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-          >
-            {inflight ? '…' : 'Iniciar Serviço'}
-          </button>
-        </div>
-      </section>
-    );
+        </section>
+      );
+    }
+    return null;
   }
 
   return (
@@ -1332,7 +1418,9 @@ function ServicoCard({
       <section className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-amber-900">
         <div className="flex items-baseline justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold">⚠️ Serviço {ESTADO_SERVICO_LABEL[estado]}</h3>
+            <h3 className="text-sm font-semibold">
+              ⚙️ Serviço — {ESTADO_SERVICO_LABEL[estado]}
+            </h3>
             <p className="text-xs">
               {previa.iniciadoEm && (
                 <>
@@ -1347,81 +1435,24 @@ function ServicoCard({
                   {previa.encerradoPorNf && <> por NF {previa.encerradoPorNf}</>}.{' '}
                 </>
               )}
-              {!isEncerrado && (
-                <>Edição da Prévia bloqueada. Use Conferências e Alterações Diversas.</>
-              )}
             </p>
           </div>
-          {!isEncerrado && podeIniciar && (
+          {!isEncerrado && isAdmin && (
             <button
               type="button"
-              onClick={() => onEncerrar(false)}
+              onClick={() => void onEncerrar()}
               disabled={inflight}
               className="rounded-button bg-cbmes-red px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+              title="Encerramento manual restrito a admin (override)"
             >
-              Encerrar Serviço
+              Encerrar Serviço (admin)
             </button>
           )}
         </div>
       </section>
 
-      {!isEncerrado && (
-        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-          <Link
-            to={`/servico/${previa.data}/conferencia-equipe`}
-            className="block rounded border border-cbmes-blue/30 bg-white p-3 hover:bg-cbmes-blue/5"
-          >
-            <h4 className="text-sm font-semibold text-cbmes-blue">👥 Conferência da Equipe</h4>
-            <p className="mt-1 text-xs text-slate-600">
-              Marcar presença/substituição/ausência da equipe escalada.
-            </p>
-          </Link>
-          <ConferenciaViaturasMenu data={previa.data} composicaoMf={previa.composicaoMf} />
-          <Link
-            to={`/servico/${previa.data}/ideo`}
-            className="block rounded border border-cbmes-blue/30 bg-white p-3 hover:bg-cbmes-blue/5 md:col-span-2"
-          >
-            <h4 className="text-sm font-semibold text-cbmes-blue">✅ IDEO (atestar Fiscal)</h4>
-            <p className="mt-1 text-xs text-slate-600">
-              Marcar IDEO ABTS / RESGATE como realizada/não realizada e gerar texto institucional do
-              Fiscal para a Parte Diária.
-            </p>
-            {previa.textoAtestadoIdeoFiscal && (
-              <p className="mt-1 text-[10px] uppercase tracking-wide text-emerald-700">
-                ✓ texto do Fiscal pronto
-              </p>
-            )}
-          </Link>
-        </div>
-      )}
-
-      {/* S6h/2.1 — Botão "Preencher Mapa Força" (mock até S9) */}
-      {podePreencherMf && podeIniciar && (
-        <section className="mt-3 rounded border-2 border-emerald-500 bg-emerald-50 p-3">
-          <div className="flex items-baseline justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-emerald-900">
-                ✓ Equipes e viaturas conferidas
-              </h3>
-              <p className="text-xs text-emerald-800">
-                Pronto para preencher o Mapa Força. (Escrita automatizada chega no S9.)
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={handlePreencherMf}
-              disabled={preenchendoMf}
-              className="rounded-button bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-            >
-              {preenchendoMf ? 'Preenchendo…' : '🗺️ Preencher Mapa Força'}
-            </button>
-          </div>
-        </section>
-      )}
-      {mfMsg && (
-        <div className="mt-2 rounded border border-emerald-300 bg-emerald-50 p-2 text-xs text-emerald-900">
-          {mfMsg}
-        </div>
+      {isPosIniciado && (
+        <ProgressoConferenciasBox previa={previa} onSaved={onSaved} isAdmin={isAdmin} />
       )}
 
       <AlteracoesDiversasCard
@@ -1435,35 +1466,383 @@ function ServicoCard({
   );
 }
 
-function ConferenciaViaturasMenu({
-  data,
-  composicaoMf,
+/**
+ * S0.x — Box principal pós Iniciar Serviço com 3 sub-boxes:
+ * Conferência de Equipe, Conferência de Viatura, IDEO + botão dinâmico
+ * "Preencher / Atualizar Mapa Força CIODES" (com dirty-state).
+ */
+function ProgressoConferenciasBox({
+  previa,
+  onSaved,
+  isAdmin,
 }: {
-  data: string;
-  composicaoMf: PreviaDoDia['composicaoMf'];
+  previa: MapaForcaDoDia;
+  onSaved: () => void;
+  isAdmin: boolean;
 }) {
-  const viaturas = composicaoMf
-    .filter((c) => c.vtrPrefixo && c.vtrStatus === 'DISPONIVEL')
-    .map((c) => c.vtrPrefixo!);
+  const estado = previa.estadoServico;
+  const podePreencherInicial = estado === 'VIATURA_CONFERIDA';
+  const jaPreencheu = estado === 'PREENCHENDO_MF';
+  const dirtyDesde = previa.mfDirtyDesde;
+  const podeAtualizar = jaPreencheu && Boolean(dirtyDesde);
+
+  const [inflight, setInflight] = useState(false);
+  const [mfMsg, setMfMsg] = useState<string | null>(null);
+
+  const handlePreencher = async () => {
+    setInflight(true);
+    setMfMsg(null);
+    try {
+      const r = await api.servicoPreencherMf(previa.data);
+      setMfMsg(r.mensagem);
+      onSaved();
+    } catch (e) {
+      setMfMsg(e instanceof ApiError ? e.message : 'Erro ao preencher MF');
+    } finally {
+      setInflight(false);
+    }
+  };
+
+  const handleAtualizar = async () => {
+    setInflight(true);
+    setMfMsg(null);
+    try {
+      const r = await api.servicoAtualizarMf(previa.data);
+      setMfMsg(r.mensagem);
+      onSaved();
+    } catch (e) {
+      setMfMsg(e instanceof ApiError ? e.message : 'Erro ao atualizar MF');
+    } finally {
+      setInflight(false);
+    }
+  };
 
   return (
-    <div className="rounded border border-cbmes-blue/30 bg-white p-3">
-      <h4 className="text-sm font-semibold text-cbmes-blue">🚒 Conferência das Viaturas</h4>
-      {viaturas.length === 0 ? (
-        <p className="mt-1 text-xs text-slate-500">Nenhuma viatura disponível para conferir.</p>
-      ) : (
-        <ul className="mt-2 flex flex-wrap gap-1">
-          {viaturas.map((v) => (
-            <li key={v}>
-              <Link
-                to={`/servico/${data}/conferencia-viatura/${encodeURIComponent(v)}`}
-                className="rounded-button border border-cbmes-blue px-2 py-1 text-xs text-cbmes-blue hover:bg-cbmes-blue/10"
+    <>
+      <section className="mt-3 rounded border border-cbmes-blue/30 bg-white p-3">
+        <h3 className="mb-3 text-sm font-semibold text-cbmes-blue">
+          📋 Conferências e IDEO do dia
+        </h3>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <ConferenciaEquipeBox previa={previa} />
+          <ConferenciaViaturaBox previa={previa} />
+          <IdeoBox previa={previa} />
+        </div>
+      </section>
+
+      {/* Botão dinâmico Preencher / Atualizar Mapa Força CIODES */}
+      {(podePreencherInicial || jaPreencheu) && (
+        <section
+          className={`mt-3 rounded border-2 p-3 ${
+            podeAtualizar
+              ? 'border-amber-500 bg-amber-50'
+              : jaPreencheu
+                ? 'border-slate-300 bg-slate-50'
+                : 'border-emerald-500 bg-emerald-50'
+          }`}
+        >
+          <div className="flex items-baseline justify-between gap-3">
+            <div>
+              {podeAtualizar ? (
+                <>
+                  <h3 className="text-sm font-semibold text-amber-900">
+                    🔄 Mapa Força CIODES desatualizado
+                  </h3>
+                  <p className="text-xs text-amber-800">
+                    Houve alteração estrutural (troca, atestado ou mudança de viatura) desde o
+                    último preenchimento. Clique para reenviar ao MF CIODES.
+                  </p>
+                </>
+              ) : jaPreencheu ? (
+                <>
+                  <h3 className="text-sm font-semibold text-slate-700">
+                    ✓ Mapa Força CIODES preenchido (sincronizado)
+                  </h3>
+                  <p className="text-xs text-slate-600">
+                    {previa.mfPreenchidoEm && (
+                      <>Última atualização: {new Date(previa.mfPreenchidoEm).toLocaleString('pt-BR')}.</>
+                    )}{' '}
+                    Aguarda nova alteração estrutural para reativar.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-sm font-semibold text-emerald-900">
+                    ✓ Equipes, viaturas e IDEO conferidas
+                  </h3>
+                  <p className="text-xs text-emerald-800">
+                    Pronto para preencher o Mapa Força CIODES. (Escrita automatizada chega no S9.)
+                  </p>
+                </>
+              )}
+            </div>
+            {podeAtualizar ? (
+              <button
+                type="button"
+                onClick={() => void handleAtualizar()}
+                disabled={inflight}
+                className="rounded-button bg-amber-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
               >
-                {v}
+                {inflight ? 'Atualizando…' : '🔄 Atualizar Mapa Força CIODES'}
+              </button>
+            ) : jaPreencheu ? (
+              <button
+                type="button"
+                disabled
+                className="rounded-button bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-500"
+                title="Aguarda alteração estrutural para reativar"
+              >
+                Mapa Força CIODES preenchido
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void handlePreencher()}
+                disabled={inflight}
+                className="rounded-button bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {inflight ? 'Preenchendo…' : '🗺️ Preencher Mapa Força CIODES'}
+              </button>
+            )}
+          </div>
+        </section>
+      )}
+      {mfMsg && (
+        <div className="mt-2 rounded border border-cbmes-blue/30 bg-cbmes-blue/5 p-2 text-xs text-cbmes-blue">
+          ⚠️ {mfMsg}
+        </div>
+      )}
+
+      {/* Atalho explícito para Parte Diária — útil mesmo em estados intermediários */}
+      {!isAdmin && null}
+    </>
+  );
+}
+
+const STATUS_EQUIPE_BADGE: Record<string, { bg: string; text: string; label: string }> = {
+  nao_conferida: { bg: 'bg-rose-100 border-rose-300', text: 'text-rose-700', label: 'Não conferida' },
+  em_conferencia: {
+    bg: 'bg-amber-100 border-amber-300',
+    text: 'text-amber-800',
+    label: 'Em conferência',
+  },
+  conferida: {
+    bg: 'bg-emerald-100 border-emerald-300',
+    text: 'text-emerald-800',
+    label: 'Conferida',
+  },
+  conferida_com_alteracao: {
+    bg: 'bg-cyan-100 border-cyan-300',
+    text: 'text-cyan-800',
+    label: 'Conferida c/ alteração',
+  },
+};
+
+/**
+ * S0.x — Box "Conferência de Equipe" com cards por recurso colorindo o estado.
+ * Cada recurso (RESGATE 01, ABTS 01, ATB...) tem seu card. Clique navega
+ * para `/servico/:data/conferencia-equipe?recurso=X`.
+ */
+function ConferenciaEquipeBox({ previa }: { previa: MapaForcaDoDia }) {
+  const [marcacoes, setMarcacoes] = useState<
+    { recurso: string; statusConferencia: string; substitutoNf?: string }[]
+  >([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .conferenciaEquipeGet(previa.data)
+      .then((r) => {
+        if (!cancelled) setMarcacoes(r);
+      })
+      .catch(() => {
+        /* noop — box mostra "não conferida" para tudo */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [previa.data, previa.estadoServico, previa.mfDirtyDesde]);
+
+  const recursosComEquipe = previa.composicaoMf.filter(
+    (c) => c.chefe || c.motorista || (c.operadores && c.operadores.length > 0),
+  );
+
+  const statusPorRecurso = new Map<string, string>();
+  for (const m of marcacoes) {
+    const list = recursosComEquipe.filter((r) => r.recurso === m.recurso);
+    if (list.length === 0) continue;
+    const todos = marcacoes.filter((x) => x.recurso === m.recurso);
+    const algumPendente = todos.some((x) => x.statusConferencia === 'pendente');
+    const temSubstituicao = todos.some(
+      (x) => x.statusConferencia === 'substituido' || x.statusConferencia === 'ausente',
+    );
+    const status = algumPendente
+      ? 'em_conferencia'
+      : temSubstituicao
+        ? 'conferida_com_alteracao'
+        : 'conferida';
+    statusPorRecurso.set(m.recurso, status);
+  }
+
+  return (
+    <div className="rounded border border-slate-200 bg-white p-3">
+      <h4 className="text-xs font-semibold uppercase text-cbmes-blue">
+        👥 Conferência de Equipe
+      </h4>
+      <ul className="mt-2 space-y-1">
+        {recursosComEquipe.map((c) => {
+          const status = statusPorRecurso.get(c.recurso) ?? 'nao_conferida';
+          const badge = STATUS_EQUIPE_BADGE[status]!;
+          return (
+            <li key={c.recurso}>
+              <Link
+                to={`/servico/${previa.data}/conferencia-equipe?recurso=${encodeURIComponent(c.recurso)}`}
+                className={`flex items-center justify-between rounded border px-2 py-1.5 text-xs hover:brightness-95 ${badge.bg} ${badge.text}`}
+              >
+                <span className="font-medium">{c.recurso}</span>
+                <span className="text-[10px] uppercase">{badge.label}</span>
               </Link>
             </li>
-          ))}
-        </ul>
+          );
+        })}
+      </ul>
+      {recursosComEquipe.length === 0 && (
+        <p className="mt-2 text-xs italic text-slate-500">Nenhum recurso com equipe escalada.</p>
+      )}
+    </div>
+  );
+}
+
+const STATUS_VIATURA_BOX_BADGE: Record<string, { bg: string; text: string; label: string }> = {
+  nao_conferida: { bg: 'bg-rose-100 border-rose-300', text: 'text-rose-700', label: 'Não conferida' },
+  conferida: {
+    bg: 'bg-emerald-100 border-emerald-300',
+    text: 'text-emerald-800',
+    label: 'Conferida',
+  },
+  baixada: { bg: 'bg-slate-100 border-slate-300', text: 'text-slate-600', label: 'Baixada (pulada)' },
+};
+
+/**
+ * S0.x — Box "Conferência de Viatura" com cards por viatura colorindo o estado.
+ * Viaturas BAIXADA/EMPRESTADA aparecem como "puladas" (não exigem conferência).
+ */
+function ConferenciaViaturaBox({ previa }: { previa: MapaForcaDoDia }) {
+  const [conferidas, setConferidas] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .conferenciaViaturaGet(previa.data)
+      .then((r) => {
+        if (!cancelled) setConferidas(r.map((c) => c.vtrPrefixo));
+      })
+      .catch(() => {
+        /* noop */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [previa.data, previa.estadoServico, previa.mfDirtyDesde]);
+
+  const viaturas = previa.composicaoMf.filter((c) => c.vtrPrefixo);
+  const conferidasSet = new Set(conferidas);
+
+  return (
+    <div className="rounded border border-slate-200 bg-white p-3">
+      <h4 className="text-xs font-semibold uppercase text-cbmes-blue">
+        🚒 Conferência de Viatura
+      </h4>
+      <ul className="mt-2 space-y-1">
+        {viaturas.map((c) => {
+          const baixada = c.vtrStatus !== 'DISPONIVEL';
+          const status = baixada
+            ? 'baixada'
+            : conferidasSet.has(c.vtrPrefixo!)
+              ? 'conferida'
+              : 'nao_conferida';
+          const badge = STATUS_VIATURA_BOX_BADGE[status]!;
+          if (baixada) {
+            return (
+              <li
+                key={c.vtrPrefixo}
+                className={`flex items-center justify-between rounded border px-2 py-1.5 text-xs ${badge.bg} ${badge.text}`}
+              >
+                <span className="font-medium">{c.vtrPrefixo}</span>
+                <span className="text-[10px] uppercase">{badge.label}</span>
+              </li>
+            );
+          }
+          return (
+            <li key={c.vtrPrefixo}>
+              <Link
+                to={`/servico/${previa.data}/conferencia-viatura/${encodeURIComponent(c.vtrPrefixo!)}`}
+                className={`flex items-center justify-between rounded border px-2 py-1.5 text-xs hover:brightness-95 ${badge.bg} ${badge.text}`}
+              >
+                <span className="font-medium">{c.vtrPrefixo}</span>
+                <span className="text-[10px] uppercase">{badge.label}</span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+      {viaturas.length === 0 && (
+        <p className="mt-2 text-xs italic text-slate-500">Nenhuma viatura no Mapa Força do dia.</p>
+      )}
+    </div>
+  );
+}
+
+const STATUS_IDEO_BADGE: Record<string, { bg: string; text: string; label: string }> = {
+  PENDENTE: { bg: 'bg-rose-100 border-rose-300', text: 'text-rose-700', label: 'Pendente' },
+  REALIZADA_SEM_ALTERACAO: {
+    bg: 'bg-emerald-100 border-emerald-300',
+    text: 'text-emerald-800',
+    label: 'Realizada s/ alt.',
+  },
+  REALIZADA_COM_ALTERACAO: {
+    bg: 'bg-cyan-100 border-cyan-300',
+    text: 'text-cyan-800',
+    label: 'Realizada c/ alt.',
+  },
+  NAO_REALIZADA: {
+    bg: 'bg-amber-100 border-amber-300',
+    text: 'text-amber-800',
+    label: 'Não realizada',
+  },
+};
+
+/**
+ * S0.x — Box "IDEO" com cards ABTS / RESGATE colorindo o estado (4 estados).
+ */
+function IdeoBox({ previa }: { previa: MapaForcaDoDia }) {
+  const tipos = ['ABTS', 'RESGATE'] as const;
+  const statusByTipo = new Map(previa.ideoStatus.map((s) => [s.tipo, s.estado ?? 'PENDENTE']));
+
+  return (
+    <div className="rounded border border-slate-200 bg-white p-3">
+      <h4 className="text-xs font-semibold uppercase text-cbmes-blue">✅ IDEO (Chefe atestar)</h4>
+      <ul className="mt-2 space-y-1">
+        {tipos.map((tipo) => {
+          const estado = statusByTipo.get(tipo) ?? 'PENDENTE';
+          const badge = STATUS_IDEO_BADGE[estado]!;
+          return (
+            <li key={tipo}>
+              <Link
+                to={`/servico/${previa.data}/ideo?tipo=${tipo}`}
+                className={`flex items-center justify-between rounded border px-2 py-1.5 text-xs hover:brightness-95 ${badge.bg} ${badge.text}`}
+              >
+                <span className="font-medium">IDEO {tipo}</span>
+                <span className="text-[10px] uppercase">{badge.label}</span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+      {previa.textoAtestadoIdeoFiscal && (
+        <p className="mt-2 rounded bg-slate-50 p-2 text-[10px] italic text-slate-700">
+          ✓ Texto institucional: {previa.textoAtestadoIdeoFiscal}
+        </p>
       )}
     </div>
   );
@@ -1478,7 +1857,7 @@ function AlteracoesDiversasCard({
 }: {
   data: string;
   alteracoes: AlteracaoDiversa[];
-  composicaoMf: PreviaDoDia['composicaoMf'];
+  composicaoMf: MapaForcaDoDia['composicaoMf'];
   canRegistrar: boolean;
   onSaved: () => void;
 }) {
@@ -1559,7 +1938,7 @@ function ModalAlteracaoDiversa({
   onCancel,
 }: {
   data: string;
-  composicaoMf: PreviaDoDia['composicaoMf'];
+  composicaoMf: MapaForcaDoDia['composicaoMf'];
   onSaved: () => void;
   onCancel: () => void;
 }) {
@@ -2500,7 +2879,7 @@ function AtivarRecursoCard({
   onSaved,
 }: {
   data: string;
-  previa: PreviaDoDia;
+  previa: MapaForcaDoDia;
   isReadOnly: boolean;
   onSaved: () => void;
 }) {
@@ -2565,7 +2944,7 @@ function AtivarRecursoCard({
         },
       ];
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/previa/${data}/ajustes`,
+        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`,
         {
           method: 'PUT',
           credentials: 'include',
@@ -2590,7 +2969,7 @@ function AtivarRecursoCard({
       const ajustes = extractAjustes(previa);
       const novas = ajustes.ativacoesRecurso.filter((_, i) => i !== idx);
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/previa/${data}/ajustes`,
+        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`,
         {
           method: 'PUT',
           credentials: 'include',
@@ -2737,5 +3116,409 @@ function AtivarRecursoCard({
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * S0.x/rename-mapa-forca — Banner que controla a transição de estado da Prévia.
+ *
+ * Mostra:
+ * - Estado atual (NAO_INICIADO / PREVIA_INICIADA / INICIADO+).
+ * - Botão "Iniciar Prévia do Mapa Força" se NAO_INICIADO + (Fiscal escalado OR admin).
+ * - Botão "Cancelar Prévia" se PREVIA_INICIADA + (iniciador OR admin).
+ * - Mensagem informativa quando o usuário não pode interagir naquele estado.
+ */
+function PreviaEstadoBanner({
+  previa,
+  podeIniciarPrevia,
+  podeCancelarPrevia,
+  inflight,
+  onIniciarPrevia,
+  onCancelarPrevia,
+}: {
+  previa: MapaForcaDoDia;
+  podeIniciarPrevia: boolean;
+  podeCancelarPrevia: boolean;
+  inflight: boolean;
+  onIniciarPrevia: () => void | Promise<void>;
+  onCancelarPrevia: () => void | Promise<void>;
+}) {
+  const estado = previa.estadoServico;
+  if (estado === 'NAO_INICIADO') {
+    return (
+      <div className="mt-3 rounded border border-cbmes-blue/30 bg-cbmes-blue/5 p-3 text-sm text-cbmes-blue">
+        <p className="font-semibold">📖 Mapa Força — Não iniciada</p>
+        <p className="mt-1 text-xs text-slate-700">
+          Nenhuma intervenção foi feita nos dados importados. Visualização somente leitura.
+        </p>
+        {podeIniciarPrevia ? (
+          <>
+            <p className="mt-1 text-xs text-slate-700">
+              Você é o Fiscal escalado deste dia. Clique abaixo para abrir a edição da
+              <strong> Prévia do Mapa Força</strong> (ajustes pré-turno na passagem de serviço).
+            </p>
+            <button
+              type="button"
+              onClick={() => void onIniciarPrevia()}
+              disabled={inflight}
+              className="mt-2 rounded-button bg-cbmes-red px-4 py-2 text-sm font-semibold text-white hover:bg-cbmes-red/90 disabled:opacity-60"
+            >
+              {inflight ? 'Iniciando…' : 'Iniciar Prévia do Mapa Força'}
+            </button>
+          </>
+        ) : (
+          <p className="mt-1 text-xs italic text-slate-600">
+            Aguardando o Fiscal escalado iniciar a Prévia para liberar a edição.
+            {previa.fiscal?.militarResolvido && (
+              <>
+                {' '}
+                Fiscal: <strong>{previa.fiscal.militarResolvido.posto}{' '}
+                {previa.fiscal.militarResolvido.nomeGuerra ??
+                  previa.fiscal.militarResolvido.nome.split(' ')[0]}</strong> (NF{' '}
+                {previa.fiscal.militarNf}).
+              </>
+            )}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  if (estado === 'PREVIA_INICIADA') {
+    return (
+      <div className="mt-3 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+        <p className="font-semibold">
+          ✏️ Mapa Força — Em prévia
+          {previa.previaIniciadaPorNf && (
+            <span className="ml-2 text-xs font-normal">
+              · iniciada por NF {previa.previaIniciadaPorNf}
+            </span>
+          )}
+        </p>
+        {podeCancelarPrevia ? (
+          <>
+            <p className="mt-1 text-xs">
+              Faça os ajustes necessários abaixo. Os ajustes ficam <strong>salvos
+              automaticamente</strong> a cada alteração e o Mapa Força permanece em
+              <strong> "Em prévia"</strong> até você clicar em <strong>"Iniciar Serviço"</strong>,
+              quando os dados são congelados e ficam disponíveis para o preenchimento do
+              Mapa Força CIODES e da Parte Diária.
+            </p>
+            <button
+              type="button"
+              onClick={() => void onCancelarPrevia()}
+              disabled={inflight}
+              className="mt-2 rounded-button border border-amber-700 bg-white px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-60"
+            >
+              {inflight ? 'Cancelando…' : 'Cancelar Prévia (volta a read-only)'}
+            </button>
+          </>
+        ) : (
+          <p className="mt-1 text-xs italic">
+            Você visualiza esta Prévia em modo leitura — apenas o Fiscal que iniciou (ou admin)
+            pode editá-la.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  if (estado === 'ENCERRADO') {
+    return (
+      <div className="mt-3 rounded border border-slate-300 bg-slate-50 p-3 text-sm text-slate-700">
+        <p className="font-semibold">🔒 Serviço encerrado</p>
+        <p className="mt-1 text-xs">
+          Encerrado pela passagem de serviço. Dados arquivados — consulte a Parte Diária do dia
+          para o histórico completo.
+        </p>
+      </div>
+    );
+  }
+
+  // INICIADO em diante (incl. EQUIPE_CONFERIDA, VIATURA_CONFERIDA, PREENCHENDO_MF):
+  // serviço em andamento; alterações vão para a Parte Diária / livro / MF CIODES.
+  return (
+    <div className="mt-3 rounded border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
+      <p className="font-semibold">
+        🚒 Serviço Iniciado — em andamento
+      </p>
+      <p className="mt-1 text-xs">
+        A Prévia foi congelada e os dados estão disponíveis para preenchimento do Mapa Força
+        CIODES (não-implementado) e da Parte Diária. <strong>Toda alteração</strong> a partir
+        deste momento deve constar em livro na seção específica do tipo de alteração; alterações
+        em recursos exigem também atualização no Mapa Força CIODES.
+      </p>
+      <Link
+        to={`/parte-diaria?data=${previa.data}`}
+        className="mt-3 inline-block rounded-button bg-cbmes-blue px-4 py-2 text-sm font-semibold text-white hover:bg-cbmes-blue/90"
+      >
+        📑 Editar Parte Diária do dia
+      </Link>
+    </div>
+  );
+}
+
+/**
+ * S0.x/fixes-3 — Seção read-only que lista trocas vindas da planilha de
+ * Trocas Autorizadas. Antes essas trocas apareciam misturadas com as
+ * manuais no `state.trocas`, e cada save duplicava (loop infinito de
+ * concatenação). Agora ficam isoladas aqui, fora do estado editável.
+ */
+function TrocasAutorizadasReadOnly({
+  trocas,
+}: {
+  trocas: MapaForcaDoDia['trocas'];
+}) {
+  if (trocas.length === 0) return null;
+  return (
+    <details className="mt-4 rounded border border-cbmes-blue/30 bg-cbmes-blue/5 p-3">
+      <summary className="cursor-pointer text-sm font-semibold text-cbmes-blue">
+        📜 Trocas Autorizadas (planilha) — {trocas.length} ato(s)
+      </summary>
+      <p className="mt-1 text-[11px] italic text-slate-600">
+        Trocas vindas da planilha externa de Trocas Autorizadas. Read-only —
+        para alterar, edite a planilha. Não duplicam ao salvar ajustes.
+      </p>
+      <ul className="mt-2 space-y-1">
+        {trocas.map((t, i) => (
+          <li
+            key={`autorizada-${i}-${t.substituidoNf ?? t.substituidoRaw}`}
+            className="rounded border border-cbmes-blue/20 bg-white p-2 text-xs"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span>
+                <strong>{t.substituidoRaw}</strong>
+                {t.substituidoNf && <span className="ml-1 text-slate-500">(NF {t.substituidoNf})</span>}
+                {' → '}
+                <strong>{t.substitutoRaw}</strong>
+                {t.substitutoNf && <span className="ml-1 text-slate-500">(NF {t.substitutoNf})</span>}
+              </span>
+              <span className="rounded-full bg-cbmes-blue/15 px-2 py-0.5 text-[10px] font-bold uppercase text-cbmes-blue">
+                Autorizada
+              </span>
+            </div>
+            {(t.funcao || t.numeroEdocs) && (
+              <p className="mt-0.5 text-[10px] text-slate-500">
+                {t.funcao && <>Função: {t.funcao}</>}
+                {t.funcao && t.numeroEdocs && ' · '}
+                {t.numeroEdocs && <>E-Docs: {t.numeroEdocs}</>}
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/**
+ * S0.x/fixes-3 — Modal de troca de Chefe de Operações.
+ * Lista militares habilitados na planilha externa de ChOp e permite escolher
+ * um para substituir o ChOp escalado do dia. Persiste via PUT
+ * /mapa-forca/:data/ajustes em `overridesChefeOperacoes`.
+ */
+function ModalSwapChefeOperacoes({
+  data,
+  previa,
+  onClose,
+  onSaved,
+}: {
+  data: string;
+  previa: MapaForcaDoDia;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [habilitados, setHabilitados] = useState<
+    import('@/lib/api').ChefeOperacoesHabilitado[]
+  >([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [filtro, setFiltro] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .chefesOperacoesHabilitados()
+      .then((r) => {
+        if (!cancelled) {
+          setHabilitados(r);
+          setError(null);
+        }
+      })
+      .catch((e) => {
+        if (!cancelled)
+          setError(e instanceof ApiError ? e.message : 'Erro ao carregar habilitados ChOp');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const overrideAtivo = previa.overridesChefeOperacoes.find((o) => o.data === data);
+  const chefeAtual = previa.composicaoMf.find((c) => c.recurso === 'CHEFE DE OPERAÇÕES')?.chefe;
+
+  const persistir = async (
+    novosOverrides: MapaForcaDoDia['overridesChefeOperacoes'],
+  ): Promise<void> => {
+    setSaving(true);
+    setError(null);
+    try {
+      const ajustes = extractAjustes(previa);
+      await fetch(
+        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`,
+        {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...ajustes, overridesChefeOperacoes: novosOverrides }),
+        },
+      ).then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      });
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao salvar override');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSelecionar = async (nf: string): Promise<void> => {
+    const novos = previa.overridesChefeOperacoes.filter((o) => o.data !== data);
+    novos.push({ data, novoChefeNf: nf });
+    await persistir(novos);
+  };
+
+  const handleDesfazer = async (): Promise<void> => {
+    const novos = previa.overridesChefeOperacoes.filter((o) => o.data !== data);
+    await persistir(novos);
+  };
+
+  const termo = filtro.trim().toLowerCase();
+  const filtrados = termo
+    ? habilitados.filter(
+        (h) =>
+          h.nf.includes(termo) ||
+          h.nomeGuerra.toLowerCase().includes(termo) ||
+          h.nome.toLowerCase().includes(termo) ||
+          h.posto.toLowerCase().includes(termo),
+      )
+    : habilitados;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-[90vh] w-full max-w-md overflow-hidden rounded bg-white shadow-xl"
+      >
+        <header className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <div>
+            <h2 className="text-base font-semibold text-cbmes-blue">
+              Trocar Chefe de Operações
+            </h2>
+            {chefeAtual?.militarResolvido && (
+              <p className="text-xs text-slate-600">
+                Atual: <strong>{chefeAtual.militarResolvido.posto}{' '}
+                {chefeAtual.militarResolvido.nomeGuerra ??
+                  chefeAtual.militarResolvido.nome.split(' ')[0]}</strong> (NF{' '}
+                {chefeAtual.militarResolvido.nf})
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded border border-slate-300 px-2 py-1 text-sm text-slate-600 hover:bg-slate-50"
+          >
+            ×
+          </button>
+        </header>
+
+        <div className="p-4">
+          {overrideAtivo && (
+            <div className="mb-3 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+              ⚠ Override ativo para este dia (NF {overrideAtivo.novoChefeNf}).{' '}
+              <button
+                type="button"
+                onClick={() => void handleDesfazer()}
+                disabled={saving}
+                className="underline hover:no-underline disabled:opacity-50"
+              >
+                ↶ Desfazer override
+              </button>
+            </div>
+          )}
+
+          <input
+            type="search"
+            value={filtro}
+            onChange={(e) => setFiltro(e.target.value)}
+            placeholder="Filtrar por NF, posto ou nome…"
+            className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+            autoFocus
+          />
+
+          {loading && <p className="mt-3 text-center text-sm text-slate-500">Carregando…</p>}
+          {error && (
+            <p
+              role="alert"
+              className="mt-3 rounded border border-feedback-error/30 bg-feedback-error/10 p-2 text-xs text-feedback-error"
+            >
+              {error}
+            </p>
+          )}
+
+          {!loading && filtrados.length === 0 && (
+            <p className="mt-3 text-center text-sm text-slate-500">
+              {termo ? 'Nenhum habilitado encontrado.' : 'Planilha de ChOp vazia.'}
+            </p>
+          )}
+
+          {!loading && filtrados.length > 0 && (
+            <ul className="mt-3 max-h-[50vh] overflow-y-auto rounded border border-slate-200">
+              {filtrados.map((h) => {
+                const isOverrideAtual = overrideAtivo?.novoChefeNf === h.nf;
+                const isAtual = chefeAtual?.militarResolvido?.nf === h.nf;
+                return (
+                  <li
+                    key={h.nf}
+                    className="border-b border-slate-100 last:border-0"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => void handleSelecionar(h.nf)}
+                      disabled={saving || isAtual}
+                      className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition hover:bg-cbmes-blue/5 disabled:cursor-not-allowed disabled:opacity-50 ${
+                        isOverrideAtual ? 'bg-amber-50' : ''
+                      }`}
+                    >
+                      <span>
+                        <strong>{h.posto || '(sem posto)'} {h.nomeGuerra}</strong>
+                        <span className="ml-2 text-xs text-slate-500">NF {h.nf}</span>
+                      </span>
+                      {isAtual && (
+                        <span className="text-[10px] uppercase text-slate-500">atual</span>
+                      )}
+                      {isOverrideAtual && (
+                        <span className="text-[10px] uppercase text-amber-700">override ativo</span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

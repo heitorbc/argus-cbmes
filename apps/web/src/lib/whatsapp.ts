@@ -1,4 +1,4 @@
-import type { LetraEquipe, PreviaDoDia, PreviaTripulacaoEntry } from '@argus/shared-types';
+import type { LetraEquipe, MapaForcaDoDia, TripulacaoEntry } from '@argus/shared-types';
 import { periodoToLabel } from './periodo-troca';
 
 /**
@@ -71,7 +71,7 @@ function statusInline(status?: string | null): string {
   return ` ***#${tagged}#***`;
 }
 
-function nomeMilitar(t: PreviaTripulacaoEntry): string {
+function nomeMilitar(t: TripulacaoEntry): string {
   if (t.militarResolvido) {
     const nome = t.militarResolvido.nomeGuerra ?? t.militarResolvido.nome.split(' ')[0];
     return `${t.militarResolvido.posto} ${nome}`;
@@ -81,9 +81,9 @@ function nomeMilitar(t: PreviaTripulacaoEntry): string {
 
 /** Agrupa a tripulação por viatura, preservando ordem original. */
 function agruparPorViatura(
-  tripulacao: PreviaTripulacaoEntry[],
-): Map<string, PreviaTripulacaoEntry[]> {
-  const m = new Map<string, PreviaTripulacaoEntry[]>();
+  tripulacao: TripulacaoEntry[],
+): Map<string, TripulacaoEntry[]> {
+  const m = new Map<string, TripulacaoEntry[]>();
   for (const t of tripulacao) {
     const k = t.viatura || '(sem viatura)';
     const arr = m.get(k) ?? [];
@@ -94,10 +94,10 @@ function agruparPorViatura(
 }
 
 /**
- * Função pura: PreviaDoDia → texto WhatsApp Markdown.
- * Usado no botão "Copiar para WhatsApp" na tela `/previa`.
+ * Função pura: MapaForcaDoDia → texto WhatsApp Markdown.
+ * Usado no botão "Copiar para WhatsApp" na tela `/mapa-forca/:data`.
  */
-export function formatPreviaParaWhatsapp(previa: PreviaDoDia): string {
+export function formatPreviaParaWhatsapp(previa: MapaForcaDoDia): string {
   const lines: string[] = [];
   lines.push('*PRÉVIA MAPA FORÇA*');
   if (previa.equipeNome) {

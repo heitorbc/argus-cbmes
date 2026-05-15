@@ -72,7 +72,7 @@ describe('canSeeSection — S6f matriz papel × seção', () => {
 describe('canAccessRoute — gate por URL', () => {
   it('rotas universais (não-mapeadas) sempre passam', () => {
     expect(canAccessRoute(['militar'], '/')).toBe(true);
-    expect(canAccessRoute(['militar'], '/previa')).toBe(true);
+    expect(canAccessRoute(['militar'], '/mapa-forca')).toBe(true);
     expect(canAccessRoute(['militar'], '/cadastros/fiscais')).toBe(true);
     expect(canAccessRoute(['militar'], '/cadastros/ideo')).toBe(true);
     expect(canAccessRoute(['militar'], '/servico/2026-05-09/conferencia-equipe')).toBe(true);

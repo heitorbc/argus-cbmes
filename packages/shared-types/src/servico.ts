@@ -2,10 +2,12 @@ import { z } from 'zod';
 import { STATUS_VIATURA } from './viatura.js';
 
 /**
- * Estados do Serviço do dia (S6b).
+ * Estados do Serviço do dia (S6b + S0.x/rename-mapa-forca).
  *
  * Transições válidas:
- *   NAO_INICIADO  → INICIADO  (Fiscal aperta "Iniciar Serviço")
+ *   NAO_INICIADO  → PREVIA_INICIADA  (Fiscal escalado/admin abre a edição da Prévia)
+ *   PREVIA_INICIADA → NAO_INICIADO  (cancelamento pelo iniciador ou admin)
+ *   PREVIA_INICIADA → INICIADO  (Fiscal aperta "Iniciar Serviço" após ajustes)
  *   INICIADO      → EQUIPE_CONFERIDA  (todas presenças marcadas)
  *   EQUIPE_CONFERIDA → VIATURA_CONFERIDA  (todas viaturas conferidas)
  *   VIATURA_CONFERIDA → PREENCHENDO_MF  (Fiscal abre escrita do MF — S9)
@@ -13,9 +15,14 @@ import { STATUS_VIATURA } from './viatura.js';
  *
  * Atalho permitido apenas para `admin`/`sargenteante`:
  *   {qualquer} → ENCERRADO  (override de emergência)
+ *
+ * A "Prévia do Mapa Força" designa exclusivamente o estado PREVIA_INICIADA —
+ * o ato do Fiscal escalado revisar e editar os dados do dia (composição,
+ * trocas, dispensas, ativações, etc.) antes do início do serviço.
  */
 export const ESTADO_SERVICO = [
   'NAO_INICIADO',
+  'PREVIA_INICIADA',
   'INICIADO',
   'EQUIPE_CONFERIDA',
   'VIATURA_CONFERIDA',
@@ -25,22 +32,41 @@ export const ESTADO_SERVICO = [
 export type EstadoServico = (typeof ESTADO_SERVICO)[number];
 
 export const ESTADO_SERVICO_LABEL: Record<EstadoServico, string> = {
-  NAO_INICIADO: 'Não iniciado',
-  INICIADO: 'Iniciado',
+  NAO_INICIADO: 'Não iniciada',
+  PREVIA_INICIADA: 'Em prévia',
+  INICIADO: 'Serviço Iniciado',
   EQUIPE_CONFERIDA: 'Equipe conferida',
   VIATURA_CONFERIDA: 'Viaturas conferidas',
-  PREENCHENDO_MF: 'Preenchendo MF',
-  ENCERRADO: 'Encerrado',
+  PREENCHENDO_MF: 'Preenchendo Mapa Força',
+  ENCERRADO: 'Encerrado (passagem de serviço)',
 };
 
 export const servicoEstadoSchema = z.object({
   data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   estado: z.enum(ESTADO_SERVICO),
+  previaIniciadaEm: z.string().optional(),
+  previaIniciadaPorNf: z.string().optional(),
   iniciadoEm: z.string().optional(),
   iniciadoPorNf: z.string().optional(),
   conferenciaEquipeEm: z.string().optional(),
   conferenciaViaturaEm: z.string().optional(),
   preenchendoMfEm: z.string().optional(),
+  /**
+   * S0.x — Timestamp do último preenchimento do Mapa Força CIODES (mock).
+   * Definido pela transição PREENCHENDO_MF; preservado entre atualizações.
+   */
+  mfPreenchidoEm: z.string().optional(),
+  /**
+   * S0.x — Dirty state do Mapa Força CIODES.
+   *
+   * `undefined` = MF sincronizado (botão "Mapa Força CIODES preenchido"
+   * inativo). ISO timestamp = houve alguma alteração estrutural após
+   * preencher (botão "Atualizar Mapa Força CIODES" ativo). Apenas ações
+   * estruturais marcam dirty (trocas, atestados criados durante serviço,
+   * mudança de status de viatura). Conferências rotineiras de KM/tanque
+   * sem mudança de status NÃO marcam.
+   */
+  mfDirtyDesde: z.string().optional(),
   encerradoEm: z.string().optional(),
   encerradoPorNf: z.string().optional(),
 });

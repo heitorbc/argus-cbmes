@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { NotFoundException } from '@nestjs/common';
+import { ServicoService } from '../servico/servico.service';
 import { AtestadosService } from './atestados.service';
 
 const NF1 = '3037509';
@@ -10,7 +11,7 @@ describe('AtestadosService (S6k)', () => {
   let svc: AtestadosService;
 
   beforeEach(() => {
-    svc = new AtestadosService();
+    svc = new AtestadosService(new ServicoService());
   });
 
   it('create gera id + timestamps', () => {

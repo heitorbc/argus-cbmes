@@ -62,7 +62,7 @@ export const ROUTE_TO_SECTION: Record<string, ModuloHome> = {
 /**
  * Verifica se o usuário pode acessar uma rota. Rotas não listadas em
  * `ROUTE_TO_SECTION` são consideradas universais (qualquer autenticado pode
- * — ex.: `/`, `/previa`, `/cadastros/fiscais`, `/cadastros/ideo`,
+ * — ex.: `/`, `/mapa-forca`, `/cadastros/fiscais`, `/cadastros/ideo`,
  * `/servico/:data/...`).
  *
  * Rotas com `:nf` ou outros params são reconhecidas pelo prefixo via

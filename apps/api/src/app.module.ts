@@ -15,10 +15,10 @@ import { HealthModule } from './modules/health/health.module';
 import { IdeoModule } from './modules/ideo/ideo.module';
 import { IntegracoesModule } from './modules/integracoes/integracoes.module';
 import { MapaForcaModule } from './modules/mapa-forca/mapa-forca.module';
+import { MapaForcaCiodesModule } from './modules/mapa-forca-ciodes/mapa-forca-ciodes.module';
 import { MateriaisModule } from './modules/materiais/materiais.module';
 import { NotasServicoModule } from './modules/notas-servico/notas-servico.module';
 import { ParteDiariaModule } from './modules/parte-diaria/parte-diaria.module';
-import { PreviaModule } from './modules/previa/previa.module';
 import { RecursosModule } from './modules/recursos/recursos.module';
 import { ServicoModule } from './modules/servico/servico.module';
 import { TrocasAutorizadasModule } from './modules/trocas-autorizadas/trocas-autorizadas.module';
@@ -45,10 +45,10 @@ import { ViaturasModule } from './modules/viaturas/viaturas.module';
     IdeoModule,
     IntegracoesModule,
     MapaForcaModule,
+    MapaForcaCiodesModule,
     MateriaisModule,
     NotasServicoModule,
     ParteDiariaModule,
-    PreviaModule,
     RecursosModule,
     ServicoModule,
     TrocasAutorizadasModule,

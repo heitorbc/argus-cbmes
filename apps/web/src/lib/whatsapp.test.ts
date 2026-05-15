@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { PreviaDoDia, PreviaTripulacaoEntry } from '@argus/shared-types';
+import type { MapaForcaDoDia, TripulacaoEntry } from '@argus/shared-types';
 import { formatPreviaParaWhatsapp } from './whatsapp';
 
 function tripulacao(
@@ -8,7 +8,7 @@ function tripulacao(
   funcao: string,
   posto: string,
   nomeGuerra: string,
-): PreviaTripulacaoEntry {
+): TripulacaoEntry {
   return {
     equipe,
     viatura,
@@ -25,7 +25,7 @@ function tripulacao(
   };
 }
 
-const previaCharlie: PreviaDoDia = {
+const previaCharlie: MapaForcaDoDia = {
   data: '2026-04-19',
   ano: 2026,
   mes: 4,
@@ -80,6 +80,7 @@ const previaCharlie: PreviaDoDia = {
   overridesMergulho: [],
   overridesParesRecursos: [],
   ativacoesRecurso: [],
+  overridesChefeOperacoes: [],
   composicaoAtualMf: [],
   ferias: [],
   chefesOperacoes: [],
@@ -132,7 +133,7 @@ describe('formatPreviaParaWhatsapp (S5/F7d)', () => {
   });
 
   it('mostra status inline (#BAIXADA#) quando vtr não é operacional', () => {
-    const previa: PreviaDoDia = {
+    const previa: MapaForcaDoDia = {
       ...previaCharlie,
       tripulacao: [tripulacao('C', 'TE 110', 'Ch/Mot', 'CB', 'DENIS')],
     };
@@ -141,7 +142,7 @@ describe('formatPreviaParaWhatsapp (S5/F7d)', () => {
   });
 
   it('lida com Prévia sem equipe escalada', () => {
-    const previa: PreviaDoDia = {
+    const previa: MapaForcaDoDia = {
       ...previaCharlie,
       equipe: null,
       equipeNome: null,
@@ -152,7 +153,7 @@ describe('formatPreviaParaWhatsapp (S5/F7d)', () => {
   });
 
   it('seções vazias têm placeholder explícito', () => {
-    const previa: PreviaDoDia = {
+    const previa: MapaForcaDoDia = {
       ...previaCharlie,
       trocas: [],
       escalaEspecial: {},

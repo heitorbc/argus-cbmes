@@ -11,11 +11,14 @@ import {
   type Viatura,
 } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 import { STATUS_VIATURA_BADGE } from '@/lib/status-viatura-style';
 
 export function ConferenciaViaturaPage() {
   const { data, vtrPrefixo } = useParams<{ data: string; vtrPrefixo: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.papeis.includes('admin') ?? false;
 
   const [viatura, setViatura] = useState<Viatura | null>(null);
   const [loading, setLoading] = useState(true);
@@ -108,10 +111,37 @@ export function ConferenciaViaturaPage() {
     setMateriaisOk(false);
   };
 
+  // S0.x — KM histórico: deriva o último KM registrado a partir do
+  // historicoKm (origem 'manual_admin' | 'conferencia' | 'ocorrencia') ou
+  // do kmAtual atual da viatura (fallback). Bloqueia decremento; admin
+  // pode forçar apenas com observação obrigatória.
+  const ultimoKm = (viatura?.historicoKm ?? []).reduce(
+    (acc, h) => Math.max(acc, h.kmRegistrado),
+    viatura?.kmAtual ?? 0,
+  );
+  const novoKmNum = kmAtual.trim() ? Number(kmAtual) : undefined;
+  const isDecremento = novoKmNum !== undefined && novoKmNum < ultimoKm;
+  const decrementoBloqueado = isDecremento && !isAdmin;
+  const decrementoExigeObservacao = isDecremento && isAdmin;
+  const observacaoFaltando = decrementoExigeObservacao && !observacao.trim();
+
   const handleSalvar = async () => {
     if (!data || !vtrPrefixo) return;
     if (mudarStatus && statusMudanca === 'BAIXADA' && !motivoBaixa.trim()) {
       setError('Motivo da baixa é obrigatório.');
+      return;
+    }
+    if (decrementoBloqueado) {
+      setError(
+        `KM informado (${novoKmNum}) é menor que o último registrado (${ultimoKm}). ` +
+          `Apenas admin pode forçar decremento.`,
+      );
+      return;
+    }
+    if (observacaoFaltando) {
+      setError(
+        `Decremento de KM (${novoKmNum} < ${ultimoKm}) exige observação obrigatória do admin.`,
+      );
       return;
     }
     setSaving(true);
@@ -125,7 +155,7 @@ export function ConferenciaViaturaPage() {
         statusMudanca: mudarStatus ? statusMudanca : undefined,
         motivoBaixa: mudarStatus && statusMudanca === 'BAIXADA' ? motivoBaixa : undefined,
       });
-      navigate(`/previa?data=${data}`);
+      navigate(`/mapa-forca/${data}`);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Erro ao salvar conferência');
     } finally {
@@ -138,7 +168,7 @@ export function ConferenciaViaturaPage() {
   return (
     <main className="min-h-screen bg-slate-50">
       <header className="bg-cbmes-red px-4 py-4 text-white">
-        <Link to={`/previa?data=${data}`} className="text-sm opacity-90 hover:opacity-100">
+        <Link to={`/mapa-forca/${data}`} className="text-sm opacity-90 hover:opacity-100">
           ← Voltar à Prévia
         </Link>
         <h1 className="mt-1 text-lg font-bold">Conferência da Viatura</h1>
@@ -177,8 +207,27 @@ export function ConferenciaViaturaPage() {
                 value={kmAtual}
                 onChange={(e) => setKmAtual(e.target.value)}
                 placeholder="Ex.: 12345"
-                className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-base"
+                className={`mt-1 w-full rounded border px-3 py-2 text-base ${
+                  isDecremento ? 'border-feedback-error' : 'border-slate-300'
+                }`}
+                aria-invalid={isDecremento || undefined}
               />
+              <span className="mt-1 block text-xs text-slate-500">
+                Último KM registrado:{' '}
+                <strong>{ultimoKm.toLocaleString('pt-BR')} km</strong>{' '}
+                (deve ser ≥ ao último).
+              </span>
+              {decrementoBloqueado && (
+                <span className="mt-1 block text-xs font-semibold text-feedback-error">
+                  Decremento permitido apenas para admin com observação obrigatória.
+                </span>
+              )}
+              {decrementoExigeObservacao && (
+                <span className="mt-1 block text-xs font-semibold text-amber-700">
+                  ⚠ Decremento detectado. Como admin, informe uma observação obrigatória abaixo
+                  (será registrada no histórico com origem "manual_admin").
+                </span>
+              )}
             </label>
 
             <label className="block">
@@ -196,13 +245,23 @@ export function ConferenciaViaturaPage() {
             </label>
 
             <label className="block">
-              <span className="text-sm font-medium text-slate-700">Observação</span>
+              <span className="text-sm font-medium text-slate-700">
+                Observação{decrementoExigeObservacao && ' *'}
+              </span>
               <textarea
                 rows={3}
                 value={observacao}
                 onChange={(e) => setObservacao(e.target.value)}
-                placeholder="Ex.: Viatura em ordem; sem novidades."
-                className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-base"
+                placeholder={
+                  decrementoExigeObservacao
+                    ? 'Justifique o decremento de KM (ex.: troca de hodômetro)'
+                    : 'Ex.: Viatura em ordem; sem novidades.'
+                }
+                required={decrementoExigeObservacao}
+                aria-required={decrementoExigeObservacao || undefined}
+                className={`mt-1 w-full rounded border px-3 py-2 text-base ${
+                  observacaoFaltando ? 'border-feedback-error' : 'border-slate-300'
+                }`}
               />
             </label>
 
@@ -255,6 +314,30 @@ export function ConferenciaViaturaPage() {
                       {o.texto}
                     </li>
                   ))}
+                </ul>
+              </div>
+            )}
+
+            {viatura.historicoKm && viatura.historicoKm.length > 0 && (
+              <div className="rounded bg-slate-50 p-3">
+                <p className="text-xs font-semibold text-slate-700">Histórico de KM</p>
+                <ul className="mt-1 space-y-1 text-xs text-slate-600">
+                  {[...viatura.historicoKm]
+                    .sort(
+                      (a, b) =>
+                        new Date(b.registradoEm).getTime() -
+                        new Date(a.registradoEm).getTime(),
+                    )
+                    .slice(0, 5)
+                    .map((h, i) => (
+                      <li key={i}>
+                        <span className="text-slate-500">
+                          [{new Date(h.registradoEm).toLocaleString('pt-BR')} · NF{' '}
+                          {h.registradoPorNf} · {h.origem}]
+                        </span>{' '}
+                        <strong>{h.kmRegistrado.toLocaleString('pt-BR')} km</strong>
+                      </li>
+                    ))}
                 </ul>
               </div>
             )}
@@ -323,13 +406,13 @@ export function ConferenciaViaturaPage() {
               <button
                 type="button"
                 onClick={handleSalvar}
-                disabled={saving}
+                disabled={saving || decrementoBloqueado || observacaoFaltando}
                 className="flex-1 rounded-button bg-cbmes-red py-2 text-base font-semibold text-white disabled:opacity-60"
               >
                 {saving ? 'Salvando…' : 'Salvar conferência'}
               </button>
               <Link
-                to={`/previa?data=${data}`}
+                to={`/mapa-forca/${data}`}
                 className="flex-1 rounded-button border border-slate-300 bg-white py-2 text-center text-base text-slate-700"
               >
                 Cancelar

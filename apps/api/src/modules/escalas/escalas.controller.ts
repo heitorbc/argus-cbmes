@@ -83,6 +83,27 @@ export class EscalasController {
     return this.escalas.list();
   }
 
+  /**
+   * S0.x/rename-mapa-forca — Lista os dias do mês com escala XLSX importada.
+   * Usado pela página `/mapa-forca` (calendário/lista) para destacar dias
+   * clicáveis. Retorna `{ dias, equipePorDia }` ou `{ dias: [] }` se não houver
+   * escala importada para o mês.
+   */
+  @Get(':ano/:mes/dias-disponiveis')
+  diasDisponiveis(@Param('ano') ano: string, @Param('mes') mes: string) {
+    const a = Number.parseInt(ano, 10);
+    const m = Number.parseInt(mes, 10);
+    if (!Number.isFinite(a) || !Number.isFinite(m)) {
+      throw new BadRequestException('ano/mês inválidos');
+    }
+    const escala = this.escalas.get(a, m);
+    if (!escala) {
+      return { ano: a, mes: m, dias: [] as string[], equipePorDia: {} as Record<string, string> };
+    }
+    const dias = Object.keys(escala.diaEquipe).sort();
+    return { ano: a, mes: m, dias, equipePorDia: escala.diaEquipe };
+  }
+
   @Get('escalados-do-dia')
   escaladosDoDia(@Query() query: unknown) {
     const parsed = escaladosDoDiaSchema.safeParse(query);

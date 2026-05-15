@@ -6,6 +6,7 @@ import {
   type CreateAtestadoInput,
   type UpdateAtestadoInput,
 } from '@argus/shared-types';
+import { ServicoService } from '../servico/servico.service';
 
 /**
  * S6k — CRUD de Atestados médicos.
@@ -16,6 +17,23 @@ import {
 @Injectable()
 export class AtestadosService {
   private readonly byId: Map<string, Atestado> = new Map();
+
+  constructor(private readonly servico: ServicoService) {}
+
+  /**
+   * S0.x — Itera dias cobertos pelo atestado e marca MF dirty para cada
+   * data que estiver com serviço em PREENCHENDO_MF. No-op para datas em
+   * estados anteriores (sem efeito).
+   */
+  private marcarDirtyParaDiasCobertos(dataInicio: string, dias: number): void {
+    const start = new Date(dataInicio + 'T00:00:00');
+    for (let i = 0; i < dias; i += 1) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      this.servico.marcarMfDirty(iso);
+    }
+  }
 
   list(filter: { militarNf?: string; ano?: number } = {}): Atestado[] {
     let result = Array.from(this.byId.values());
@@ -55,6 +73,7 @@ export class AtestadosService {
       criadoPorNf,
     };
     this.byId.set(atestado.id, atestado);
+    this.marcarDirtyParaDiasCobertos(atestado.dataInicio, atestado.dias);
     return atestado;
   }
 
@@ -69,14 +88,21 @@ export class AtestadosService {
       observacoes: input.observacoes?.trim() ?? current.observacoes,
     };
     this.byId.set(id, updated);
+    // Marca dirty para os dias do atestado anterior + novo (cobre mudança de período).
+    this.marcarDirtyParaDiasCobertos(current.dataInicio, current.dias);
+    if (current.dataInicio !== updated.dataInicio || current.dias !== updated.dias) {
+      this.marcarDirtyParaDiasCobertos(updated.dataInicio, updated.dias);
+    }
     return updated;
   }
 
   remove(id: string): void {
-    if (!this.byId.has(id)) {
+    const atestado = this.byId.get(id);
+    if (!atestado) {
       throw new NotFoundException(`Atestado ${id} não encontrado`);
     }
     this.byId.delete(id);
+    this.marcarDirtyParaDiasCobertos(atestado.dataInicio, atestado.dias);
   }
 
   reset(): void {

@@ -17,7 +17,7 @@ import { IdeoStatusService } from '../ideo/ideo-status.service';
 import { IdeoService } from '../ideo/ideo.service';
 import { ServicoService } from '../servico/servico.service';
 import { AjustesPreviaService } from './ajustes-previa.service';
-import { PreviaService } from './previa.service';
+import { MapaForcaService } from './mapa-forca.service';
 
 function militar(p: Partial<Militar> & { nf: string; nome: string }): Militar {
   return {
@@ -180,13 +180,13 @@ const escalaAbril2026: EscalaMensal = {
   avisos: [],
 };
 
-describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
+describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
   let escalas: EscalasService;
   let fiscais: FiscaisService;
   let ideo: IdeoService;
   let efetivo: FakeEfetivoService;
   let viaturas: FakeViaturasService;
-  let previa: PreviaService;
+  let previa: MapaForcaService;
 
   beforeEach(() => {
     escalas = new EscalasService();
@@ -198,7 +198,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
       fakeViatura('RESGATE'),
       fakeViatura('GUARDA'),
     ]);
-    previa = new PreviaService(
+    previa = new MapaForcaService(
       escalas,
       efetivo as unknown as never,
       fiscais,
@@ -223,7 +223,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
   });
 
   it('compõe Prévia completa para 2026-04-23 com equipe CHARLIE', async () => {
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     expect(r.data).toBe('2026-04-23');
     expect(r.equipe).toBe('C');
     expect(r.equipeNome).toBe('CHARLIE');
@@ -232,7 +232,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
   });
 
   it('resolve NFs de todos os militares da composição', async () => {
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     const resolved = r.tripulacao.filter((t) => t.militarResolvido);
     expect(resolved).toHaveLength(5);
     expect(r.inconsistencias.find((i) => i.tipo === 'NF_NAO_RESOLVIDO')).toBeUndefined();
@@ -249,13 +249,13 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
       },
       'admin-test',
     );
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     expect(r.ferias).toHaveLength(1);
     expect(r.ferias[0]!.militarNf).toBe('3037509');
     expect(r.ferias[0]!.militarRaw).toContain('BARCELLOS');
     expect(r.ferias[0]!.dias).toBe(10);
 
-    const r2 = await previa.getPreviaDoDia('2026-04-19');
+    const r2 = await previa.getMapaForcaDoDia('2026-04-19');
     expect(r2.ferias).toHaveLength(0); // ainda não começou
   });
 
@@ -277,7 +277,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
         numeroEdocs: '2026-ABC123',
       },
     ];
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     const autorizadas = r.trocas.filter((t) => t.origemAutorizada);
     expect(autorizadas).toHaveLength(1);
     expect(autorizadas[0]!.substituidoRaw).toBe('SGT MARIANE');
@@ -302,7 +302,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
         horarioPagamento: '7h10 às 18h',
       },
     ];
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     const aut = r.trocas.find((t) => t.origemAutorizada)!;
     expect(aut.substituidoNf).toBe('3037509'); // BARCELLOS
     expect(aut.substitutoNf).toBe('3055566'); // FABRE
@@ -328,10 +328,11 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
           },
         ],
       },
+      undefined,
       true, // admin override (sem servico iniciado)
     );
 
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     // Antes do swap: ABTS 01/Ch = BARCELLOS (3037509); RESGATE/Ch = KARINA (3174824)
     const abtsCh = r.tripulacao.find(
       (t) => t.equipe === 'C' && t.viatura === 'ABTS 01' && t.funcao === 'Ch',
@@ -364,10 +365,11 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
           },
         ],
       },
+      undefined,
       true,
     );
 
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     const abtsCh = r.tripulacao.find(
       (t) => t.equipe === 'C' && t.viatura === 'ABTS 01' && t.funcao === 'Ch',
     );
@@ -396,7 +398,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
         horarioPagamento: '7h10 às 18h',
       },
     ];
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     const aut = r.trocas.find((t) => t.origemAutorizada)!;
     expect(aut.substituidoNf).toBeUndefined(); // INEXISTENTE não resolve
     expect(aut.substitutoNf).toBe('3037509'); // BARCELLOS resolve
@@ -431,7 +433,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
         horarioPagamento: '24h',
       },
     ];
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     const inc = r.inconsistencias.find(
       (i) =>
         (i.detalhe as Record<string, unknown> | undefined)?.origem ===
@@ -461,7 +463,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
         horarioPagamento: '24h',
       },
     ];
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     const inc = r.inconsistencias.find(
       (i) =>
         (i.detalhe as Record<string, unknown> | undefined)?.origem ===
@@ -489,7 +491,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
     // 2026-04-30 não está no escalaAbril (que só tem 23/04). Para esse test
     // criamos um diaEquipe ad-hoc. Mais simples: testar com 2026-04-23 confirmando
     // o lado correto.
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     const aut = r.trocas.find((t) => t.origemAutorizada)!;
     // dia 23 = lado escala → escalado (substituido) é MARIANE, substituto é ALVARENGA
     expect(aut.substituidoRaw).toBe('SGT MARIANE');
@@ -535,7 +537,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
         porDia: { '2026-04-23': { mergulho01: 'A', mergulho02: 'B' } },
       },
     });
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     const m01 = r.tripulacao.find((t) => t.viatura === 'MERGULHO 01' && t.funcao === 'Ch');
     const m02 = r.tripulacao.find((t) => t.viatura === 'MERGULHO 02' && t.funcao === 'Ch');
     expect(m01?.militarRef.nomeGuerra).toBe('BARCELLOS');
@@ -592,9 +594,10 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
         swapsMilitares: [],
         overridesMergulho: [{ data: '2026-04-23', swap: true }],
       },
+      undefined,
       true,
     );
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     const m01 = r.tripulacao.find((t) => t.viatura === 'MERGULHO 01' && t.funcao === 'Ch');
     const m02 = r.tripulacao.find((t) => t.viatura === 'MERGULHO 02' && t.funcao === 'Ch');
     expect(m01?.militarRef.nomeGuerra).toBe('KARINA'); // antes era B em M02
@@ -625,9 +628,10 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
           },
         ],
       },
+      undefined,
       true,
     );
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     const r02 = r.tripulacao.find((t) => t.viatura === 'RESGATE 02' && t.funcao === 'Ch');
     expect(r02).toBeDefined();
     expect(r02!.militarRef.nomeGuerra).toBe('BARCELLOS');
@@ -658,9 +662,10 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
           },
         ],
       },
+      undefined,
       true,
     );
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     const inc = r.inconsistencias.find(
       (i) =>
         (i.detalhe as Record<string, unknown> | undefined)?.origem === 'ativacao-recurso',
@@ -706,9 +711,10 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
         overridesMergulho: [],
         overridesParesRecursos: [{ data: '2026-04-23', par: 'RESGATE', swap: true }],
       },
+      undefined,
       true,
     );
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     // Tripulação que estava em RESGATE 01 agora aparece sob RESGATE 02.
     const r01 = r.tripulacao.filter((t) => t.viatura === 'RESGATE 01' && t.equipe === 'C');
     const r02 = r.tripulacao.filter((t) => t.viatura === 'RESGATE 02' && t.equipe === 'C');
@@ -723,7 +729,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
     previaAsAny.chefesOperacoes.escaladosDoDia = [
       { posto: '1ºTEN QOA', nomeGuerra: 'BOREL', nf: '999001' },
     ];
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     const chOpEntries = r.tripulacao.filter((t) => t.viatura === 'CHEFE DE OPERAÇÕES');
     const chefe = chOpEntries.find((t) => t.funcao === 'Ch');
     expect(chefe).toBeDefined();
@@ -732,7 +738,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
   });
 
   it('escolhe Fiscal padrão = militar de menor ANT (BARCELLOS, ANT 418)', async () => {
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     expect(r.fiscal).not.toBeNull();
     expect(r.fiscal!.origem).toBe('default');
     expect(r.fiscal!.militarNf).toBe('3037509');
@@ -740,7 +746,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
   });
 
   it('marca isFiscal=true na linha do Fiscal escolhido', async () => {
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     const fiscalLinha = r.tripulacao.find((t) => t.isFiscal);
     expect(fiscalLinha).toBeDefined();
     expect(fiscalLinha!.militarResolvido?.nf).toBe('3037509');
@@ -757,14 +763,14 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
       },
       'admin',
     );
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     expect(r.fiscal!.origem).toBe('cadastrado');
     expect(r.fiscal!.militarNf).toBe('3174824');
     expect(r.fiscal!.motivo).toBe('BARCELLOS em curso');
   });
 
   it('inclui IDEO de ABTS e RESGATE para o dia 23', async () => {
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     const tipos = r.ideo.map((i) => i.tipo);
     expect(tipos).toEqual(expect.arrayContaining(['ABTS' as TipoIdeo, 'RESGATE' as TipoIdeo]));
     expect(r.ideo.find((i) => i.tipo === 'ABTS')!.itens).toEqual(['Mochila Costal', 'GPS']);
@@ -777,7 +783,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
       fakeViatura('GUARDA'),
       fakeViatura('AR 044', 'baixada'),
     ]);
-    previa = new PreviaService(
+    previa = new MapaForcaService(
       escalas,
       efetivo as unknown as never,
       fiscais,
@@ -795,7 +801,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
       new FeriasService(),
       new FakeMapaForcaService() as unknown as never,
     );
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     const ar044 = r.viaturasOperacionais.find((v) => v.codigo === 'AR 044');
     expect(ar044).toBeDefined();
     expect(ar044?.vtrStatus).toBe('baixada');
@@ -810,7 +816,7 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
     // Cenário: XLSX importado tem 5 militares (composicaoCharlie). Mesmo com
     // o MF retornando MERGULHO 02 + CHEFE DE OPERAÇÕES com militares, NADA
     // é adicionado à tripulação além dos 5 do XLSX.
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     expect(r.tripulacao).toHaveLength(5);
     // Nenhuma equipe AQUATICAS ou STAFF aparece (vinha só do complemento MF):
     expect(r.tripulacao.filter((t) => t.equipe === 'AQUATICAS')).toEqual([]);
@@ -818,13 +824,13 @@ describe('PreviaService — cenário 23/04/2026 CHARLIE', () => {
   });
 });
 
-describe('PreviaService — inconsistências', () => {
+describe('MapaForcaService — inconsistências', () => {
   let escalas: EscalasService;
   let fiscais: FiscaisService;
   let ideo: IdeoService;
   let efetivo: FakeEfetivoService;
   let viaturas: FakeViaturasService;
-  let previa: PreviaService;
+  let previa: MapaForcaService;
 
   beforeEach(() => {
     escalas = new EscalasService();
@@ -832,7 +838,7 @@ describe('PreviaService — inconsistências', () => {
     ideo = new IdeoService();
     efetivo = new FakeEfetivoService(EFETIVO_CHARLIE);
     viaturas = new FakeViaturasService([fakeViatura('ABTS 01')]);
-    previa = new PreviaService(
+    previa = new MapaForcaService(
       escalas,
       efetivo as unknown as never,
       fiscais,
@@ -853,7 +859,7 @@ describe('PreviaService — inconsistências', () => {
   });
 
   it('SEM_ESCALA_NO_MES quando mês não foi importado', async () => {
-    const r = await previa.getPreviaDoDia('2026-07-15');
+    const r = await previa.getMapaForcaDoDia('2026-07-15');
     expect(r.tripulacao).toEqual([]);
     expect(r.fiscal).toBeNull();
     expect(r.inconsistencias.some((i) => i.tipo === 'SEM_ESCALA_NO_MES')).toBe(true);
@@ -864,7 +870,7 @@ describe('PreviaService — inconsistências', () => {
   // Após o fix, Tripulação deve ficar vazia. Recursos do MF não complementam mais.
   it('S6g — sem XLSX, Tripulação fica vazia mesmo se houvesse recursos AQUATICAS/STAFF no MF', async () => {
     // Não chama escalas.save — mês 2026-07 não existe no storage
-    const r = await previa.getPreviaDoDia('2026-07-15');
+    const r = await previa.getMapaForcaDoDia('2026-07-15');
     expect(r.tripulacao).toEqual([]);
     expect(r.tripulacao.filter((t) => t.equipe === 'AQUATICAS')).toEqual([]);
     expect(r.tripulacao.filter((t) => t.equipe === 'STAFF')).toEqual([]);
@@ -875,7 +881,7 @@ describe('PreviaService — inconsistências', () => {
       ...escalaAbril2026,
       diaEquipe: { '2026-04-23': 'C' }, // só dia 23
     });
-    const r = await previa.getPreviaDoDia('2026-04-22');
+    const r = await previa.getMapaForcaDoDia('2026-04-22');
     expect(r.equipe).toBeNull();
     expect(r.inconsistencias.some((i) => i.tipo === 'EQUIPE_NAO_ESCALADA_NO_DIA')).toBe(true);
   });
@@ -897,14 +903,14 @@ describe('PreviaService — inconsistências', () => {
         ultimoDiaQ1: 14,
       },
     });
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     expect(r.tripulacao[0]!.militarResolvido).toBeNull();
     expect(r.inconsistencias.some((i) => i.tipo === 'NF_NAO_RESOLVIDO')).toBe(true);
   });
 
   it('IDEO_NAO_CADASTRADO quando dia não tem IDEO', async () => {
     escalas.save(escalaAbril2026);
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     const ideoMissing = r.inconsistencias.filter((i) => i.tipo === 'IDEO_NAO_CADASTRADO');
     // ABTS + RESGATE não cadastrados
     expect(ideoMissing.length).toBe(2);
@@ -927,7 +933,7 @@ describe('PreviaService — inconsistências', () => {
         ultimoDiaQ1: 14,
       },
     });
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     expect(r.inconsistencias.some((i) => i.tipo === 'VIATURA_DESCONHECIDA')).toBe(true);
   });
 
@@ -941,7 +947,7 @@ describe('PreviaService — inconsistências', () => {
       'admin',
     );
     escalas.save(escalaAbril2026);
-    const r = await previa.getPreviaDoDia('2026-04-23');
+    const r = await previa.getMapaForcaDoDia('2026-04-23');
     expect(r.fiscal!.origem).toBe('cadastrado');
     expect(r.fiscal!.militarResolvido).toBeNull();
     expect(r.inconsistencias.some((i) => i.tipo === 'FISCAL_SEM_NF_RESOLVIDO')).toBe(true);
