@@ -22,11 +22,12 @@ const DEFAULT_SHEET_ID = '1wmFOEsrU219fGMfksoSY5dvQu0UN7HdQ558UUiWRXuw';
 /**
  * Lista padrão de abas conhecidas (estado em 2026-05). Pode ser sobrescrita
  * via env `ISEO_SHEET_NAMES` (CSV separado por vírgula). Quando a planilha
- * ganhar novos meses, basta atualizar a env (ou esta lista) — o parser
- * descarta meses ainda não lançados que retornem CSV vazio.
+ * ganhar novos meses, basta atualizar a env (ou esta lista).
+ *
+ * Aba `HIMABA DEZEMBRO 2025` é legacy (estrutura diferente, sem TURNO/FUNÇÃO)
+ * e está fora do default. Para incluir histórico de 2025, sobrescreva via env.
  */
 const DEFAULT_SHEET_NAMES = [
-  'HIMABA DEZEMBRO 2025',
   'HPM JANEIRO 2026',
   'HIMABA JANEIRO 2026',
   'HPM FEVEREIRO 2026',
