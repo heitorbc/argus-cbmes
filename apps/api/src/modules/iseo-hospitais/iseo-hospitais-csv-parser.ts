@@ -16,11 +16,13 @@ import type { IseoHospitalEntry, IseoHospitalUnidade, IseoHospitalTurno } from '
  */
 
 /**
- * Tokens que devem aparecer no header. NF é sinônimo de MATRÍCULA (algumas
- * abas mais novas usam "MATRÍCULA" no lugar de "NF").
+ * Tokens que devem aparecer no header. As abas mais novas (MAIO 2026 em
+ * diante) deixam DATA e MATRÍCULA como células vazias no header — só os
+ * dados das linhas é que ocupam essas colunas. Por isso só exigimos
+ * POSTO/NOME/TURNO/FUNÇÃO; data e matrícula são inferidos por posição
+ * quando ausentes (ver `inferDataCol` / `inferNfCol`).
  */
-const HEADER_TOKENS_REQUIRED = ['POSTO', 'NOME', 'DATA'];
-const HEADER_TOKENS_NF_OR_MATRICULA = ['NF', 'MATRICULA'];
+const HEADER_TOKENS_REQUIRED = ['POSTO', 'NOME', 'TURNO', 'FUNCAO'];
 
 export interface ParseIseoHospitaisOptions {
   /** Unidade fixa quando o nome da aba já discrimina (ex.: "HPM JANEIRO 2026"). */
@@ -63,14 +65,14 @@ export function parseIseoHospitaisCsv(
 
   const headerIdx = findHeaderIndex(rows);
   if (headerIdx < 0) {
-    throw new Error('Cabeçalho não encontrado (esperado POSTO/GRAD + NOME + NF + DATA).');
+    throw new Error('Cabeçalho não encontrado (esperado POSTO + NOME + TURNO + FUNÇÃO).');
   }
 
   const header = rows[headerIdx]!.map(normalize);
   const colPosto = findCol(header, ['POSTO', 'GRADUACAO', 'GRAD']);
   const colNome = findCol(header, ['NOME']);
-  const colNf = findCol(header, ['NF', 'MATRICULA']);
-  const colData = findCol(header, ['DATA']);
+  let colData = findCol(header, ['DATA']);
+  let colNf = findCol(header, ['NF', 'MATRICULA']);
   const colTurno = findCol(header, ['TURNO']);
   const colFuncao = findCol(header, ['FUNCAO', 'FUNÇÃO']);
   const colContato = findCol(header, ['CONTATO', 'TELEFONE']);
@@ -78,8 +80,28 @@ export function parseIseoHospitaisCsv(
   const colObm = findCol(header, ['OBM']);
   const colLotacao = findCol(header, ['LOTACAO', 'LOTAÇÃO']);
 
-  if (colPosto < 0 || colNome < 0 || colNf < 0 || colData < 0 || colTurno < 0) {
-    throw new Error('Colunas obrigatórias ausentes (POSTO, NOME, NF/MATRÍCULA, DATA, TURNO).');
+  if (colPosto < 0 || colNome < 0 || colTurno < 0) {
+    throw new Error('Colunas obrigatórias ausentes (POSTO, NOME, TURNO).');
+  }
+
+  // Inferência de colunas implícitas (header com células vazias).
+  // Layout MAIO 2026 (e abas novas):
+  //   col 0: POSTO/GRAD
+  //   col 1: <vazio no header> → DATA
+  //   col 2: TURNO
+  //   col 3: FUNÇÃO
+  //   col 4: CH
+  //   col 5: <vazio no header> → MATRÍCULA
+  //   col 6: NOME DO MILITAR
+  //   col 7: CONTATO
+  //   col 8: <vazio no header> → MATRÍCULA (2º militar)
+  //   col 9: NOME DO MILITAR (2º)
+  //   col 10: CONTATO (2º)
+  if (colData < 0) colData = inferDataCol(rows, headerIdx, colPosto, colTurno);
+  if (colNf < 0) colNf = inferNfCol(rows, headerIdx, colNome);
+
+  if (colData < 0 || colNf < 0) {
+    throw new Error('Colunas DATA e NF/MATRÍCULA não localizáveis (nem por header nem por posição).');
   }
 
   // Detecta se a aba tem 2 militares lado a lado (ABRIL 2026 em diante):
@@ -164,13 +186,85 @@ export function parseIseoHospitaisCsv(
  * "NOME DO MILITAR" para o 2º militar. Como `findCol` retorna a primeira
  * ocorrência, varremos manualmente o resto do header.
  */
-function findSecondNfColumn(rows: string[][], headerIdx: number, colNf: number): number {
+function findSecondNfColumn(
+  rows: string[][],
+  headerIdx: number,
+  colNf: number,
+): number {
   const header = (rows[headerIdx] ?? []).map(normalize);
+  // Caso A: header tem "MATRICULA" ou "NF" repetido após colNf.
   for (let c = colNf + 1; c < header.length; c++) {
     const cell = header[c] ?? '';
     if (cell.includes('MATRICULA') || cell === 'NF') return c;
   }
+  // Caso B (MAIO 2026 etc.): header repete "NOME DO MILITAR" — a coluna
+  // anterior à 2ª ocorrência de NOME é a 2ª MATRÍCULA implícita.
+  let nomeOccurrences = 0;
+  for (let c = 0; c < header.length; c++) {
+    const cell = header[c] ?? '';
+    if (cell.includes('NOME')) {
+      nomeOccurrences++;
+      if (nomeOccurrences === 2 && c > 0) {
+        // Confirma via dados: a coluna anterior tem NF numérica?
+        if (looksLikeNfColumn(rows, headerIdx, c - 1)) return c - 1;
+      }
+    }
+  }
   return -1;
+}
+
+/**
+ * Inferência de coluna DATA quando o header não a traz explícita
+ * (típico das abas MAIO 2026+). Estratégia: testar colunas entre POSTO e
+ * TURNO; a primeira que parse-ar como data BR vence.
+ */
+function inferDataCol(
+  rows: string[][],
+  headerIdx: number,
+  colPosto: number,
+  colTurno: number,
+): number {
+  const lo = Math.min(colPosto, colTurno);
+  const hi = Math.max(colPosto, colTurno);
+  for (let c = lo + 1; c < hi; c++) {
+    if (looksLikeDataColumn(rows, headerIdx, c)) return c;
+  }
+  return -1;
+}
+
+/**
+ * Inferência de coluna NF/MATRÍCULA — testa colunas entre 0 e colNome.
+ */
+function inferNfCol(rows: string[][], headerIdx: number, colNome: number): number {
+  for (let c = colNome - 1; c >= 0; c--) {
+    if (looksLikeNfColumn(rows, headerIdx, c)) return c;
+  }
+  return -1;
+}
+
+function looksLikeDataColumn(rows: string[][], headerIdx: number, col: number): boolean {
+  let hits = 0;
+  let total = 0;
+  for (let i = headerIdx + 1; i < Math.min(rows.length, headerIdx + 10); i++) {
+    const cell = clean(rows[i]?.[col]);
+    if (!cell) continue;
+    total++;
+    if (parseDataBR(cell)) hits++;
+  }
+  return total >= 1 && hits / total >= 0.5;
+}
+
+function looksLikeNfColumn(rows: string[][], headerIdx: number, col: number): boolean {
+  let hits = 0;
+  let total = 0;
+  for (let i = headerIdx + 1; i < Math.min(rows.length, headerIdx + 10); i++) {
+    const cell = clean(rows[i]?.[col]);
+    if (!cell) continue;
+    total++;
+    // NF/Matrícula: 5–7 dígitos numéricos.
+    if (/^\d{5,7}$/.test(cell)) hits++;
+  }
+  return total >= 1 && hits / total >= 0.5;
 }
 
 /**
@@ -209,10 +303,7 @@ function findHeaderIndex(rows: string[][]): number {
     const hasRequired = HEADER_TOKENS_REQUIRED.every((tok) =>
       normalized.some((cell) => cell.includes(tok)),
     );
-    const hasNfOrMatricula = HEADER_TOKENS_NF_OR_MATRICULA.some((tok) =>
-      normalized.some((cell) => cell.includes(tok)),
-    );
-    if (hasRequired && hasNfOrMatricula) return i;
+    if (hasRequired) return i;
   }
   return -1;
 }

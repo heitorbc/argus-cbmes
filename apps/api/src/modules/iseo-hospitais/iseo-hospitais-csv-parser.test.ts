@@ -79,6 +79,31 @@ describe('parseIseoHospitaisCsv', () => {
     });
   });
 
+  it('layout MAIO 2026 real: header com células vazias para DATA e MATRÍCULA', () => {
+    // Estrutura real da aba MAIO 2026: o header tem células vazias para
+    // DATA (col 1) e MATRÍCULA (cols 5 e 8). Parser infere por posição.
+    const csv =
+      '"ESCALA DE INDENIZAÇÃO SUPLEMENTAR DE ESCALA OPERACIONAL - HOSPITAIS","","","","","","","","","","MAIO"\n' +
+      '"2026","","","","","","","","","",""\n' +
+      '"POSTO/\nGRAD","","TURNO","FUNÇÃO","CH","","NOME DO MILITAR","CONTATO","","NOME DO MILITAR","CONTATO"\n' +
+      '"2ºSGT","29/05/2026","Diurno","Condutor","12H","3037509","2ºSGT BARCELLOS","(27) 99918-6697","2981378","2ºSGT MATEUS","(27) 99999-1234"\n';
+    const items = parseIseoHospitaisCsv(csv, { unidadeDefault: 'HPM' });
+    expect(items.length).toBe(2);
+    expect(items[0]).toMatchObject({
+      nf: '3037509',
+      nome: 'BARCELLOS',
+      posto: '2ºSGT',
+      dataIso: '2026-05-29',
+      turno: 'Diurno',
+    });
+    expect(items[1]).toMatchObject({
+      nf: '2981378',
+      nome: 'MATEUS',
+      posto: '2ºSGT',
+      dataIso: '2026-05-29',
+    });
+  });
+
   it('layout pareado (2 militares por linha): extrai ambos', () => {
     // ABRIL 2026: 11 colunas com 2 pares (matrícula, nome, contato) lado a lado.
     const csv =
