@@ -27,7 +27,7 @@ export class EscalasEspeciaisService implements OnModuleInit {
   private readonly byMes = new Map<string, EscalaEspecialMensal>();
 
   async onModuleInit(): Promise<void> {
-    if (process.env.NODE_ENV !== 'development') return;
+    if (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test') return;
     if (this.byMes.size > 0) return;
     await this.bootstrapFromFilesystem();
   }

@@ -36,7 +36,7 @@ export class LocaisFaxinaService implements OnModuleInit {
   private readonly byId: Map<string, LocalFaxina> = new Map();
 
   onModuleInit(): void {
-    if (process.env.NODE_ENV !== 'development') return;
+    if (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test') return;
     if (this.byId.size > 0) return;
     const now = new Date().toISOString();
     for (const [i, nome] of DEFAULT_LOCAIS.entries()) {
