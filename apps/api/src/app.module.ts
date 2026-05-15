@@ -25,6 +25,7 @@ import { NotasServicoModule } from './modules/notas-servico/notas-servico.module
 import { ParteDiariaModule } from './modules/parte-diaria/parte-diaria.module';
 import { RecursosModule } from './modules/recursos/recursos.module';
 import { ServicoModule } from './modules/servico/servico.module';
+import { SheetsDbModule } from './modules/sheets-db/sheets-db.module';
 import { TrocasAutorizadasModule } from './modules/trocas-autorizadas/trocas-autorizadas.module';
 import { UnidadesModule } from './modules/unidades/unidades.module';
 import { ViaturasModule } from './modules/viaturas/viaturas.module';
@@ -59,6 +60,7 @@ import { ViaturasModule } from './modules/viaturas/viaturas.module';
     ParteDiariaModule,
     RecursosModule,
     ServicoModule,
+    SheetsDbModule,
     TrocasAutorizadasModule,
     UnidadesModule,
     ViaturasModule,
