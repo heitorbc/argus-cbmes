@@ -23,8 +23,7 @@ export class IdeoStatusService {
       tipo: input.tipo,
       estado: input.estado,
       equipamentos: input.estado === 'REALIZADA_COM_ALTERACAO' ? (input.equipamentos ?? []) : [],
-      motivoNaoRealizacao:
-        input.estado === 'NAO_REALIZADA' ? input.motivoNaoRealizacao : undefined,
+      motivoNaoRealizacao: input.estado === 'NAO_REALIZADA' ? input.motivoNaoRealizacao : undefined,
       atestadoPorNf,
       geradoEm: new Date().toISOString(),
     };

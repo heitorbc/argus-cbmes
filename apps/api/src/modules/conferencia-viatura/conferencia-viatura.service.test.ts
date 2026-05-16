@@ -135,13 +135,23 @@ describe('ConferenciaViaturaService', () => {
       dataIso,
       {
         entries: [
-          { recurso: 'ABTS_01', funcao: 'Ch', militarOriginalNf: '111', statusConferencia: 'presente' },
+          {
+            recurso: 'ABTS_01',
+            funcao: 'Ch',
+            militarOriginalNf: '111',
+            statusConferencia: 'presente',
+          },
         ],
       },
       motoristaNf,
       true,
     );
-    svc = new ConferenciaViaturaService(servico, viaturasMock, conferenciaEquipe, mapaForca as never);
+    svc = new ConferenciaViaturaService(
+      servico,
+      viaturasMock,
+      conferenciaEquipe,
+      mapaForca as never,
+    );
     await svc.registrar(
       dataIso,
       'ABTS 011',
@@ -170,13 +180,23 @@ describe('ConferenciaViaturaService', () => {
       dataIso,
       {
         entries: [
-          { recurso: 'ABTS_01', funcao: 'Ch', militarOriginalNf: '111', statusConferencia: 'presente' },
+          {
+            recurso: 'ABTS_01',
+            funcao: 'Ch',
+            militarOriginalNf: '111',
+            statusConferencia: 'presente',
+          },
         ],
       },
       motoristaNf,
       true,
     );
-    svc = new ConferenciaViaturaService(servico, viaturasMock, conferenciaEquipe, mapaForca as never);
+    svc = new ConferenciaViaturaService(
+      servico,
+      viaturasMock,
+      conferenciaEquipe,
+      mapaForca as never,
+    );
     await svc.registrar(
       dataIso,
       'ABTS 011',
@@ -237,7 +257,12 @@ describe('ConferenciaViaturaService', () => {
       motoristaNf,
       true,
     );
-    svc = new ConferenciaViaturaService(servico, viaturasMock, conferenciaEquipe, mapaForca as never);
+    svc = new ConferenciaViaturaService(
+      servico,
+      viaturasMock,
+      conferenciaEquipe,
+      mapaForca as never,
+    );
     const r = await svc.registrar(
       dataIso,
       'ABTS 011',
@@ -270,7 +295,12 @@ describe('ConferenciaViaturaService', () => {
       true,
     );
     expect(servico.get(dataIso).estado).toBe('EQUIPE_CONFERIDA');
-    svc = new ConferenciaViaturaService(servico, viaturasMock, conferenciaEquipe, mapaForca as never);
+    svc = new ConferenciaViaturaService(
+      servico,
+      viaturasMock,
+      conferenciaEquipe,
+      mapaForca as never,
+    );
     await svc.registrar(
       dataIso,
       'ABTS 011',
@@ -320,4 +350,3 @@ describe('ConferenciaViaturaService', () => {
     ).rejects.toThrow(/Motorista nem Chefe/i);
   });
 });
-

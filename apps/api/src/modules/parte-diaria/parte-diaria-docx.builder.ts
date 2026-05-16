@@ -231,12 +231,7 @@ function tabelaEscalasOperacionais(entries: readonly ParteDiariaEscalaOperaciona
     if (militares.length === 0) {
       bodyRows.push(
         new TableRow({
-          children: [
-            blocoRecurso,
-            cell('-'),
-            cell('-'),
-            cell(baixada ? 'VTR BAIXADA' : '-'),
-          ],
+          children: [blocoRecurso, cell('-'), cell('-'), cell(baixada ? 'VTR BAIXADA' : '-')],
         }),
       );
       continue;
@@ -274,9 +269,7 @@ function cellRecursoBloco(
     { texto: vtrPrefixo ? `VTR ${vtrPrefixo}` : '— sem VTR —' },
     {
       texto:
-        kmInicial !== null
-          ? `KM inicial: ${kmInicial.toLocaleString('pt-BR')}`
-          : 'KM inicial: —',
+        kmInicial !== null ? `KM inicial: ${kmInicial.toLocaleString('pt-BR')}` : 'KM inicial: —',
     },
     ...(vtrStatus && vtrStatus !== 'DISPONIVEL'
       ? [{ texto: `Status: ${vtrStatus}`, bold: true }]
@@ -309,9 +302,7 @@ function tabelaGuardaOuVazio(linhas: readonly ParteDiariaGuardaEntry[]): (Paragr
       new TableRow({
         children: [
           cell(`${l.horarioInicio} – ${l.horarioFim}`),
-          cell(
-            l.militarRaw + (l.sentinelaSlot ? ` (Sent. ${l.sentinelaSlot})` : '') || '—',
-          ),
+          cell(l.militarRaw + (l.sentinelaSlot ? ` (Sent. ${l.sentinelaSlot})` : '') || '—'),
           cell(l.setor || '-'),
         ],
       }),

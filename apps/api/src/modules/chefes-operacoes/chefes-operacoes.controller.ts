@@ -1,8 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
-import {
-  ChefesOperacoesService,
-  type ChefeOperacoesHabilitado,
-} from './chefes-operacoes.service';
+import { ChefesOperacoesService, type ChefeOperacoesHabilitado } from './chefes-operacoes.service';
 
 @Controller('chefes-operacoes')
 export class ChefesOperacoesController {

@@ -188,8 +188,7 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(input),
     }),
-  usuarioRemove: (nf: string) =>
-    request<void>(`/auth/usuarios/${nf}`, { method: 'DELETE' }),
+  usuarioRemove: (nf: string) => request<void>(`/auth/usuarios/${nf}`, { method: 'DELETE' }),
 
   changePassword: (input: ChangePasswordInput) =>
     request<ChangePasswordResponse>('/auth/change-password', {
@@ -736,8 +735,7 @@ export const api = {
   iseoHospitaisMilitar: (nf: string) =>
     request<IseoHospitalEntry[]>(`/iseo-hospitais/militar/${nf}`),
 
-  iseoHospitaisSyncStatus: () =>
-    request<IseoHospitalSyncStatus[]>('/iseo-hospitais/sync-status'),
+  iseoHospitaisSyncStatus: () => request<IseoHospitalSyncStatus[]>('/iseo-hospitais/sync-status'),
 
   incidentesBaonSearch: (q?: string, limit = 20) => {
     const p = new URLSearchParams();
@@ -756,10 +754,7 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
-  locaisFaxinaUpdate: (
-    id: string,
-    input: { nome?: string; ordem?: number; ativo?: boolean },
-  ) =>
+  locaisFaxinaUpdate: (id: string, input: { nome?: string; ordem?: number; ativo?: boolean }) =>
     request<LocalFaxina>(`/locais-faxina/${id}`, {
       method: 'PUT',
       body: JSON.stringify(input),

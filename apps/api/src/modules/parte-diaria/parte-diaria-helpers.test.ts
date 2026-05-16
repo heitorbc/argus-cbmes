@@ -62,11 +62,7 @@ describe('gerarTurnosRonda', () => {
   });
 
   it('com 3 militares gera 3 turnos de 2h cobrindo 23:10–05:10', () => {
-    const turnos = gerarTurnosRonda([
-      militar('1', 'A'),
-      militar('2', 'B'),
-      militar('3', 'C'),
-    ]);
+    const turnos = gerarTurnosRonda([militar('1', 'A'), militar('2', 'B'), militar('3', 'C')]);
     expect(turnos.length).toBe(3);
     expect(turnos[0]?.horarioInicio).toBe('23:10');
     expect(turnos[0]?.horarioFim).toBe('01:10');

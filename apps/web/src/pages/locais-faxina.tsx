@@ -86,9 +86,7 @@ export function LocaisFaxinaPage() {
         <Link to="/" className="text-sm text-cbmes-blue hover:underline">
           ← Home
         </Link>
-        <p className="mt-4 text-sm text-slate-700">
-          Acesso restrito a administradores.
-        </p>
+        <p className="mt-4 text-sm text-slate-700">Acesso restrito a administradores.</p>
       </main>
     );
   }

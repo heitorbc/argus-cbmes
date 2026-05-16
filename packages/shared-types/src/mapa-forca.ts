@@ -646,9 +646,7 @@ export function gerarTextoFiscalAtestadoIdeo(
         return `IDEO ${tipo} NÃO REALIZADA — ${s.motivoNaoRealizacao ?? 'sem motivo informado'}`;
       }
       // REALIZADA_COM_ALTERACAO: lista cada equipamento com a descrição.
-      const itens = (s.equipamentos ?? [])
-        .map((eq) => `${eq.item}: ${eq.descricao}`)
-        .join('; ');
+      const itens = (s.equipamentos ?? []).map((eq) => `${eq.item}: ${eq.descricao}`).join('; ');
       return `IDEO ${tipo} REALIZADA COM ALTERAÇÃO — ${itens || 'sem detalhamento'}`;
     })
     .join('; ');

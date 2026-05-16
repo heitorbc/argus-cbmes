@@ -168,11 +168,7 @@ export class ConferenciaViaturaService {
     if (estado !== 'EQUIPE_CONFERIDA' && estado !== 'INICIADO') return;
     const payload = await this.mapaForca.getMapaForcaDoDia(dataIso);
     const viaturasParaConferir = payload.composicaoMf
-      .filter(
-        (c) =>
-          c.vtrPrefixo &&
-          (c.vtrStatus === 'DISPONIVEL' || c.vtrStatus === 'EMPRESTADA'),
-      )
+      .filter((c) => c.vtrPrefixo && (c.vtrStatus === 'DISPONIVEL' || c.vtrStatus === 'EMPRESTADA'))
       .map((c) => c.vtrPrefixo as string);
     if (viaturasParaConferir.length === 0) return;
     const conferidas = this.byData.get(dataIso) ?? new Map();

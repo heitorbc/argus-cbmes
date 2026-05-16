@@ -111,11 +111,7 @@ export class ViaturasEnriquecidasService {
    */
   async getContatoResponsavel1aCia(): Promise<ContatoLogistico | null> {
     const todos = await this.viaturasQdvExtras.listContatosLogisticas().catch(() => []);
-    return (
-      todos.find(
-        (c) => c.obm.includes('1ºBBM/1ªCIA') || c.obm.includes('1BBM/1ªCIA'),
-      ) ?? null
-    );
+    return todos.find((c) => c.obm.includes('1ºBBM/1ªCIA') || c.obm.includes('1BBM/1ªCIA')) ?? null;
   }
 
   private async findInternoByPrefixo(prefixo: string): Promise<Viatura | null> {

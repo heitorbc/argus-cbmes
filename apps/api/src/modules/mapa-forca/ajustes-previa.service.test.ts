@@ -261,4 +261,3 @@ describe('AjustesPreviaService.upsert — fix trocas duplicadas (S0.x/fixes-3)',
     expect(service.get(dataIso).trocas).toHaveLength(0);
   });
 });
-

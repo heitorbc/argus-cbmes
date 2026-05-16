@@ -699,13 +699,7 @@ function parseAba(
   // só para `extractDiaEquipe`, não para a composição (que continua nos
   // ranges das equipes).
   const startColDias = Math.max(1, startCol - 1);
-  const { diaEquipe, avisos: avisosDia } = extractDiaEquipe(
-    ws,
-    startColDias,
-    endCol,
-    ano,
-    mes,
-  );
+  const { diaEquipe, avisos: avisosDia } = extractDiaEquipe(ws, startColDias, endCol, ano, mes);
   avisos.push(...avisosDia);
 
   const { entries, avisos: avisosComp } = extractComposicao(
@@ -822,8 +816,14 @@ export async function parseEscalaXlsx(input: ParseEscalaInput): Promise<EscalaMe
  * distintas de ambas as abas.
  */
 function combineMergulho(
-  q1: { equipes: EscalaMergulhoMes['equipesPorQuinzena']['q1']; porDia: EscalaMergulhoMes['porDia'] } | null,
-  q2: { equipes: EscalaMergulhoMes['equipesPorQuinzena']['q2']; porDia: EscalaMergulhoMes['porDia'] } | null,
+  q1: {
+    equipes: EscalaMergulhoMes['equipesPorQuinzena']['q1'];
+    porDia: EscalaMergulhoMes['porDia'];
+  } | null,
+  q2: {
+    equipes: EscalaMergulhoMes['equipesPorQuinzena']['q2'];
+    porDia: EscalaMergulhoMes['porDia'];
+  } | null,
   ultimoDiaQ1: 13 | 14,
 ): EscalaMergulhoMes | null {
   if (!q1 && !q2) return null;
@@ -842,8 +842,14 @@ function combineMergulho(
  * `porDia` acumula.
  */
 function combineSalvamar(
-  q1: { equipes: EscalaSalvamarMes['equipesPorQuinzena']['q1']; porDia: EscalaSalvamarMes['porDia'] } | null,
-  q2: { equipes: EscalaSalvamarMes['equipesPorQuinzena']['q2']; porDia: EscalaSalvamarMes['porDia'] } | null,
+  q1: {
+    equipes: EscalaSalvamarMes['equipesPorQuinzena']['q1'];
+    porDia: EscalaSalvamarMes['porDia'];
+  } | null,
+  q2: {
+    equipes: EscalaSalvamarMes['equipesPorQuinzena']['q2'];
+    porDia: EscalaSalvamarMes['porDia'];
+  } | null,
   ultimoDiaQ1: 13 | 14,
 ): EscalaSalvamarMes | null {
   if (!q1 && !q2) return null;

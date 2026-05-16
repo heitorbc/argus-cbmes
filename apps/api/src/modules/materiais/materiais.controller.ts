@@ -62,10 +62,7 @@ export class MateriaisController {
   @Roles('admin', 'fiscal', 'chefe_equipe', 'motorista')
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  registrar(
-    @Body() body: unknown,
-    @CurrentUser() user: UserSession,
-  ): ConferenciaMateriaisDoDia {
+  registrar(@Body() body: unknown, @CurrentUser() user: UserSession): ConferenciaMateriaisDoDia {
     const parsed = registrarConferenciaMateriaisInputSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));

@@ -32,9 +32,7 @@ describe('HealthController.status (S2.6)', () => {
 
   function makeMapaForcaMock(snap: MapaForcaSnapshot | Error): MapaForcaCiodesService {
     return {
-      getSnapshot: snap instanceof Error
-        ? () => Promise.reject(snap)
-        : () => Promise.resolve(snap),
+      getSnapshot: snap instanceof Error ? () => Promise.reject(snap) : () => Promise.resolve(snap),
     } as unknown as MapaForcaCiodesService;
   }
 

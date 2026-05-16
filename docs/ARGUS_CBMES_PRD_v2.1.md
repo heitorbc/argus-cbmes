@@ -2,26 +2,26 @@
 
 **1º Batalhão Bombeiro Militar — 1ª Companhia (Vitória/ES)**
 
-| Campo | Valor |
-|---|---|
-| Documento | Product Requirements Document (PRD) v2.1 |
-| Status | Atualizado pós-homologação e go-live de Fase 1 |
-| Data de emissão | 14 de maio de 2026 |
-| Responsável técnico / Admin | 2º SGT Heitor Barcellos Coelho — NF 3037509 |
-| Aprovador | Comandante 1ª Cia/1º BBM |
-| Classificação | Uso Interno — CBMES |
-| URL produção | https://argus-cbmes.vercel.app |
-| Repositório | https://github.com/heitorbc/argus-cbmes |
+| Campo                       | Valor                                          |
+| --------------------------- | ---------------------------------------------- |
+| Documento                   | Product Requirements Document (PRD) v2.1       |
+| Status                      | Atualizado pós-homologação e go-live de Fase 1 |
+| Data de emissão             | 14 de maio de 2026                             |
+| Responsável técnico / Admin | 2º SGT Heitor Barcellos Coelho — NF 3037509    |
+| Aprovador                   | Comandante 1ª Cia/1º BBM                       |
+| Classificação               | Uso Interno — CBMES                            |
+| URL produção                | https://argus-cbmes.vercel.app                 |
+| Repositório                 | https://github.com/heitorbc/argus-cbmes        |
 
 ---
 
 ## Histórico de revisões
 
-| Versão | Data | Descrição |
-|---|---|---|
-| 0.1 | 30/04/2026 | Template inicial |
-| 1.0 | 06/05/2026 | Consolidação AS-IS; APH com IA priorizada |
-| 2.0 | 06/05/2026 | Fase 1 redesenhada para baixo impacto operacional; APH movida para Fase 2 |
+| Versão  | Data           | Descrição                                                                                                                                                                                                                                                                         |
+| ------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0.1     | 30/04/2026     | Template inicial                                                                                                                                                                                                                                                                  |
+| 1.0     | 06/05/2026     | Consolidação AS-IS; APH com IA priorizada                                                                                                                                                                                                                                         |
+| 2.0     | 06/05/2026     | Fase 1 redesenhada para baixo impacto operacional; APH movida para Fase 2                                                                                                                                                                                                         |
 | **2.1** | **14/05/2026** | **Atualização pós-homologação refletindo 13 sprints originais + 11 sub-sprints S6 + 5 séries de PRs de polimento; inclui módulos novos (Dispensas, Atestados, NS, Férias, Trocas, Unidades, Recursos, Escalas Especiais, ChOp, Materiais) e bloqueios remanescentes para Fase 2** |
 
 ### O que muda de v2.0 para v2.1
@@ -47,83 +47,83 @@
 
 ### 1.1. Cobertura por módulo (PRD v2.0)
 
-| Módulo | RFs originais | Implementados | Modificados | Não-implementados |
-|---|---|---|---|---|
-| CM — Cadastros Mestre | 6 | 6 | 1 (RF-CM-101 sync 06h → on-demand) | 0 |
-| PR — Prévia do Mapa Força | 5 | 5 | 1 (composição expandida) | 0 |
-| SV — Serviço | 3 | 3 | 0 | 0 |
-| MF — Mapa Força (integração) | 4 | 0 | 0 | 4 (RF-MF-401 a 404 — bloqueio auth) |
-| CF — Conferências | 6 | 6 | 1 (Viatura expandida) | 0 |
-| PD — Parte Diária | 5 | 4 | 1 (PDF → DOCX) | 0 (RF-PD-620 deferido) |
-| CC — Cross-cutting | 4 | 2 | 0 | 2 (auditoria hash; PWA offline) |
+| Módulo                       | RFs originais | Implementados | Modificados                        | Não-implementados                   |
+| ---------------------------- | ------------- | ------------- | ---------------------------------- | ----------------------------------- |
+| CM — Cadastros Mestre        | 6             | 6             | 1 (RF-CM-101 sync 06h → on-demand) | 0                                   |
+| PR — Prévia do Mapa Força    | 5             | 5             | 1 (composição expandida)           | 0                                   |
+| SV — Serviço                 | 3             | 3             | 0                                  | 0                                   |
+| MF — Mapa Força (integração) | 4             | 0             | 0                                  | 4 (RF-MF-401 a 404 — bloqueio auth) |
+| CF — Conferências            | 6             | 6             | 1 (Viatura expandida)              | 0                                   |
+| PD — Parte Diária            | 5             | 4             | 1 (PDF → DOCX)                     | 0 (RF-PD-620 deferido)              |
+| CC — Cross-cutting           | 4             | 2             | 0                                  | 2 (auditoria hash; PWA offline)     |
 
 ### 1.2. Módulos novos entregues (não previstos no PRD v2.0)
 
-| # | Módulo | Sprint/PR | Função |
-|---|---|---|---|
-| 1 | **Dispensas (I–VIII)** | S6j | 8 tipos canônicos com limites + saldo por militar |
-| 2 | **Atestados médicos** | S6k | CID-10 + dias + CRM; 3 lugares de entrada |
-| 3 | **Notas de Serviço** | S6l + S6m | CRUD + parser PDF para preview pré-preenchido |
-| 4 | **Férias** | item-4 (PR #26) | Cadastro mês previsto por militar |
-| 5 | **Trocas Autorizadas** | item-1 + S0.5/PR4 | Reconciliação militarRaw → NF; integração Prévia |
-| 6 | **Unidades cadastrais** | S6d/S6e | Subseções configuráveis (CRUD admin) |
-| 7 | **Recursos ad-hoc** | S6d/S6e + PR #37 | Ativar recurso em runtime na Prévia |
-| 8 | **Escalas Especiais (XLSM)** | S6a + PR #35 | Parser dedicado matutino/vespertino/ISEO |
-| 9 | **Chefes de Operação (ChOp)** | S6a-fix | Planilha externa CSV; integração Prévia |
-| 10 | **Alterações Diversas (timeline)** | S6b | Log datado de eventos do turno |
-| 11 | **Persona Picker** | PR #17 | Tela de seleção de 7 personas (homologação) |
-| 12 | **Conferência de Materiais por viatura** | S8 | Checklist hardcoded por tipo (ABTS/AR/...) |
-| 13 | **Histórico de KM da viatura** | PR #38 | Audit log embedded (manual_admin/conferencia/ocorrencia) |
-| 14 | **Calendário aquático (M01/M02)** | PR #36 | Override quinzenal para Mergulho |
+| #   | Módulo                                   | Sprint/PR         | Função                                                   |
+| --- | ---------------------------------------- | ----------------- | -------------------------------------------------------- |
+| 1   | **Dispensas (I–VIII)**                   | S6j               | 8 tipos canônicos com limites + saldo por militar        |
+| 2   | **Atestados médicos**                    | S6k               | CID-10 + dias + CRM; 3 lugares de entrada                |
+| 3   | **Notas de Serviço**                     | S6l + S6m         | CRUD + parser PDF para preview pré-preenchido            |
+| 4   | **Férias**                               | item-4 (PR #26)   | Cadastro mês previsto por militar                        |
+| 5   | **Trocas Autorizadas**                   | item-1 + S0.5/PR4 | Reconciliação militarRaw → NF; integração Prévia         |
+| 6   | **Unidades cadastrais**                  | S6d/S6e           | Subseções configuráveis (CRUD admin)                     |
+| 7   | **Recursos ad-hoc**                      | S6d/S6e + PR #37  | Ativar recurso em runtime na Prévia                      |
+| 8   | **Escalas Especiais (XLSM)**             | S6a + PR #35      | Parser dedicado matutino/vespertino/ISEO                 |
+| 9   | **Chefes de Operação (ChOp)**            | S6a-fix           | Planilha externa CSV; integração Prévia                  |
+| 10  | **Alterações Diversas (timeline)**       | S6b               | Log datado de eventos do turno                           |
+| 11  | **Persona Picker**                       | PR #17            | Tela de seleção de 7 personas (homologação)              |
+| 12  | **Conferência de Materiais por viatura** | S8                | Checklist hardcoded por tipo (ABTS/AR/...)               |
+| 13  | **Histórico de KM da viatura**           | PR #38            | Audit log embedded (manual_admin/conferencia/ocorrencia) |
+| 14  | **Calendário aquático (M01/M02)**        | PR #36            | Override quinzenal para Mergulho                         |
 
 ### 1.3. Métricas de sucesso revisadas
 
-| Indicador | Meta v2.0 | Estado atual | Observação |
-|---|---|---|---|
-| Tempo de produção da Prévia | ≤5min | ✅ ~2min em uso real | Aderência confirmada em homologação cruzada |
-| Tempo de produção PD | ≤30min | ⚠️ Não medido formalmente | Pendente UAT estruturado |
-| Tempo de preenchimento MF externo | ≤60s | ❌ Não-aplicável | Escrita real não-implementada |
-| Adesão do efetivo | 80% em 30d | ⏳ Pré-medição | Sistema em uso restrito (homologação) |
-| Disponibilidade integração MF | 99,5% | ❌ Não-aplicável | Idem |
-| Conformidade documental PD | 100% | ✅ DOCX no padrão | Validado contra PDs reais |
-| Cobertura de testes | ≥60% | ⚠️ ~401 API + 27 web | Coverage formal não medida |
+| Indicador                         | Meta v2.0  | Estado atual              | Observação                                  |
+| --------------------------------- | ---------- | ------------------------- | ------------------------------------------- |
+| Tempo de produção da Prévia       | ≤5min      | ✅ ~2min em uso real      | Aderência confirmada em homologação cruzada |
+| Tempo de produção PD              | ≤30min     | ⚠️ Não medido formalmente | Pendente UAT estruturado                    |
+| Tempo de preenchimento MF externo | ≤60s       | ❌ Não-aplicável          | Escrita real não-implementada               |
+| Adesão do efetivo                 | 80% em 30d | ⏳ Pré-medição            | Sistema em uso restrito (homologação)       |
+| Disponibilidade integração MF     | 99,5%      | ❌ Não-aplicável          | Idem                                        |
+| Conformidade documental PD        | 100%       | ✅ DOCX no padrão         | Validado contra PDs reais                   |
+| Cobertura de testes               | ≥60%       | ⚠️ ~401 API + 27 web      | Coverage formal não medida                  |
 
 ---
 
 ## 2. Stack tecnológico real
 
-| Camada | PRD v2.0 | Estado atual | Desvio |
-|---|---|---|---|
-| Frontend | React 18 + Vite + Tailwind + shadcn/ui + TanStack Query + Zustand | React 18 + Vite + Tailwind ✅; **sem shadcn/ui** (componentes custom); **sem TanStack Query** (fetch direto); **sem Zustand** (useState + context) | Stack simplificada |
-| Backend | Node.js 20 + NestJS + Prisma + Zod | NestJS 10.4 + Zod ✅; **Prisma instalado mas schema vazio** | Persistência mock |
-| Banco | PostgreSQL Supabase | ❌ Não-conectado | **Sprint S5b adiado** |
-| Hospedagem app | Vercel | ✅ Frontend Vercel; backend em Render/Railway | Conforme |
-| Integração Sheets | Google Service Account JWT | ❌ **Rejeitada** — usa CSV público (ADR-003) | Pivô crítico |
-| PDF | Puppeteer (Chromium) | ❌ Não-instalado — usa `window.print()` | Bundle inviável em Vercel |
-| DOCX | Lib `docx` (npm) | ✅ `docx@9.6.1` server-side builder | Conforme |
-| Auth | NF + bcrypt própria | ✅ JWT HS256 8h, cookie httpOnly, bcrypt cost 12 | Conforme |
-| Cache/filas | Não previsto | Não-utilizado (cache TTL em memória nos parsers) | Conforme |
-| Observabilidade | Vercel Logs + Sentry | ⚠️ Vercel Logs apenas; **Sentry não-configurado** | Pendente |
-| CI/CD | GitHub Actions + Vercel | ✅ Lint + typecheck + test em cada PR; deploy Vercel automático | Conforme (CI falha Node 20 vs pnpm 11 — issue infra) |
+| Camada            | PRD v2.0                                                          | Estado atual                                                                                                                                       | Desvio                                               |
+| ----------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Frontend          | React 18 + Vite + Tailwind + shadcn/ui + TanStack Query + Zustand | React 18 + Vite + Tailwind ✅; **sem shadcn/ui** (componentes custom); **sem TanStack Query** (fetch direto); **sem Zustand** (useState + context) | Stack simplificada                                   |
+| Backend           | Node.js 20 + NestJS + Prisma + Zod                                | NestJS 10.4 + Zod ✅; **Prisma instalado mas schema vazio**                                                                                        | Persistência mock                                    |
+| Banco             | PostgreSQL Supabase                                               | ❌ Não-conectado                                                                                                                                   | **Sprint S5b adiado**                                |
+| Hospedagem app    | Vercel                                                            | ✅ Frontend Vercel; backend em Render/Railway                                                                                                      | Conforme                                             |
+| Integração Sheets | Google Service Account JWT                                        | ❌ **Rejeitada** — usa CSV público (ADR-003)                                                                                                       | Pivô crítico                                         |
+| PDF               | Puppeteer (Chromium)                                              | ❌ Não-instalado — usa `window.print()`                                                                                                            | Bundle inviável em Vercel                            |
+| DOCX              | Lib `docx` (npm)                                                  | ✅ `docx@9.6.1` server-side builder                                                                                                                | Conforme                                             |
+| Auth              | NF + bcrypt própria                                               | ✅ JWT HS256 8h, cookie httpOnly, bcrypt cost 12                                                                                                   | Conforme                                             |
+| Cache/filas       | Não previsto                                                      | Não-utilizado (cache TTL em memória nos parsers)                                                                                                   | Conforme                                             |
+| Observabilidade   | Vercel Logs + Sentry                                              | ⚠️ Vercel Logs apenas; **Sentry não-configurado**                                                                                                  | Pendente                                             |
+| CI/CD             | GitHub Actions + Vercel                                           | ✅ Lint + typecheck + test em cada PR; deploy Vercel automático                                                                                    | Conforme (CI falha Node 20 vs pnpm 11 — issue infra) |
 
 ---
 
 ## 3. Decisões arquiteturais registradas (ADRs)
 
-| ADR | Decisão | Status |
-|---|---|---|
-| ADR-001 | Stack tecnológica monorepo pnpm + NestJS + React | ACEITO |
-| ADR-002 | Auth: JWT HS256 + bcrypt; sem MFA na Fase 1 | ACEITO |
-| ADR-003 | Leitura Sheets via CSV público (sem Service Account) | ACEITO |
-| ADR-004 | Parser escala XLSX posicional com avisos não-fatais | ACEITO |
-| ADR-005 | Composição da Prévia orquestra 5 fontes com 6 tipos de inconsistência | ACEITO |
-| ADR-006 | Leitura Mapa Força via CSV público (read-only); escrita deferida | ACEITO |
-| ADR-007 | Edição pós-import e ajustes pré-turno em `AjustesPreviaService` | ACEITO |
-| ADR-008 | Efetivo: 3 fontes (DADOS > 1ª1º > EFETIVO) com merge enriquecedor | ACEITO |
-| ADR-009 | Viaturas: nomenclatura MF (DISPONIVEL/BAIXADA/EMPRESTADA) + `origem` (mapa_forca / override_admin) | ACEITO |
-| ADR-010 | Fontes da Prévia do dia (consolidação 5 fontes) | ACEITO |
-| ADR-011 | Mapeamento `composicaoMf` (1 entrada por recurso) vs. `tripulacao` (1 por militar) | ACEITO |
-| ADR-012 | Estado do dia Serviço (NAO_INICIADO → INICIADO → ENCERRADO) sem deadline de horário | ACEITO |
+| ADR     | Decisão                                                                                                                             | Status |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| ADR-001 | Stack tecnológica monorepo pnpm + NestJS + React                                                                                    | ACEITO |
+| ADR-002 | Auth: JWT HS256 + bcrypt; sem MFA na Fase 1                                                                                         | ACEITO |
+| ADR-003 | Leitura Sheets via CSV público (sem Service Account)                                                                                | ACEITO |
+| ADR-004 | Parser escala XLSX posicional com avisos não-fatais                                                                                 | ACEITO |
+| ADR-005 | Composição da Prévia orquestra 5 fontes com 6 tipos de inconsistência                                                               | ACEITO |
+| ADR-006 | Leitura Mapa Força via CSV público (read-only); escrita deferida                                                                    | ACEITO |
+| ADR-007 | Edição pós-import e ajustes pré-turno em `AjustesPreviaService`                                                                     | ACEITO |
+| ADR-008 | Efetivo: 3 fontes (DADOS > 1ª1º > EFETIVO) com merge enriquecedor                                                                   | ACEITO |
+| ADR-009 | Viaturas: nomenclatura MF (DISPONIVEL/BAIXADA/EMPRESTADA) + `origem` (mapa_forca / override_admin)                                  | ACEITO |
+| ADR-010 | Fontes da Prévia do dia (consolidação 5 fontes)                                                                                     | ACEITO |
+| ADR-011 | Mapeamento `composicaoMf` (1 entrada por recurso) vs. `tripulacao` (1 por militar)                                                  | ACEITO |
+| ADR-012 | Estado do dia Serviço (NAO_INICIADO → INICIADO → ENCERRADO) sem deadline de horário                                                 | ACEITO |
 | ADR-013 | Renomeação `previa` → `mapa-forca`; novo estado `PREVIA_INICIADA`; gate de edição por NF do Fiscal escalado; calendário lazy-loaded | ACEITO |
 
 ---
@@ -137,6 +137,7 @@ A Fase 1.5 cobre os requisitos do PRD v2.0 que ficaram bloqueados ou adiados e �
 **Objetivo:** transformar mock in-memory em PostgreSQL persistente. Crítico para produção real.
 
 **Entregas:**
+
 - Schema Prisma populado com todas as entidades (Usuario, Militar, Viatura, Escala, PreviaMapaForca, Servico, ConferenciaEquipe, ConferenciaViatura, ConferenciaMateriais, ParteDiaria, PD_Secao, TrilhaAuditoria, Dispensa, Atestado, NotaServico, Ferias, Troca, Unidade, Recurso, EscalaEspecial, ChefeOperacao, AlteracaoDiversa).
 - Migrations versionadas; seeds para 1ª Cia.
 - Migração dos serviços in-memory para Prisma.
@@ -167,6 +168,7 @@ A Fase 1.5 cobre os requisitos do PRD v2.0 que ficaram bloqueados ou adiados e �
 **Recomendação:** Opção 1 (OAuth) como primeira tentativa, com Opção 3 como fallback.
 
 **Entregas:**
+
 - RF-MF-401 — Botão "Preencher Mapa Força" habilitado por Conferências completas
 - RF-MF-402 — Preview com diff campo a campo
 - RF-MF-403 — Escrita transacional + atualiza A4 com timestamp
@@ -180,6 +182,7 @@ A Fase 1.5 cobre os requisitos do PRD v2.0 que ficaram bloqueados ou adiados e �
 **Objetivo:** estabilizar Fase 1 para uso operacional contínuo.
 
 **Entregas:**
+
 - **Trilha de auditoria estruturada** (RF-CC-705): tabela `TrilhaAuditoria` append-only com hash encadeado; retenção 5 anos; consulta admin-only.
 - **PWA com modo offline** (RF-CC-710 + RNF-002): service worker + IndexedDB; sincronização ao retornar; resolução de conflitos last-write-wins com aviso visual.
 - **Reset senha por e-mail funcional** (RF-CC-701 complemento): auto-serviço.
@@ -195,14 +198,14 @@ A Fase 1.5 cobre os requisitos do PRD v2.0 que ficaram bloqueados ou adiados e �
 
 ### Itens menores remanescentes da Fase 1
 
-| Item | RF original | Sprint |
-|---|---|---|
-| Job agendado 06h para sync efetivo | RF-CM-101 | S5b (após Supabase) |
-| Notificação push/e-mail "Nova escala disponível" | RF-CM-110 critério | S12 |
-| OpenAPI spec publicado | RF-CC-720 | S12 |
-| MFA opcional admin (preparação Fase 2) | RF-CC-701 | S12 |
-| Job de backup automático Supabase | RNF-011 | S5b |
-| PDF server-side via Puppeteer (alternativa) | RF-PD-620 | Reavaliar S12 — se DOCX cobrir, **descartar** |
+| Item                                             | RF original        | Sprint                                        |
+| ------------------------------------------------ | ------------------ | --------------------------------------------- |
+| Job agendado 06h para sync efetivo               | RF-CM-101          | S5b (após Supabase)                           |
+| Notificação push/e-mail "Nova escala disponível" | RF-CM-110 critério | S12                                           |
+| OpenAPI spec publicado                           | RF-CC-720          | S12                                           |
+| MFA opcional admin (preparação Fase 2)           | RF-CC-701          | S12                                           |
+| Job de backup automático Supabase                | RNF-011            | S5b                                           |
+| PDF server-side via Puppeteer (alternativa)      | RF-PD-620          | Reavaliar S12 — se DOCX cobrir, **descartar** |
 
 ---
 
@@ -211,6 +214,7 @@ A Fase 1.5 cobre os requisitos do PRD v2.0 que ficaram bloqueados ou adiados e �
 ### Fase 2 — APH com IA generativa
 
 Conteúdo conforme PRD v1.0 (preservado):
+
 - Módulo APH completo: formulário estruturado de coleta + geração de relato técnico assistida pela API da Anthropic (Claude).
 - Integração com BAON e ECOPS.
 - LGPD para dados sensíveis de vítimas e DPA com Anthropic.
@@ -243,18 +247,18 @@ Conteúdo conforme PRD v1.0 (preservado):
 
 ## 6. Riscos atualizados
 
-| ID | Risco | Probabilidade | Impacto | Mitigação atual |
-|---|---|---|---|---|
-| R-01 | Falha persistente integração Mapa Força (escrita) | Média | Crítico | Modo degradado com instrução manual; Fase 1.5/S9 prioritária |
-| R-02 | Resistência de Fiscais alternativos ao sistema | Média | Alto | Persona Picker permite homologação cruzada com champions diversos |
-| R-03 | Mudança de formato XLSX da escala mensal | Média | Médio | Parser robusto com validação + avisos não-fatais; fallback manual |
-| R-04 | Desalinhamento modelo de equipes (Mergulho/Salvamar) | Baixa | Médio | Calendário aquático M01/M02 + abas QDV próprias mitigaram |
-| R-05 | Acúmulo de papéis no Tech Lead | Alta | Médio | CLAUDE.md extensivo; ADRs registrados; sprint logs detalhados |
-| R-06 | Vazamento credentials | Baixa | Crítico | ADR-003 elimina Service Account; CSV público sem segredos |
-| R-07 | CPF como senha inicial vazado | Baixa | Alto | Troca obrigatória no 1º acesso; hash bcrypt; auditoria 1º login |
-| R-08 | Mudança de comando antes do go-live | Média | Médio | Entregas em produção continuamente (Vercel); demonstrável |
-| **R-09 (novo)** | **Mock in-memory perde dados em deploy** | **Alta** | **Médio** | **Sistema atualmente em homologação; S5b prioritária antes uso operacional** |
-| **R-10 (novo)** | **CI quebrada (Node 20 vs pnpm 11)** | **Resolvido pendente** | **Baixo** | **Vercel deploy não-bloqueado; ajustar GitHub Action para Node 22** |
+| ID              | Risco                                                | Probabilidade          | Impacto   | Mitigação atual                                                              |
+| --------------- | ---------------------------------------------------- | ---------------------- | --------- | ---------------------------------------------------------------------------- |
+| R-01            | Falha persistente integração Mapa Força (escrita)    | Média                  | Crítico   | Modo degradado com instrução manual; Fase 1.5/S9 prioritária                 |
+| R-02            | Resistência de Fiscais alternativos ao sistema       | Média                  | Alto      | Persona Picker permite homologação cruzada com champions diversos            |
+| R-03            | Mudança de formato XLSX da escala mensal             | Média                  | Médio     | Parser robusto com validação + avisos não-fatais; fallback manual            |
+| R-04            | Desalinhamento modelo de equipes (Mergulho/Salvamar) | Baixa                  | Médio     | Calendário aquático M01/M02 + abas QDV próprias mitigaram                    |
+| R-05            | Acúmulo de papéis no Tech Lead                       | Alta                   | Médio     | CLAUDE.md extensivo; ADRs registrados; sprint logs detalhados                |
+| R-06            | Vazamento credentials                                | Baixa                  | Crítico   | ADR-003 elimina Service Account; CSV público sem segredos                    |
+| R-07            | CPF como senha inicial vazado                        | Baixa                  | Alto      | Troca obrigatória no 1º acesso; hash bcrypt; auditoria 1º login              |
+| R-08            | Mudança de comando antes do go-live                  | Média                  | Médio     | Entregas em produção continuamente (Vercel); demonstrável                    |
+| **R-09 (novo)** | **Mock in-memory perde dados em deploy**             | **Alta**               | **Médio** | **Sistema atualmente em homologação; S5b prioritária antes uso operacional** |
+| **R-10 (novo)** | **CI quebrada (Node 20 vs pnpm 11)**                 | **Resolvido pendente** | **Baixo** | **Vercel deploy não-bloqueado; ajustar GitHub Action para Node 22**          |
 
 ---
 
@@ -319,6 +323,7 @@ argus-cbmes/
 ### Anexo III — Estrutura da Parte Diária
 
 Mantida do PRD v1.0/v2.0 — 17 seções na ordem padrão:
+
 1. Cabeçalho institucional
 2. Identificação (equipe + datas)
 3. Assunção do serviço
@@ -339,16 +344,16 @@ Mantida do PRD v1.0/v2.0 — 17 seções na ordem padrão:
 
 ### Anexo IV — Champions de validação
 
-| Persona | NF | Papel | Função no projeto |
-|---|---|---|---|
-| 1º SGT Heverton | TBD | Fiscal Equipe A | Validação UX cross-Fiscal |
-| 2º SGT Mariane | TBD | Fiscal Equipe B | Validação UX cross-Fiscal |
-| 2º SGT Júlio | TBD | Fiscal Equipe D | Validação UX cross-Fiscal |
-| 1º SGT De Mattos | TBD | Sargenteante | Validação Sargenteação |
-| SD Cauã Lyra | TBD | DRO/Sentinela | Validação Conferência |
-| CB Vicente | TBD | Motorista | Validação Conferência Viatura |
-| SD Martinelli | TBD | Operador | Validação Conferência Materiais |
-| SGT Jezreel | TBD | Almoxarife | Validação visão Logística |
+| Persona          | NF  | Papel           | Função no projeto               |
+| ---------------- | --- | --------------- | ------------------------------- |
+| 1º SGT Heverton  | TBD | Fiscal Equipe A | Validação UX cross-Fiscal       |
+| 2º SGT Mariane   | TBD | Fiscal Equipe B | Validação UX cross-Fiscal       |
+| 2º SGT Júlio     | TBD | Fiscal Equipe D | Validação UX cross-Fiscal       |
+| 1º SGT De Mattos | TBD | Sargenteante    | Validação Sargenteação          |
+| SD Cauã Lyra     | TBD | DRO/Sentinela   | Validação Conferência           |
+| CB Vicente       | TBD | Motorista       | Validação Conferência Viatura   |
+| SD Martinelli    | TBD | Operador        | Validação Conferência Materiais |
+| SGT Jezreel      | TBD | Almoxarife      | Validação visão Logística       |
 
 ---
 
@@ -364,4 +369,4 @@ Mantida do PRD v1.0/v2.0 — 17 seções na ordem padrão:
 
 **— FIM DO PRD v2.1 —**
 
-*Documento gerado com base em análise automatizada de 61 commits, 27 sprint logs, 12 ADRs e PRD v2.0 original. Para discussão das decisões pendentes acima, ver Comitê mensal com Comandante.*
+_Documento gerado com base em análise automatizada de 61 commits, 27 sprint logs, 12 ADRs e PRD v2.0 original. Para discussão das decisões pendentes acima, ver Comitê mensal com Comandante._

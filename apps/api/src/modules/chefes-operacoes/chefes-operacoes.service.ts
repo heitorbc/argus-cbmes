@@ -134,9 +134,7 @@ export class ChefesOperacoesService {
       this.logger.error(
         `forceSync ChOp falhou: ${(err as Error).message}. ${previous ? 'Mantendo snapshot anterior.' : 'Sem snapshot anterior.'}`,
       );
-      throw new ServiceUnavailableException(
-        'Não foi possível sincronizar com a planilha de ChOp.',
-      );
+      throw new ServiceUnavailableException('Não foi possível sincronizar com a planilha de ChOp.');
     }
   }
 

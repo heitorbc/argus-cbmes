@@ -123,9 +123,7 @@ export function ViaturasPage() {
         )}
 
         {!loading && items.length === 0 && !error && (
-          <p className="mt-6 text-center text-sm text-slate-500">
-            Nenhuma viatura encontrada.
-          </p>
+          <p className="mt-6 text-center text-sm text-slate-500">Nenhuma viatura encontrada.</p>
         )}
 
         {items.length > 0 && (
@@ -194,8 +192,8 @@ export function ViaturasPage() {
         )}
 
         <p className="mt-3 text-[11px] italic text-slate-500">
-          Dados de identificação da viatura vêm da planilha QDV (read-only).
-          Clique em uma linha para ver o detalhe completo e editar campos operacionais.
+          Dados de identificação da viatura vêm da planilha QDV (read-only). Clique em uma linha
+          para ver o detalhe completo e editar campos operacionais.
         </p>
       </section>
     </main>

@@ -59,10 +59,9 @@ export function decodeServiceAccountKey(raw: string): ServiceAccountKey {
   try {
     parsed = JSON.parse(json) as ServiceAccountKey;
   } catch (err) {
-    throw new Error(
-      `GOOGLE_SHEETS_SA_KEY_BASE64 não é JSON válido: ${(err as Error).message}`,
-      { cause: err },
-    );
+    throw new Error(`GOOGLE_SHEETS_SA_KEY_BASE64 não é JSON válido: ${(err as Error).message}`, {
+      cause: err,
+    });
   }
   if (!parsed.client_email || !parsed.private_key) {
     throw new Error('SA key sem client_email ou private_key.');
@@ -211,9 +210,7 @@ export async function upsertByKey(
   if (rows.length === 0) return;
   const all = await readAll(client, spreadsheetId, sheetName);
   if (all.length === 0) {
-    throw new Error(
-      `Aba "${sheetName}" vazia (sem header). Rode bootstrap antes de upsert.`,
-    );
+    throw new Error(`Aba "${sheetName}" vazia (sem header). Rode bootstrap antes de upsert.`);
   }
   const header = all[0]!;
   const data = all.slice(1);
@@ -229,9 +226,7 @@ export async function upsertByKey(
   }
   const merged = [...byKey.values()];
   await clearAndWrite(client, spreadsheetId, sheetName, merged);
-  logger.debug(
-    `upsertByKey "${sheetName}": ${rows.length} entries → total ${merged.length}.`,
-  );
+  logger.debug(`upsertByKey "${sheetName}": ${rows.length} entries → total ${merged.length}.`);
   // Header não é modificado; mantido in-loco. (Apenas referência: ${header.length} colunas.)
   void header;
 }

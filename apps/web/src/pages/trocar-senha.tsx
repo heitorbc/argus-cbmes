@@ -15,8 +15,7 @@ export function TrocarSenhaPage() {
 
   // Pré-preenche "Senha atual" com a senha digitada na tela de login
   // (transportada via location.state quando primeiroAcesso=true).
-  const senhaAtualPreenchida =
-    (location.state as { senhaAtual?: string } | null)?.senhaAtual ?? '';
+  const senhaAtualPreenchida = (location.state as { senhaAtual?: string } | null)?.senhaAtual ?? '';
 
   const {
     register,

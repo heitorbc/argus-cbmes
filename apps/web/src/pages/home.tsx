@@ -139,9 +139,7 @@ export function HomePage() {
         )}
 
         <div className="mt-6 rounded border border-slate-200 bg-white p-4 text-xs text-slate-500">
-          <p className="font-medium text-slate-700">
-            Sprint atual: S2.6 — Status dashboard
-          </p>
+          <p className="font-medium text-slate-700">Sprint atual: S2.6 — Status dashboard</p>
           <p className="mt-1">
             Próximo: S2.7 (admin de usuários), S2.8 (PWA + hardening), S2.9 (Supabase).
           </p>

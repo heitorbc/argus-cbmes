@@ -80,9 +80,7 @@ function nomeMilitar(t: TripulacaoEntry): string {
 }
 
 /** Agrupa a tripulação por viatura, preservando ordem original. */
-function agruparPorViatura(
-  tripulacao: TripulacaoEntry[],
-): Map<string, TripulacaoEntry[]> {
+function agruparPorViatura(tripulacao: TripulacaoEntry[]): Map<string, TripulacaoEntry[]> {
   const m = new Map<string, TripulacaoEntry[]>();
   for (const t of tripulacao) {
     const k = t.viatura || '(sem viatura)';

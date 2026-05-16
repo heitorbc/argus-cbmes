@@ -1,8 +1,4 @@
-import type {
-  ContatoLogistico,
-  ViaturaCbmes,
-  ViaturaQdvBaseLista,
-} from '@argus/shared-types';
+import type { ContatoLogistico, ViaturaCbmes, ViaturaQdvBaseLista } from '@argus/shared-types';
 
 /**
  * S0.5/3.1 — Parsers das 3 abas adicionais da planilha QDV:
@@ -20,7 +16,8 @@ export function parseQdvBaseListaCsv(csv: string): ViaturaQdvBaseLista[] {
   const rows = parseCsvRobust(csv);
   if (rows.length < 2) return [];
   const header = (rows[0] ?? []).map((c) => c.trim());
-  const idx = (token: string): number => header.findIndex((h) => h.toUpperCase() === token.toUpperCase());
+  const idx = (token: string): number =>
+    header.findIndex((h) => h.toUpperCase() === token.toUpperCase());
 
   const out: ViaturaQdvBaseLista[] = [];
   for (let r = 1; r < rows.length; r += 1) {
@@ -61,7 +58,8 @@ export function parseVtrListaPrincipalCsv(csv: string): ViaturaCbmes[] {
   const rows = parseCsvRobust(csv);
   if (rows.length < 2) return [];
   const header = (rows[0] ?? []).map((c) => c.trim());
-  const idx = (token: string): number => header.findIndex((h) => h.toUpperCase() === token.toUpperCase());
+  const idx = (token: string): number =>
+    header.findIndex((h) => h.toUpperCase() === token.toUpperCase());
 
   const out: ViaturaCbmes[] = [];
   for (let r = 1; r < rows.length; r += 1) {
@@ -99,7 +97,8 @@ export function parseContatosLogisticasCsv(csv: string): ContatoLogistico[] {
   const rows = parseCsvRobust(csv);
   if (rows.length < 2) return [];
   const header = (rows[0] ?? []).map((c) => c.trim());
-  const idx = (token: string): number => header.findIndex((h) => h.toUpperCase() === token.toUpperCase());
+  const idx = (token: string): number =>
+    header.findIndex((h) => h.toUpperCase() === token.toUpperCase());
 
   const out: ContatoLogistico[] = [];
   for (let r = 1; r < rows.length; r += 1) {

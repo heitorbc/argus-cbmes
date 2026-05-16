@@ -3,15 +3,9 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EscalaEspecialMensal } from '@argus/shared-types';
 import { resolveDataDir } from '../../common/dev-fixtures';
-import {
-  parseEscalaEspecialXlsm,
-  parseFilenameEspecial,
-} from './escala-especial-xlsm-parser';
+import { parseEscalaEspecialXlsm, parseFilenameEspecial } from './escala-especial-xlsm-parser';
 import { SheetsDbService } from '../sheets-db/sheets-db.service';
-import {
-  escalaEspecialToRows,
-  rowsToEscalasEspeciais,
-} from '../sheets-db/sheets-db-serializers';
+import { escalaEspecialToRows, rowsToEscalasEspeciais } from '../sheets-db/sheets-db-serializers';
 
 interface EscalaKey {
   ano: number;
@@ -45,9 +39,7 @@ export class EscalasEspeciaisService implements OnModuleInit {
 
   private async bootstrapFromSheetsDb(): Promise<void> {
     if (!this.sheetsDb?.isEnabled()) {
-      this.logger.log(
-        'Bootstrap escala especial: Sheets-DB desabilitado, tentando XLSM local.',
-      );
+      this.logger.log('Bootstrap escala especial: Sheets-DB desabilitado, tentando XLSM local.');
       return;
     }
     try {
@@ -104,7 +96,9 @@ export class EscalasEspeciaisService implements OnModuleInit {
           `Bootstrap escala especial: ${f} (${String(escala.mes).padStart(2, '0')}/${escala.ano}, ${escala.atos.length} atos)`,
         );
       } catch (err) {
-        this.logger.error(`Bootstrap escala especial falhou para "${f}": ${(err as Error).message}`);
+        this.logger.error(
+          `Bootstrap escala especial falhou para "${f}": ${(err as Error).message}`,
+        );
       }
     }
   }
@@ -153,13 +147,11 @@ export class EscalasEspeciaisService implements OnModuleInit {
   private syncToSheetsDb(escala: EscalaEspecialMensal): void {
     if (!this.sheetsDb?.isEnabled()) return;
     const rows = escalaEspecialToRows(escala);
-    void this.sheetsDb
-      .replaceEscalaEspecialMes(escala.ano, escala.mes, rows)
-      .catch((err) => {
-        this.logger.warn(
-          `Sheets-DB write falhou para escala especial ${escala.mes}/${escala.ano}: ${(err as Error).message}.`,
-        );
-      });
+    void this.sheetsDb.replaceEscalaEspecialMes(escala.ano, escala.mes, rows).catch((err) => {
+      this.logger.warn(
+        `Sheets-DB write falhou para escala especial ${escala.mes}/${escala.ano}: ${(err as Error).message}.`,
+      );
+    });
   }
 
   private deleteFromSheetsDb(ano: number, mes: number): void {

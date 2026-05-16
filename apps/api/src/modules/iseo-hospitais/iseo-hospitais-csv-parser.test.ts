@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  parseIseoHospitaisCsv,
-  parseUnidadeFromSheetName,
-} from './iseo-hospitais-csv-parser';
+import { parseIseoHospitaisCsv, parseUnidadeFromSheetName } from './iseo-hospitais-csv-parser';
 
 const HEADER =
   'POSTO/GRAD,NOME DO MILITAR,NF,DATA DA ESCALA,TURNO,FUNÇÃO,CONTATO,CARGA HORÁRIA,OBM,LOTAÇÃO';
@@ -52,10 +49,7 @@ describe('parseIseoHospitaisCsv', () => {
   });
 
   it('aba unificada com unidadeDefault: usa quando OBM ausente', () => {
-    const csv =
-      HEADER +
-      '\n' +
-      'CB,SEM_OBM,3333,01/04/2026,Diurno,Operador,,,,\n';
+    const csv = HEADER + '\n' + 'CB,SEM_OBM,3333,01/04/2026,Diurno,Operador,,,,\n';
     const items = parseIseoHospitaisCsv(csv, { unidadeDefault: 'HPM' });
     expect(items.length).toBe(1);
     expect(items[0]?.unidade).toBe('HPM');
@@ -131,10 +125,7 @@ describe('parseIseoHospitaisCsv', () => {
 
   it('aceita datas DD-MM-YYYY e YYYY-MM-DD', () => {
     const csv =
-      HEADER +
-      '\n' +
-      'CB,X,1,01-02-2026,Diurno,,,,,\n' +
-      'CB,Y,2,2026-03-04,Noturno,,,,,\n';
+      HEADER + '\n' + 'CB,X,1,01-02-2026,Diurno,,,,,\n' + 'CB,Y,2,2026-03-04,Noturno,,,,,\n';
     const items = parseIseoHospitaisCsv(csv, { unidadeFromSheet: 'HPM' });
     expect(items.length).toBe(2);
     expect(items[0]?.dataIso).toBe('2026-02-01');

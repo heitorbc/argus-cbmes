@@ -50,13 +50,6 @@ export class ConferenciaViaturaController {
     const isAdmin = user.papeis.includes('admin');
     const isOverride =
       isAdmin || user.papeis.includes('fiscal') || user.papeis.includes('sargenteante');
-    return this.conferencia.registrar(
-      data,
-      vtrPrefixo,
-      parsed.data,
-      user.nf,
-      isOverride,
-      isAdmin,
-    );
+    return this.conferencia.registrar(data, vtrPrefixo, parsed.data, user.nf, isOverride, isAdmin);
   }
 }

@@ -224,7 +224,8 @@ export class MapaForcaService {
         if (novoMilitar) {
           chefeTitular = {
             posto: novoMilitar.posto,
-            nomeGuerra: novoMilitar.nomeGuerra ?? novoMilitar.nome.split(' ')[0] ?? novoMilitar.nome,
+            nomeGuerra:
+              novoMilitar.nomeGuerra ?? novoMilitar.nome.split(' ')[0] ?? novoMilitar.nome,
             nf: novoMilitar.nf,
           };
         }
@@ -553,8 +554,7 @@ export class MapaForcaService {
     const payload = await this.getMapaForcaDoDia(dataIso);
     return payload.composicaoMf
       .filter(
-        (c) =>
-          c.chefe?.militarResolvido?.nf === nf || c.motorista?.militarResolvido?.nf === nf,
+        (c) => c.chefe?.militarResolvido?.nf === nf || c.motorista?.militarResolvido?.nf === nf,
       )
       .map((c) => c.recurso);
   }
@@ -903,12 +903,8 @@ function converterTrocaAutorizadaEmPrevia(
   // S2.8.3 — usa NF direto da planilha (cols G/K) quando disponível
   // no lado escala. No lado pagamento, os papéis se invertem (escalado
   // do pagamento = substituto da troca original, e vice-versa).
-  const escaladoNfDireto = isLadoEscala
-    ? troca.escaladoOriginalNf
-    : troca.substitutoNf;
-  const substitutoNfDireto = isLadoEscala
-    ? troca.substitutoNf
-    : troca.escaladoOriginalNf;
+  const escaladoNfDireto = isLadoEscala ? troca.escaladoOriginalNf : troca.substitutoNf;
+  const substitutoNfDireto = isLadoEscala ? troca.substitutoNf : troca.escaladoOriginalNf;
 
   const substituidoNf =
     escaladoNfDireto ??
@@ -1082,10 +1078,7 @@ const PARES_VIATURA: Record<ParRecurso, [string, string]> = {
   MERGULHO: ['MERGULHO 01', 'MERGULHO 02'],
 };
 
-function aplicarOverrideParRecurso(
-  par: ParRecurso,
-  tripulacao: TripulacaoEntry[],
-): void {
+function aplicarOverrideParRecurso(par: ParRecurso, tripulacao: TripulacaoEntry[]): void {
   const [v01, v02] = PARES_VIATURA[par];
   for (const t of tripulacao) {
     if (t.viatura === v01) t.viatura = v02;

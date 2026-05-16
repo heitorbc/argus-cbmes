@@ -81,7 +81,11 @@ export function ParteDiariaPage() {
 
   const finalizar = async () => {
     if (!pd) return;
-    if (!window.confirm('Finalizar a Parte Diária deste dia? Edições ficarão bloqueadas até reabertura por um admin.')) {
+    if (
+      !window.confirm(
+        'Finalizar a Parte Diária deste dia? Edições ficarão bloqueadas até reabertura por um admin.',
+      )
+    ) {
       return;
     }
     setAcaoLockEmAndamento(true);
@@ -142,9 +146,7 @@ export function ParteDiariaPage() {
   // S0.x/parte-diaria — Viaturas em serviço hoje (para select de Ocorrências).
   const viaturasEmServico = useMemo(() => {
     if (!pd) return [] as string[];
-    return pd.escalasOperacionais
-      .filter((e) => e.vtrPrefixo)
-      .map((e) => e.vtrPrefixo as string);
+    return pd.escalasOperacionais.filter((e) => e.vtrPrefixo).map((e) => e.vtrPrefixo as string);
   }, [pd]);
 
   return (
@@ -235,8 +237,8 @@ export function ParteDiariaPage() {
               </p>
               <p className="mt-1 text-xs text-emerald-800">
                 Por NF {pd.finalizadoPorNf} em{' '}
-                {pd.finalizadoEm ? new Date(pd.finalizadoEm).toLocaleString('pt-BR') : ''}.
-                Edições bloqueadas até reabertura por admin.
+                {pd.finalizadoEm ? new Date(pd.finalizadoEm).toLocaleString('pt-BR') : ''}. Edições
+                bloqueadas até reabertura por admin.
               </p>
             </div>
           )}
@@ -766,8 +768,8 @@ function TabelaRonda({
   return (
     <div>
       <p className="mb-1 text-[11px] italic text-slate-500 print:hidden">
-        Cobre 23:10–05:10 dividido entre os militares disponíveis (Mot ChOp + ABTS + Resgate
-        + ATB/Plat). 1 militar por horário.
+        Cobre 23:10–05:10 dividido entre os militares disponíveis (Mot ChOp + ABTS + Resgate +
+        ATB/Plat). 1 militar por horário.
       </p>
       <table className="w-full border-collapse text-xs">
         <thead className="bg-slate-100 print:bg-white">
@@ -1005,10 +1007,7 @@ function TabelaOcorrencias({
         <button
           type="button"
           onClick={() =>
-            onChange([
-              ...linhas,
-              { vtr: '', numeroBaon: '', codigo: '', descricao: '' },
-            ])
+            onChange([...linhas, { vtr: '', numeroBaon: '', codigo: '', descricao: '' }])
           }
           className="mt-1 text-xs text-cbmes-blue hover:underline print:hidden"
         >

@@ -66,12 +66,15 @@ export class LocaisFaxinaService implements OnModuleInit {
 
   create(input: CreateLocalFaxinaInput): LocalFaxina {
     const nomeNorm = input.nome.trim();
-    if (Array.from(this.byId.values()).some((l) => l.nome.toLowerCase() === nomeNorm.toLowerCase())) {
+    if (
+      Array.from(this.byId.values()).some((l) => l.nome.toLowerCase() === nomeNorm.toLowerCase())
+    ) {
       throw new ConflictException(`Local "${nomeNorm}" já existe`);
     }
     const id = randomUUID();
     const now = new Date().toISOString();
-    const ordem = input.ordem ?? Math.max(0, ...Array.from(this.byId.values()).map((l) => l.ordem)) + 1;
+    const ordem =
+      input.ordem ?? Math.max(0, ...Array.from(this.byId.values()).map((l) => l.ordem)) + 1;
     const local: LocalFaxina = {
       id,
       nome: nomeNorm,

@@ -38,9 +38,7 @@ describe('SheetsDbService — modo desabilitado (sem credenciais)', () => {
   it('writes são no-op silencioso quando desabilitado', async () => {
     await svc.onModuleInit();
     // Não lança. Útil para o app rodar local sem GCP setup.
-    await expect(
-      svc.replaceEscalaMensalMes(2026, 5, [['linha']]),
-    ).resolves.toBeUndefined();
+    await expect(svc.replaceEscalaMensalMes(2026, 5, [['linha']])).resolves.toBeUndefined();
     await expect(svc.upsertNotaServico(['linha'])).resolves.toBeUndefined();
     await expect(svc.deleteNotaServico('id1')).resolves.toBeUndefined();
   });

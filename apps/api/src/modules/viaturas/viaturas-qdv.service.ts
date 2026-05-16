@@ -56,9 +56,7 @@ export class ViaturasQdvService {
       this.logger.error(
         `forceSync QDV falhou: ${(err as Error).message}. ${previous ? 'Mantendo snapshot anterior.' : 'Sem snapshot anterior.'}`,
       );
-      throw new ServiceUnavailableException(
-        'Não foi possível sincronizar com a planilha QDV.',
-      );
+      throw new ServiceUnavailableException('Não foi possível sincronizar com a planilha QDV.');
     }
   }
 

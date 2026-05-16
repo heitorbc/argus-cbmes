@@ -18,8 +18,14 @@ export const agendaItemSchema = z.object({
   fonte: agendaFonteSchema,
   titulo: z.string(),
   subtitulo: z.string().optional(),
-  horarioInicio: z.string().regex(/^\d{2}:\d{2}$/).optional(),
-  horarioFim: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  horarioInicio: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/)
+    .optional(),
+  horarioFim: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/)
+    .optional(),
   funcao: z.string().optional(),
   detalheUrl: z.string().optional(),
   /**

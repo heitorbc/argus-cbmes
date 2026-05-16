@@ -264,11 +264,7 @@ function formatDataBr(iso: string): string {
  * militares preencheram o formulário (troca confiável). Amarelo = só
  * um lado preencheu (pendente). Cinza = status não-padronizado.
  */
-export function StatusTrocaBadge({
-  status,
-}: {
-  status: 'VERIFICADO' | 'PENDENTE' | undefined;
-}) {
+export function StatusTrocaBadge({ status }: { status: 'VERIFICADO' | 'PENDENTE' | undefined }) {
   if (status === 'VERIFICADO') {
     return (
       <span

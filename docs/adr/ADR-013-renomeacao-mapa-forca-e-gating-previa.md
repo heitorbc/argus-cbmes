@@ -40,6 +40,7 @@ Três mudanças coordenadas:
 
 **Mantido** com nome `Previa*`: tipos que designam edições durante o **ato Prévia**
 (ajustes pré-turno):
+
 - `AjustesPrevia`, `AjustesPreviaService`
 - `PreviaTroca`, `PreviaEscalaEspecial`, `PreviaNotaServico`, `PreviaDispensa`,
   `PreviaAtestado`, `PreviaFerias`, `PreviaSwapMilitar`
@@ -63,10 +64,12 @@ Inserido entre `NAO_INICIADO` e `INICIADO` no `ESTADO_SERVICO`. Semântica:
   Conferências habilitadas.
 
 `servicoEstadoSchema` ganha:
+
 - `previaIniciadaEm?: string`
 - `previaIniciadaPorNf?: string`
 
 Endpoints novos:
+
 - `POST /servico/:data/iniciar-previa` — transição `NAO_INICIADO → PREVIA_INICIADA`,
   validando `user.nf === fiscalDoDia.militarNf || isAdmin`.
 - `POST /servico/:data/cancelar-previa` — volta para `NAO_INICIADO` (apenas o
@@ -86,26 +89,26 @@ importada. Sem carregamento prévio do dia atual. Toques navegam para
 
 ### Naming (renomeação)
 
-| Opção | Decisão |
-|---|---|
-| Manter URL `/previa` e só mudar labels visuais | ❌ Rejeitada — violaria o pedido explícito do Tech Lead de "mudar em todos os locais necessários" |
-| Fundir CIODES dentro do novo `mapa-forca` | ❌ Rejeitada — maior refactor; sub-resource adicionaria complexidade sem ganho operacional |
-| **Renomear CIODES → `mapa-forca-ciodes`** (escolhida) | ✅ Resolve a colisão de nomes preservando semântica clara |
+| Opção                                                 | Decisão                                                                                           |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Manter URL `/previa` e só mudar labels visuais        | ❌ Rejeitada — violaria o pedido explícito do Tech Lead de "mudar em todos os locais necessários" |
+| Fundir CIODES dentro do novo `mapa-forca`             | ❌ Rejeitada — maior refactor; sub-resource adicionaria complexidade sem ganho operacional        |
+| **Renomear CIODES → `mapa-forca-ciodes`** (escolhida) | ✅ Resolve a colisão de nomes preservando semântica clara                                         |
 
 ### Estado da Prévia
 
-| Opção | Decisão |
-|---|---|
-| Flag boolean separada `previaIniciada` | ❌ Duas dimensões de estado paralelas — propenso a bugs de inconsistência |
-| Renomear `INICIADO` → separar em 2 estados | ❌ Refactor amplo demais nas conferências (S6b) |
+| Opção                                                 | Decisão                                                                             |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Flag boolean separada `previaIniciada`                | ❌ Duas dimensões de estado paralelas — propenso a bugs de inconsistência           |
+| Renomear `INICIADO` → separar em 2 estados            | ❌ Refactor amplo demais nas conferências (S6b)                                     |
 | **Novo estado `PREVIA_INICIADA` no enum** (escolhida) | ✅ Reuso máximo da máquina de estados existente; transições explícitas e auditáveis |
 
 ### Calendário
 
-| Opção | Decisão |
-|---|---|
-| Grid customizado puro Tailwind | ⚠️ ~150 LOC de código novo a manter |
-| Só lista (sem grid) | ❌ Perde affordance visual do calendário |
+| Opção                              | Decisão                                                          |
+| ---------------------------------- | ---------------------------------------------------------------- |
+| Grid customizado puro Tailwind     | ⚠️ ~150 LOC de código novo a manter                              |
+| Só lista (sem grid)                | ❌ Perde affordance visual do calendário                         |
 | **`react-day-picker` (escolhida)** | ✅ Lib madura, ~30kb gz, suporta features futuras (range, multi) |
 
 ## Consequências
@@ -142,7 +145,7 @@ importada. Sem carregamento prévio do dia atual. Toques navegam para
 
 - Quando S9 (escrita real do Mapa Força via OAuth) for implementado, o fluxo de
   trabalho ficará: `Iniciar Prévia → ajustes → Iniciar Serviço → Conferências →
-  Preencher Mapa Força → Encerrar`. A separação `iniciar-previa` vs `iniciar`
+Preencher Mapa Força → Encerrar`. A separação `iniciar-previa` vs `iniciar`
   facilita auditar quem revisou os dados antes da escrita transacional.
 - Se em S5b (Supabase) for necessário suportar múltiplos Fiscais editando a Prévia
   simultaneamente, considerar:

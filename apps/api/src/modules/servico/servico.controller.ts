@@ -62,10 +62,7 @@ export class ServicoController {
   @Roles('admin', 'fiscal', 'sargenteante')
   @Post(':data/cancelar-previa')
   @HttpCode(HttpStatus.OK)
-  cancelarPrevia(
-    @Param('data') data: string,
-    @CurrentUser() user: UserSession,
-  ): ServicoEstado {
+  cancelarPrevia(@Param('data') data: string, @CurrentUser() user: UserSession): ServicoEstado {
     if (!dataParamRegex.test(data)) {
       throw new BadRequestException('data inválida (esperado YYYY-MM-DD)');
     }

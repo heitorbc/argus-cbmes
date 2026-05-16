@@ -267,11 +267,7 @@ describe('ViaturasService (S0.x — histórico KM + upsertByPrefixo)', () => {
 
   it('upsertByPrefixo atualiza existente quando já há registro', async () => {
     await service.upsertByPrefixo('ABTS_999', { kmAtual: 12000 }, '3037509');
-    const updated = await service.upsertByPrefixo(
-      'ABTS_999',
-      { kmAtual: 12500 },
-      '3037509',
-    );
+    const updated = await service.upsertByPrefixo('ABTS_999', { kmAtual: 12500 }, '3037509');
     expect(updated.historicoKm).toHaveLength(2);
   });
 
@@ -388,4 +384,3 @@ describe('ViaturasService.aplicarConferencia (S0.x/fixes-3 — KM crescente + ad
     expect(v.observacoesDataDas).toHaveLength(1);
   });
 });
-

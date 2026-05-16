@@ -213,9 +213,8 @@ export function ConferenciaViaturaPage() {
                 aria-invalid={isDecremento || undefined}
               />
               <span className="mt-1 block text-xs text-slate-500">
-                Último KM registrado:{' '}
-                <strong>{ultimoKm.toLocaleString('pt-BR')} km</strong>{' '}
-                (deve ser ≥ ao último).
+                Último KM registrado: <strong>{ultimoKm.toLocaleString('pt-BR')} km</strong> (deve
+                ser ≥ ao último).
               </span>
               {decrementoBloqueado && (
                 <span className="mt-1 block text-xs font-semibold text-feedback-error">
@@ -325,8 +324,7 @@ export function ConferenciaViaturaPage() {
                   {[...viatura.historicoKm]
                     .sort(
                       (a, b) =>
-                        new Date(b.registradoEm).getTime() -
-                        new Date(a.registradoEm).getTime(),
+                        new Date(b.registradoEm).getTime() - new Date(a.registradoEm).getTime(),
                     )
                     .slice(0, 5)
                     .map((h, i) => (

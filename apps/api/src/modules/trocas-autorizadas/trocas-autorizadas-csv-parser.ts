@@ -57,8 +57,7 @@ export function parseTrocasAutorizadasCsv(csv: string): TrocaAutorizada[] {
     // Identificação dos militares: prioriza colunas G (NF) e H (auto nome).
     // Fallback para I (nome manual) quando o auto não foi preenchido.
     const escaladoOriginalNf = onlyDigits(cols[6] ?? '') || undefined;
-    const escaladoOriginal =
-      (cols[7] ?? '').trim() || (cols[8] ?? '').trim();
+    const escaladoOriginal = (cols[7] ?? '').trim() || (cols[8] ?? '').trim();
     const substitutoNf = onlyDigits(cols[10] ?? '') || undefined;
     const substituto = (cols[11] ?? '').trim() || (cols[12] ?? '').trim();
 

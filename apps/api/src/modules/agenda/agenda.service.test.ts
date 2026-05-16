@@ -112,33 +112,32 @@ function makeIseo(entries: IseoHospitalEntry[]) {
 
 function makeAtestados(lista: Atestado[]) {
   return {
-    listAtivosNoDia: (data: string) =>
-      lista.filter((a) => a.dataInicio === data),
+    listAtivosNoDia: (data: string) => lista.filter((a) => a.dataInicio === data),
   } as never;
 }
 
 function makeDispensas(lista: Dispensa[]) {
   return {
-    listAtivasNoDia: (data: string) =>
-      lista.filter((d) => d.dataInicio === data),
+    listAtivasNoDia: (data: string) => lista.filter((d) => d.dataInicio === data),
   } as never;
 }
 
 function makeFerias(lista: Ferias[]) {
   return {
-    listAtivasNoDia: (data: string) =>
-      lista.filter((f) => f.dataInicio === data),
+    listAtivasNoDia: (data: string) => lista.filter((f) => f.dataInicio === data),
   } as never;
 }
 
-function makeTrocas(lista: Array<{
-  dataEscala: string;
-  dataPagamento: string;
-  escaladoOriginal: string;
-  substituto: string;
-  escaladoPagamento: string;
-  substitutoPagamento: string;
-}>) {
+function makeTrocas(
+  lista: Array<{
+    dataEscala: string;
+    dataPagamento: string;
+    escaladoOriginal: string;
+    substituto: string;
+    escaladoPagamento: string;
+    substitutoPagamento: string;
+  }>,
+) {
   return { listAll: async () => lista } as never;
 }
 
@@ -176,8 +175,16 @@ describe('AgendaService', () => {
       [data2]: [tripEntry('AU_154', 'Operador', NF_TARGET, 'HEITOR', true)],
     });
     const svc = new AgendaService(
-      deps.mf, deps.especiais, deps.notas, deps.chop, deps.iseo,
-      deps.atestados, deps.dispensas, deps.ferias, deps.trocas, deps.efetivo,
+      deps.mf,
+      deps.especiais,
+      deps.notas,
+      deps.chop,
+      deps.iseo,
+      deps.atestados,
+      deps.dispensas,
+      deps.ferias,
+      deps.trocas,
+      deps.efetivo,
     );
     const resp = await svc.forMilitar(NF_TARGET, data1, data2, NOME_TARGET);
     expect(resp.itens.filter((i) => i.fonte === 'escala_mensal').length).toBe(2);
@@ -198,8 +205,16 @@ describe('AgendaService', () => {
       { id: 'fe1', militarNf: NF_TARGET, dataInicio: data, dias: 30 } as never,
     ]);
     const svc = new AgendaService(
-      deps.mf, deps.especiais, deps.notas, deps.chop, deps.iseo,
-      deps.atestados, deps.dispensas, deps.ferias, deps.trocas, deps.efetivo,
+      deps.mf,
+      deps.especiais,
+      deps.notas,
+      deps.chop,
+      deps.iseo,
+      deps.atestados,
+      deps.dispensas,
+      deps.ferias,
+      deps.trocas,
+      deps.efetivo,
     );
     const resp = await svc.forMilitar(NF_TARGET, data, data, NOME_TARGET);
     const fontes = resp.itens.map((i) => i.fonte).sort();
@@ -223,8 +238,16 @@ describe('AgendaService', () => {
       },
     ]);
     const svc = new AgendaService(
-      deps.mf, deps.especiais, deps.notas, deps.chop, deps.iseo,
-      deps.atestados, deps.dispensas, deps.ferias, deps.trocas, deps.efetivo,
+      deps.mf,
+      deps.especiais,
+      deps.notas,
+      deps.chop,
+      deps.iseo,
+      deps.atestados,
+      deps.dispensas,
+      deps.ferias,
+      deps.trocas,
+      deps.efetivo,
     );
     const resp = await svc.forMilitar(NF_TARGET, data, data, NOME_TARGET);
     expect(resp.conflitos.length).toBe(1);
@@ -242,8 +265,16 @@ describe('AgendaService', () => {
       [futura]: [tripEntry('Y', 'F', NF_TARGET, 'X')],
     });
     const svc = new AgendaService(
-      deps.mf, deps.especiais, deps.notas, deps.chop, deps.iseo,
-      deps.atestados, deps.dispensas, deps.ferias, deps.trocas, deps.efetivo,
+      deps.mf,
+      deps.especiais,
+      deps.notas,
+      deps.chop,
+      deps.iseo,
+      deps.atestados,
+      deps.dispensas,
+      deps.ferias,
+      deps.trocas,
+      deps.efetivo,
     );
     const resp = await svc.forMilitar(NF_TARGET, passada, futura, NOME_TARGET);
     expect(resp.itens.length).toBe(2);
@@ -256,8 +287,16 @@ describe('AgendaService', () => {
     const spy = vi.fn(() => []);
     deps.notas = { list: spy } as never;
     const svc = new AgendaService(
-      deps.mf, deps.especiais, deps.notas, deps.chop, deps.iseo,
-      deps.atestados, deps.dispensas, deps.ferias, deps.trocas, deps.efetivo,
+      deps.mf,
+      deps.especiais,
+      deps.notas,
+      deps.chop,
+      deps.iseo,
+      deps.atestados,
+      deps.dispensas,
+      deps.ferias,
+      deps.trocas,
+      deps.efetivo,
     );
     await svc.forMilitar(NF_TARGET, '2026-05-20', '2026-05-21', NOME_TARGET);
     await svc.forMilitar(NF_TARGET, '2026-05-20', '2026-05-21', NOME_TARGET);
@@ -267,8 +306,16 @@ describe('AgendaService', () => {
   it('range vazio (sem dados) retorna itens=[] + proximoItem=null', async () => {
     const deps = emptyDeps();
     const svc = new AgendaService(
-      deps.mf, deps.especiais, deps.notas, deps.chop, deps.iseo,
-      deps.atestados, deps.dispensas, deps.ferias, deps.trocas, deps.efetivo,
+      deps.mf,
+      deps.especiais,
+      deps.notas,
+      deps.chop,
+      deps.iseo,
+      deps.atestados,
+      deps.dispensas,
+      deps.ferias,
+      deps.trocas,
+      deps.efetivo,
     );
     const resp = await svc.forMilitar(NF_TARGET, '2026-05-20', '2026-05-26', NOME_TARGET);
     expect(resp.itens).toEqual([]);
@@ -288,8 +335,16 @@ describe('AgendaService', () => {
       },
     ]);
     const svc = new AgendaService(
-      deps.mf, deps.especiais, deps.notas, deps.chop, deps.iseo,
-      deps.atestados, deps.dispensas, deps.ferias, deps.trocas, deps.efetivo,
+      deps.mf,
+      deps.especiais,
+      deps.notas,
+      deps.chop,
+      deps.iseo,
+      deps.atestados,
+      deps.dispensas,
+      deps.ferias,
+      deps.trocas,
+      deps.efetivo,
     );
     const resp = await svc.forMilitar(NF_TARGET, '2026-05-20', '2026-05-26', NOME_TARGET);
     const trocas = resp.itens.filter((i) => i.fonte === 'troca_autorizada');
