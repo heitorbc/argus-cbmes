@@ -69,10 +69,25 @@ export type UserSession = z.infer<typeof userSessionSchema>;
 
 // ---------- API responses ---------- //
 
+/**
+ * S2.4 — `token` é opcional para evitar quebra em clients antigos. O
+ * frontend novo persiste e envia via `Authorization: Bearer` como
+ * fallback ao cookie httpOnly. Backend continua setando o cookie em
+ * paralelo (defesa em profundidade — funciona em qualquer um dos dois).
+ *
+ * Por que: browsers cada vez mais bloqueiam cookies 3rd-party em contexto
+ * cross-site (Vercel `.vercel.app` ↔ Render `.onrender.com`). Bearer
+ * token via header é o padrão SPA moderno e não sofre dessa restrição.
+ */
 export const loginResponseSchema = z.object({
   user: userSessionSchema,
+  token: z.string().optional(),
 });
 export type LoginResponse = z.infer<typeof loginResponseSchema>;
+
+/** Mesmo shape do login — change-password também devolve novo token. */
+export const changePasswordResponseSchema = loginResponseSchema;
+export type ChangePasswordResponse = z.infer<typeof changePasswordResponseSchema>;
 
 export const apiErrorSchema = z.object({
   statusCode: z.number(),

@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { changePasswordInputSchema, type ChangePasswordInput } from '@argus/shared-types';
 import { useAuth } from '@/lib/auth-context';
-import { ApiError, api } from '@/lib/api';
+import { ApiError, api, setSessionToken } from '@/lib/api';
 
 export function TrocarSenhaPage() {
   const { user, setUser } = useAuth();
@@ -32,6 +32,9 @@ export function TrocarSenhaPage() {
     setSubmitting(true);
     try {
       const result = await api.changePassword(data);
+      // S2.4 — backend rotaciona o token após troca de senha; atualiza
+      // o storage Bearer para os próximos requests.
+      if (result.token) setSessionToken(result.token);
       setUser(result.user);
       navigate('/', { replace: true });
     } catch (e) {

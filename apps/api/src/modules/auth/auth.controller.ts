@@ -15,6 +15,7 @@ import { z } from 'zod';
 import {
   changePasswordInputSchema,
   loginInputSchema,
+  type ChangePasswordResponse,
   type LoginResponse,
   type UserSession,
 } from '@argus/shared-types';
@@ -47,7 +48,9 @@ export class AuthController {
 
     const { user, token } = await this.authService.login(parsed.data);
     this.setSessionCookie(res, token);
-    return { user };
+    // S2.4 — retorna token no body além do cookie (Bearer fallback para
+    // browsers que bloqueiam cookies 3rd-party em cross-origin).
+    return { user, token };
   }
 
   @Post('logout')
@@ -67,7 +70,7 @@ export class AuthController {
     @CurrentUser() user: UserSession,
     @Body() body: unknown,
     @Res({ passthrough: true }) res: Response,
-  ): Promise<{ user: UserSession }> {
+  ): Promise<ChangePasswordResponse> {
     const parsed = changePasswordInputSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
@@ -76,7 +79,9 @@ export class AuthController {
     const updated = await this.authService.changePassword(user.nf, parsed.data);
     const token = await this.authService.signToken(updated);
     this.setSessionCookie(res, token);
-    return { user: updated };
+    // S2.4 — retorna novo token (rotacionado após troca de senha) para o
+    // frontend atualizar o Bearer storage.
+    return { user: updated, token };
   }
 
   /**
@@ -112,7 +117,7 @@ export class AuthController {
     }
     const { user, token } = await this.authService.loginAsPersona(parsed.data.nf);
     this.setSessionCookie(res, token);
-    return { user };
+    return { user, token };
   }
 
   private assertPersonaPickerEnabled(): void {
