@@ -5,9 +5,19 @@ const HTTP_LOCKED = 423;
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
-import type { LoginInput, ChangePasswordInput, UserSession } from '@argus/shared-types';
+import { ConflictException, NotFoundException } from '@nestjs/common';
+import type {
+  ChangePasswordInput,
+  CreateUsuarioInput,
+  LoginInput,
+  UpdateUsuarioInput,
+  UserSession,
+} from '@argus/shared-types';
 import { MOCK_USERS, type MockUser } from './mock-users';
 import { LoginRateLimiter } from './login-rate-limiter';
+
+/** S2.7 — Senha default para usuários criados via admin. */
+const DEFAULT_SENHA = 'batalhao01';
 
 /** Tempo de vida do JWT (8h, alinhado a turno operacional). */
 export const JWT_TTL_SECONDS = 8 * 60 * 60;
@@ -127,5 +137,75 @@ export class AuthService {
       papeis: user.papeis,
       primeiroAcesso: user.primeiroAcesso,
     };
+  }
+
+  // ── S2.7 — Admin CRUD de usuários ───────────────────────────────
+
+  /**
+   * Lista todos os usuários cadastrados (sem campos sensíveis). Ordena
+   * por nome para facilitar busca visual.
+   */
+  listUsuarios(): UserSession[] {
+    return Array.from(this.users.values())
+      .map((u) => this.toSession(u))
+      .sort((a, b) => a.nome.localeCompare(b.nome));
+  }
+
+  /**
+   * Cria novo usuário. NF é a chave única — colisão rejeita com 409.
+   * Senha inicial: parâmetro `senhaInicial` ou DEFAULT_SENHA. `primeiroAcesso`
+   * sempre true (força troca no 1º login).
+   */
+  async createUsuario(input: CreateUsuarioInput): Promise<UserSession> {
+    if (this.users.has(input.nf)) {
+      throw new ConflictException(`Usuário NF ${input.nf} já existe`);
+    }
+    const senha = input.senhaInicial ?? DEFAULT_SENHA;
+    const cost = Number(this.config.get<string>('BCRYPT_COST') ?? 12);
+    const novo: MockUser = {
+      nf: input.nf,
+      nome: input.nome,
+      posto: input.posto,
+      ant: input.ant,
+      cpfFake: senha,
+      senhaHash: await bcrypt.hash(senha, cost),
+      papeis: input.papeis,
+      primeiroAcesso: true,
+    };
+    this.users.set(novo.nf, novo);
+    return this.toSession(novo);
+  }
+
+  /**
+   * Atualiza usuário existente. NF é imutável. `resetSenha=true` reseta
+   * para DEFAULT_SENHA e marca primeiroAcesso=true.
+   */
+  async updateUsuario(nf: string, input: UpdateUsuarioInput): Promise<UserSession> {
+    const user = this.users.get(nf);
+    if (!user) {
+      throw new NotFoundException(`Usuário NF ${nf} não encontrado`);
+    }
+    if (input.nome !== undefined) user.nome = input.nome;
+    if (input.posto !== undefined) user.posto = input.posto;
+    if (input.ant !== undefined) user.ant = input.ant;
+    if (input.papeis !== undefined) user.papeis = input.papeis;
+    if (input.resetSenha) {
+      const cost = Number(this.config.get<string>('BCRYPT_COST') ?? 12);
+      user.cpfFake = DEFAULT_SENHA;
+      user.senhaHash = await bcrypt.hash(DEFAULT_SENHA, cost);
+      user.primeiroAcesso = true;
+    }
+    return this.toSession(user);
+  }
+
+  /** Remove usuário. Não permite auto-deleção (admin não pode deletar a si mesmo). */
+  removeUsuario(nf: string, currentUserNf: string): void {
+    if (nf === currentUserNf) {
+      throw new ConflictException('Você não pode remover sua própria conta');
+    }
+    if (!this.users.has(nf)) {
+      throw new NotFoundException(`Usuário NF ${nf} não encontrado`);
+    }
+    this.users.delete(nf);
   }
 }

@@ -23,6 +23,7 @@ import { MapaForcaPage } from '@/pages/mapa-forca';
 import { MapaForcaDetalhePage } from '@/pages/mapa-forca-detalhe';
 import { RecursosPage } from '@/pages/recursos';
 import { UnidadesPage } from '@/pages/unidades';
+import { UsuariosPage } from '@/pages/usuarios';
 import { AtestadosPage } from '@/pages/atestados';
 import { ConferenciaEquipePage } from '@/pages/conferencia-equipe';
 import { ConferenciaViaturaPage } from '@/pages/conferencia-viatura';
@@ -125,6 +126,7 @@ export const router = createBrowserRouter([
           { path: '/cadastros/notas-servico', element: <NotasServicoPage /> },
           { path: '/cadastros/locais-faxina', element: <LocaisFaxinaPage /> },
           { path: '/configuracoes/unidades', element: <UnidadesPage /> },
+          { path: '/configuracoes/usuarios', element: <UsuariosPage /> },
           { path: '/configuracoes/recursos', element: <RecursosPage /> },
           { path: '/configuracoes/integracoes', element: <IntegracoesPage /> },
           { path: '/mapa-forca', element: <MapaForcaPage /> },

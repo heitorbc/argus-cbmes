@@ -169,3 +169,139 @@ describe('AuthService.listPersonas (persona-picker homologação)', () => {
     expect(list[0]).not.toHaveProperty('cpfFake');
   });
 });
+
+// ── S2.7 — Admin CRUD ─────────────────────────────────────────────
+
+describe('AuthService — Admin CRUD (S2.7)', () => {
+  let service: AuthService;
+  beforeEach(() => {
+    service = makeService();
+  });
+
+  it('listUsuarios retorna todos sem senhaHash/cpfFake', () => {
+    const list = service.listUsuarios();
+    expect(list.length).toBeGreaterThanOrEqual(MOCK_USERS.length);
+    for (const u of list) {
+      expect(u).not.toHaveProperty('senhaHash');
+      expect(u).not.toHaveProperty('cpfFake');
+    }
+  });
+
+  it('listUsuarios ordena por nome', () => {
+    const list = service.listUsuarios();
+    for (let i = 1; i < list.length; i += 1) {
+      expect(list[i - 1]!.nome.localeCompare(list[i]!.nome)).toBeLessThanOrEqual(0);
+    }
+  });
+
+  it('createUsuario cria com primeiroAcesso=true + senha default', async () => {
+    const novo = await service.createUsuario({
+      nf: '9999999',
+      nome: 'TESTE SILVA',
+      posto: 'SD',
+      ant: 500,
+      papeis: ['militar'],
+    });
+    expect(novo.nf).toBe('9999999');
+    expect(novo.primeiroAcesso).toBe(true);
+    // Login com senha default funciona
+    const { user } = await service.login({ nf: '9999999', senha: 'batalhao01' });
+    expect(user.nome).toBe('TESTE SILVA');
+  });
+
+  it('createUsuario aceita senhaInicial customizada', async () => {
+    await service.createUsuario({
+      nf: '9999998',
+      nome: 'OUTRO TESTE',
+      posto: 'CB',
+      ant: 700,
+      papeis: ['fiscal'],
+      senhaInicial: 'minhasenha123',
+    });
+    const { user } = await service.login({ nf: '9999998', senha: 'minhasenha123' });
+    expect(user.papeis).toContain('fiscal');
+  });
+
+  it('createUsuario rejeita NF duplicada com ConflictException', async () => {
+    await expect(
+      service.createUsuario({
+        nf: HEITOR!.nf, // Heitor já existe
+        nome: 'OUTRO',
+        posto: 'SD',
+        ant: 100,
+        papeis: ['militar'],
+      }),
+    ).rejects.toThrow(/já existe/);
+  });
+
+  it('updateUsuario altera campos parciais', async () => {
+    const created = await service.createUsuario({
+      nf: '9999997',
+      nome: 'ORIGINAL',
+      posto: 'SD',
+      ant: 100,
+      papeis: ['militar'],
+    });
+    const updated = await service.updateUsuario(created.nf, {
+      nome: 'ALTERADO',
+      papeis: ['militar', 'fiscal'],
+    });
+    expect(updated.nome).toBe('ALTERADO');
+    expect(updated.papeis).toEqual(['militar', 'fiscal']);
+    expect(updated.posto).toBe('SD'); // não foi alterado
+  });
+
+  it('updateUsuario com resetSenha=true volta para batalhao01 + primeiroAcesso=true', async () => {
+    await service.createUsuario({
+      nf: '9999996',
+      nome: 'USER',
+      posto: 'SD',
+      ant: 100,
+      papeis: ['militar'],
+      senhaInicial: 'outrasenha',
+    });
+    // Marca como já logou (simula troca de senha completada)
+    await service.changePassword('9999996', {
+      senhaAtual: 'outrasenha',
+      novaSenha: 'novaSenha123!',
+      confirmacao: 'novaSenha123!',
+    });
+    const updated = await service.updateUsuario('9999996', { resetSenha: true });
+    expect(updated.primeiroAcesso).toBe(true);
+    // Login com senha default funciona de novo
+    const { user } = await service.login({ nf: '9999996', senha: 'batalhao01' });
+    expect(user.primeiroAcesso).toBe(true);
+  });
+
+  it('updateUsuario lança NotFound se NF não existe', async () => {
+    await expect(service.updateUsuario('0000000', { nome: 'X' })).rejects.toThrow(
+      /não encontrado/,
+    );
+  });
+
+  it('removeUsuario remove + bloqueia próxima leitura', async () => {
+    await service.createUsuario({
+      nf: '9999995',
+      nome: 'TEMP',
+      posto: 'SD',
+      ant: 100,
+      papeis: ['militar'],
+    });
+    service.removeUsuario('9999995', HEITOR!.nf);
+    await expect(
+      service.login({ nf: '9999995', senha: 'batalhao01' }),
+    ).rejects.toThrow();
+  });
+
+  it('removeUsuario impede auto-deleção', () => {
+    expect(() => service.removeUsuario(HEITOR!.nf, HEITOR!.nf)).toThrow(
+      /sua própria conta/,
+    );
+  });
+
+  it('removeUsuario lança NotFound se NF não existe', () => {
+    expect(() => service.removeUsuario('0000000', HEITOR!.nf)).toThrow(
+      /não encontrado/,
+    );
+  });
+});

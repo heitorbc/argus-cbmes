@@ -58,6 +58,7 @@ export const ROUTE_TO_SECTION: Record<string, ModuloHome> = {
   '/logistica/recursos': 'logistica',
   '/configuracoes/unidades': 'configuracoes',
   '/configuracoes/integracoes': 'configuracoes',
+  '/configuracoes/usuarios': 'configuracoes',
   '/cadastros/locais-faxina': 'configuracoes',
 };
 
