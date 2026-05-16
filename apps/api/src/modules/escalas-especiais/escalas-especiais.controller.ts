@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
@@ -19,6 +20,11 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { EscalasEspeciaisService } from './escalas-especiais.service';
 import { EscalaEspecialParseError, parseEscalaEspecialXlsm } from './escala-especial-xlsm-parser';
+import { ServicoService } from '../servico/servico.service';
+import {
+  bloqueiosToMessage,
+  computeBloqueios,
+} from '../servico/bloqueio-reimport';
 
 const listQuerySchema = z.object({
   ano: z
@@ -56,7 +62,10 @@ function ensureXlsm(file: MulterFile | undefined): MulterFile {
 
 @Controller('escalas-especiais')
 export class EscalasEspeciaisController {
-  constructor(private readonly escalas: EscalasEspeciaisService) {}
+  constructor(
+    private readonly escalas: EscalasEspeciaisService,
+    private readonly servico: ServicoService,
+  ) {}
 
   @Get()
   list(@Query() query: unknown) {
@@ -81,8 +90,9 @@ export class EscalasEspeciaisController {
     @CurrentUser() user: UserSession,
   ): Promise<PreviewEscalaEspecialResponse> {
     const upload = ensureXlsm(file);
+    let result;
     try {
-      return await parseEscalaEspecialXlsm({
+      result = await parseEscalaEspecialXlsm({
         buffer: upload.buffer,
         filename: upload.originalname,
         importadoPorNf: user.nf,
@@ -93,6 +103,10 @@ export class EscalasEspeciaisController {
       }
       throw err;
     }
+    // S2.3 — bloqueios: datas dos atos com Prévia/Serviço iniciado.
+    const datas = [...new Set(result.escala.atos.map((a) => a.data))];
+    const bloqueios = computeBloqueios(this.servico, datas);
+    return { ...result, bloqueios };
   }
 
   @Roles('admin', 'sargenteante')
@@ -120,6 +134,15 @@ export class EscalasEspeciaisController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     }
+    // S2.3 — re-checa bloqueios.
+    const datas = [...new Set(parsed.data.atos.map((a) => a.data))];
+    const bloqueios = computeBloqueios(this.servico, datas);
+    if (bloqueios.length > 0) {
+      throw new ConflictException({
+        message: bloqueiosToMessage(bloqueios),
+        bloqueios,
+      });
+    }
     return this.escalas.save(parsed.data);
   }
 
@@ -131,6 +154,18 @@ export class EscalasEspeciaisController {
     const m = Number.parseInt(mes, 10);
     if (!Number.isFinite(a) || !Number.isFinite(m)) {
       throw new BadRequestException('ano/mês inválidos');
+    }
+    // S2.3 — bloqueia delete se algum dia em uso.
+    const escala = this.escalas.get(a, m);
+    if (escala) {
+      const datas = [...new Set(escala.atos.map((at) => at.data))];
+      const bloqueios = computeBloqueios(this.servico, datas);
+      if (bloqueios.length > 0) {
+        throw new ConflictException({
+          message: bloqueiosToMessage(bloqueios),
+          bloqueios,
+        });
+      }
     }
     this.escalas.delete(a, m);
   }

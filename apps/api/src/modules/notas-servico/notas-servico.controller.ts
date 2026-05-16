@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
@@ -25,6 +26,11 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { parseNotaServicoPdf, type ParseNotaServicoPdfResult } from './nota-servico-pdf-parser';
 import { NotasServicoService } from './notas-servico.service';
+import { ServicoService } from '../servico/servico.service';
+import {
+  bloqueiosToMessage,
+  computeBloqueios,
+} from '../servico/bloqueio-reimport';
 
 interface MulterFile {
   buffer: Buffer;
@@ -45,7 +51,26 @@ const listQuerySchema = z.object({
 
 @Controller('notas-servico')
 export class NotasServicoController {
-  constructor(private readonly notas: NotasServicoService) {}
+  constructor(
+    private readonly notas: NotasServicoService,
+    private readonly servico: ServicoService,
+  ) {}
+
+  /**
+   * S2.3 — guarda contra escrita em dia em uso. Aplicado em create/update/delete.
+   * Para update/delete, valida tanto a data ATUAL da NS quanto a NOVA data
+   * (caso o user mude a data — protege ambas as pontas).
+   */
+  private assertDataLivre(...datas: ReadonlyArray<string | undefined>): void {
+    const datasUnicas = [...new Set(datas.filter((d): d is string => Boolean(d)))];
+    const bloqueios = computeBloqueios(this.servico, datasUnicas);
+    if (bloqueios.length > 0) {
+      throw new ConflictException({
+        message: bloqueiosToMessage(bloqueios),
+        bloqueios,
+      });
+    }
+  }
 
   @Get()
   list(@Query() query: unknown): NotaServico[] {
@@ -73,6 +98,7 @@ export class NotasServicoController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     }
+    this.assertDataLivre(parsed.data.data);
     return this.notas.createOrConflict(parsed.data, user.nf);
   }
 
@@ -83,6 +109,8 @@ export class NotasServicoController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     }
+    const atual = this.notas.findById(id);
+    this.assertDataLivre(atual.data, parsed.data.data);
     return this.notas.update(id, parsed.data);
   }
 
@@ -90,6 +118,8 @@ export class NotasServicoController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param('id') id: string): void {
+    const atual = this.notas.findById(id);
+    this.assertDataLivre(atual.data);
     this.notas.remove(id);
   }
 

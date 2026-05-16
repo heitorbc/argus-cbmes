@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { EscalaEspecialMensal } from '@argus/shared-types';
+import type { BloqueioReimport, EscalaEspecialMensal } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { formatEscalaEspecialParaWhatsapp } from '@/lib/whatsapp-especial';
@@ -40,6 +40,7 @@ export function EscalasEspeciaisPage() {
 
   const [preview, setPreview] = useState<EscalaEspecialMensal | null>(null);
   const [descartados, setDescartados] = useState(0);
+  const [bloqueios, setBloqueios] = useState<BloqueioReimport[]>([]);
   const [uploading, setUploading] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
@@ -91,10 +92,12 @@ export function EscalasEspeciaisPage() {
     setUploading(true);
     setError(null);
     setPreview(null);
+    setBloqueios([]);
     try {
       const r = await api.escalasEspeciaisPreview(file);
       setPreview(r.escala);
       setDescartados(r.descartados);
+      setBloqueios(r.bloqueios ?? []);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Erro ao processar XLSM');
     } finally {
@@ -109,6 +112,7 @@ export function EscalasEspeciaisPage() {
     try {
       await api.escalasEspeciaisConfirm(preview);
       setPreview(null);
+      setBloqueios([]);
       await reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Erro ao confirmar');
@@ -203,12 +207,28 @@ export function EscalasEspeciaisPage() {
               {preview.atos.length} atos · {descartados} descartados (XXX)
             </p>
             <AtosTable atos={preview.atos} />
+            {bloqueios.length > 0 && (
+              <div className="mt-3 rounded border border-feedback-error/40 bg-feedback-error/10 p-3 text-xs text-feedback-error">
+                <p className="font-semibold">
+                  🚫 Re-import bloqueado — {bloqueios.length} dia
+                  {bloqueios.length > 1 ? 's' : ''} em uso
+                </p>
+                <ul className="mt-2 list-inside list-disc space-y-0.5">
+                  {bloqueios.map((b) => (
+                    <li key={b.data}>
+                      <strong>{b.data}</strong>: {b.motivo}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="mt-4 flex gap-2">
               <button
                 type="button"
                 onClick={handleConfirm}
-                disabled={confirming}
-                className="flex-1 rounded-button bg-cbmes-red py-2 text-base font-semibold text-white disabled:opacity-60"
+                disabled={confirming || bloqueios.length > 0}
+                title={bloqueios.length > 0 ? 'Há dias em uso — destrave-os primeiro' : undefined}
+                className="flex-1 rounded-button bg-cbmes-red py-2 text-base font-semibold text-white disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {confirming ? 'Salvando…' : 'Confirmar e salvar'}
               </button>
