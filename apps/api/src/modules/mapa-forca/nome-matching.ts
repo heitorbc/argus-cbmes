@@ -13,18 +13,22 @@ export interface ResolveResult {
 
 /**
  * Indexa o efetivo (1ª Cia consolidado QDI+EFETIVO) por chaves normalizadas.
- * Constrói 3 índices em ordem de precisão:
- *   - postoAbreviado + nomeGuerra (mais preciso)
+ * Constrói 4 índices em ordem de precisão:
+ *   - NF (chave única — fonte primária quando preenchida, ex.: vinda do
+ *     Sheets-DB ou de planilha externa com NF direto)
+ *   - postoAbreviado + nomeGuerra (mais preciso por nome)
  *   - somente nomeGuerra (fallback quando posto no XLSX está desatualizado)
  *   - nomeGuerra parcial (token-by-token, ignora pontuação tipo "D. MATTOS" vs "MATTOS")
  */
 export class NomeMatcher {
+  private readonly byNf = new Map<string, Militar>();
   private readonly byPostoNome = new Map<string, Militar[]>();
   private readonly byNome = new Map<string, Militar[]>();
   private readonly byTokenInicial = new Map<string, Militar[]>();
 
   constructor(efetivo: readonly Militar[]) {
     for (const m of efetivo) {
+      if (m.nf) this.byNf.set(m.nf, m);
       if (!m.nomeGuerra) continue;
       const fullKey = previaMatchKey(m.posto, m.nomeGuerra);
       pushTo(this.byPostoNome, fullKey, m);
@@ -40,8 +44,15 @@ export class NomeMatcher {
   }
 
   resolve(ref: MilitarRef): ResolveResult {
+    // S2.8.x — Quando o NF já vier preenchido (Sheets-DB, planilha de
+    // Trocas Autorizadas com NF direto, etc.), busca diretamente por NF.
+    // Antes este caminho retornava `null` silenciosamente — bug que quebrava
+    // a integração Mapa Força ↔ Efetivo após bootstrap Sheets-DB (S2.8.2).
     if (ref.nf) {
-      // Já veio com NF (raríssimo no S4 — parser não preenche, mas reservado).
+      const direct = this.byNf.get(ref.nf);
+      if (direct) return { resolved: direct, ambiguidade: false };
+      // NF informado mas não está no efetivo — caller registra inconsistência
+      // (militar foi escalado mas ainda não foi lançado no QDI ex.: DRH atrasado).
       return { resolved: null, ambiguidade: false };
     }
 

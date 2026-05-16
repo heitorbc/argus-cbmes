@@ -98,14 +98,27 @@ describe('NomeMatcher', () => {
     expect(r2.resolved).toBeNull();
   });
 
-  it('retorna null sem alterações quando militarRef já tem NF', () => {
+  it('resolve direto por NF quando ref já tem NF preenchido (Sheets-DB / Trocas)', () => {
     const r = matcher.resolve({
       raw: '2º SGT BARCELLOS',
       postoAbreviado: '2ºSGT',
       nomeGuerra: 'BARCELLOS',
       nf: '3037509',
     });
-    // Política conservadora: parser não passa nf no S3b — esse path é defensivo.
+    // S2.8.x — bootstrap Sheets-DB / planilha Trocas Autorizadas com NF
+    // direto precisa funcionar; antes este path retornava null silenciosamente.
+    expect(r.resolved?.nf).toBe('3037509');
+    expect(r.ambiguidade).toBe(false);
+  });
+
+  it('retorna null quando NF informado não existe no efetivo', () => {
+    const r = matcher.resolve({
+      raw: 'FANTASMA',
+      postoAbreviado: 'CB',
+      nomeGuerra: 'FANTASMA',
+      nf: '9999999',
+    });
     expect(r.resolved).toBeNull();
+    expect(r.ambiguidade).toBe(false);
   });
 });
