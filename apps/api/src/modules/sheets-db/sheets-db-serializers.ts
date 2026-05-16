@@ -7,6 +7,7 @@ import type {
   NotaServico,
 } from '@argus/shared-types';
 import { quinzenaDoDia } from '../escalas/escalas.service';
+import { parseMilitarCell } from '../escalas/escala-xlsx-parser';
 
 /**
  * Serializadores entre as estruturas do domínio e linhas string[] das
@@ -132,16 +133,24 @@ export function rowsToEscalaMensal(rows: string[][]): EscalaMensal | null {
     if (!importadoPorNf && row[11]) importadoPorNf = row[11];
 
     if (!viatura || !funcao || !militarRaw) continue;
+    // S2.8.x bugfix — reusa o `parseMilitarCell` do parser XLSX para
+    // popular `postoAbreviado` e `nomeGuerra` a partir do raw. Antes
+    // ficavam vazios, quebrando o NomeMatcher e impedindo a Agenda /
+    // Mapa Força de associar a escala ao Efetivo.
+    const militarParseado = parseMilitarCell(militarRaw);
+    const militar = militarParseado
+      ? { ...militarParseado, nf: militarNf || militarParseado.nf || undefined }
+      : {
+          raw: militarRaw,
+          postoAbreviado: '',
+          nomeGuerra: militarRaw,
+          nf: militarNf || undefined,
+        };
     const entry: ComposicaoEntry = {
       equipe,
       viatura,
       funcao,
-      militar: {
-        raw: militarRaw,
-        postoAbreviado: '',
-        nomeGuerra: '',
-        nf: militarNf || undefined,
-      },
+      militar,
     };
     const dia = Number.parseInt(data.slice(8, 10), 10);
     const ultimoDiaQ1 = 14;
