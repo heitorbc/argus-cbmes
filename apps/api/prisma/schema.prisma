@@ -1,7 +1,21 @@
 // Schema Prisma — ARGUS CBMES
-// Fase 1: schema mínimo em S0; entidades adicionadas progressivamente em S1-S5.
-// Schema consolidado em S5 (Marco arquitetural — transição mock → real).
-// ADR-005 documentará o modelo final de dados quando entrar em vigor.
+//
+// S2.10.1 — Schema inicial completo da migração Sheets-DB → Postgres/Supabase.
+// 20 entidades de domínio, todas hoje em Maps in-memory ou Sheets-DB.
+//
+// IDs: `cuid()` em vez de UUID — ordenado por tempo, mais curto, evita conflitos
+// em inserts paralelos (importante porque o seed/import lê em lote).
+//
+// Soft delete: `deletedAt` em entidades editáveis (NotaServico, Dispensa,
+// Atestado, Ferias, User, Viatura). Re-importáveis (EscalaMensal,
+// EscalaEspecialMensal) usam hard delete + re-insert.
+//
+// JSONB: usado em campos com estrutura aninhada complexa cujo round-trip 100%
+// é mais barato que normalizar (MapaForcaDiario.payload, EscalaMensal.avisos,
+// composicaoPorQuinzena.mergulho/salvamar).
+//
+// ADR-014 — estratégia completa de migração; runbook em
+// docs/runbooks/supabase-setup.md.
 
 generator client {
   provider = "prisma-client-js"
@@ -12,9 +26,467 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Placeholder de S0 — substituído em S1 pelo modelo Usuario.
-// Prisma exige ao menos um modelo para gerar o client.
-model Bootstrap {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
+// ────────────────────────────────────────────────────────────────────────
+// Core identidade
+// ────────────────────────────────────────────────────────────────────────
+
+/// Usuário do sistema. Login por NF + senha (bcrypt).
+/// `papeis` é array de strings (enum PAPEIS em shared-types/auth.ts).
+model User {
+  id             String    @id @default(cuid())
+  nf             String    @unique
+  nome           String
+  posto          String
+  ant            Int
+  papeis         String[]  @default([])
+  senhaHash      String
+  primeiroAcesso Boolean   @default(true)
+  ultimoLoginEm  DateTime?
+  criadoEm       DateTime  @default(now())
+  atualizadoEm   DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  // Auditoria — registros criados por este usuário
+  notasServicoCriadas        NotaServico[]          @relation("NotaServicoCriadoPor")
+  dispensasCriadas           Dispensa[]             @relation("DispensaCriadaPor")
+  atestadosCriados           Atestado[]             @relation("AtestadoCriadoPor")
+  feriasCriadas              Ferias[]               @relation("FeriasCriadaPor")
+  ideoEntriesAtualizadas     IdeoEntry[]            @relation("IdeoEntryAtualizadaPor")
+  ideoChecklistsAtestados    IdeoChecklist[]        @relation("IdeoChecklistAtestadoPor")
+  escalasImportadas          EscalaMensal[]         @relation("EscalaImportadaPor")
+  escalasEspeciaisImportadas EscalaEspecialMensal[] @relation("EscalaEspecialImportadaPor")
+
+  @@index([deletedAt])
+  @@map("users")
+}
+
+/// Militar consolidado QDI + EFETIVO. NF é a chave funcional global.
+/// Origem dual: parser QDI (operacional, 1ª Cia) + parser EFETIVO (demográfico).
+model Militar {
+  nf            String  @id
+  ant           Int
+  posto         String
+  nome          String
+  nomeGuerra    String?
+  funcao        String?
+  unidade       String?
+  subSecao      String? // staff | sos | guarda | aquaticas
+  postoPrevisto String?
+
+  // EFETIVO
+  municipio String?
+  idade     Int?
+  servico   Int?
+  situacao  String?
+
+  // QDI aba DADOS
+  lotacao             String?
+  classe              String?
+  conceitoDisciplinar String?
+  pontos              Int?
+  cnh                 String?
+  cnhValidade         String?
+  incorporacao        String?
+  planoFerias         String?
+  mergulho            String?
+  ftba                String?
+  etsp                String?
+  ccve                String?
+  ccveValidade        String?
+  censo               String?
+
+  /// Origens (array de "DADOS" | "1ª1º" | "EFETIVO") — debug do consolidador.
+  origensFonte  String[] @default([])
+  /// Papel especial (ex.: "Chefe de Operações"). Hoje único valor possível.
+  papelEspecial String?
+
+  sincronizadoEm DateTime @default(now())
+
+  // Relacionamentos
+  dispensas Dispensa[]
+  atestados Atestado[]
+  ferias    Ferias[]
+
+  @@index([subSecao])
+  @@index([papelEspecial])
+  @@map("militares")
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Cadastros mestre
+// ────────────────────────────────────────────────────────────────────────
+
+model Viatura {
+  id                String   @id @default(cuid())
+  prefixo           String   @unique
+  placa             String?
+  tipo              String? // ABTS | ABT | AR | AM | AC | TE | AU | etc
+  funcaoOperacional String?
+  anoModelo         Int?
+  status            String?
+  origem            String? // "mapa_forca" | "override_admin"
+  composicaoFuncoes String[] @default([])
+  observacoes       String?
+
+  kmAtual                    Int?
+  tipoCombustivel            String?
+  usaArla32                  Boolean?
+  capacidadeTanqueLitros     Float?
+  capacidadeTanqueArlaLitros Float?
+  estadoTanquePercent        Int?
+  alturaMetros               Float?
+  larguraMetros              Float?
+  militarResponsavelNf       String?
+
+  /// JSONB: histórico de KM e observações datadas (lista de objetos).
+  historicoKm        Json?
+  observacoesDataDas Json?
+
+  criadoEm     DateTime  @default(now())
+  atualizadoEm DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  @@index([deletedAt])
+  @@map("viaturas")
+}
+
+model Unidade {
+  id           String   @id @default(cuid())
+  codigo       String   @unique
+  nome         String
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@map("unidades")
+}
+
+model LocalFaxina {
+  id           String   @id @default(cuid())
+  nome         String
+  ordem        Int      @default(0)
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@map("locais_faxina")
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Escalas
+// ────────────────────────────────────────────────────────────────────────
+
+/// Escala mensal de serviço operacional. Chave funcional: (ano, mes).
+/// Re-import substitui a escala inteira (hard delete cascata).
+model EscalaMensal {
+  id  String @id @default(cuid())
+  ano Int
+  mes Int
+
+  origemArquivo  String
+  importadoEm    DateTime @default(now())
+  importadoPorNf String?
+  importadoPor   User?    @relation("EscalaImportadaPor", fields: [importadoPorNf], references: [nf])
+
+  /// JSONB: { "2026-05-01": "A", ... } — letra da equipe escalada por dia
+  diaEquipe   Json
+  /// JSONB: avisos[] do parser
+  avisos      Json?
+  /// JSONB: composicao mergulho/salvamar
+  mergulho    Json?
+  salvamar    Json?
+  /// Último dia da 1ª quinzena (13 ou 14, conforme nome da aba do XLSX)
+  ultimoDiaQ1 Int   @default(14)
+
+  composicaoEntries ComposicaoEntry[]
+
+  @@unique([ano, mes])
+  @@index([ano, mes])
+  @@map("escalas_mensais")
+}
+
+/// Uma linha da composição mensal — (equipe, viatura, funcao, militar) por quinzena.
+model ComposicaoEntry {
+  id             String       @id @default(cuid())
+  escalaMensal   EscalaMensal @relation(fields: [escalaMensalId], references: [id], onDelete: Cascade)
+  escalaMensalId String
+
+  quinzena Int // 1 ou 2
+  equipe   String // A | B | C | D
+  viatura  String
+  funcao   String
+
+  militarRaw        String
+  militarNf         String?
+  militarPosto      String?
+  militarNomeGuerra String?
+
+  @@index([escalaMensalId, quinzena])
+  @@index([militarNf])
+  @@map("composicao_entries")
+}
+
+/// Escala especial mensal (atos individuais com horário, ex.: 24h sentinela extra).
+model EscalaEspecialMensal {
+  id  String @id @default(cuid())
+  ano Int
+  mes Int
+
+  origemArquivo  String
+  importadoEm    DateTime @default(now())
+  importadoPorNf String?
+  importadoPor   User?    @relation("EscalaEspecialImportadaPor", fields: [importadoPorNf], references: [nf])
+
+  avisos Json?
+
+  atos EscalaEspecialAto[]
+
+  @@unique([ano, mes])
+  @@index([ano, mes])
+  @@map("escalas_especiais")
+}
+
+model EscalaEspecialAto {
+  id               String               @id @default(cuid())
+  escalaEspecial   EscalaEspecialMensal @relation(fields: [escalaEspecialId], references: [id], onDelete: Cascade)
+  escalaEspecialId String
+
+  data       String // YYYY-MM-DD
+  militarRaw String
+  militarNf  String?
+  horario    String
+  funcao     String
+
+  @@index([escalaEspecialId])
+  @@index([data, militarNf])
+  @@map("escala_especial_atos")
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Operacional do dia-a-dia
+// ────────────────────────────────────────────────────────────────────────
+
+model NotaServico {
+  id             String   @id @default(cuid())
+  codigo         String   @unique // NS001..NS999
+  descricao      String
+  data           String // YYYY-MM-DD
+  horaInicio     String
+  horaFim        String
+  viaturaPrefixo String?
+  militaresNfs   String[] @default([])
+  observacoes    String?
+
+  criadoEm     DateTime  @default(now())
+  criadoPorNf  String
+  criadoPor    User      @relation("NotaServicoCriadoPor", fields: [criadoPorNf], references: [nf])
+  atualizadoEm DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  @@index([data])
+  @@index([deletedAt])
+  @@map("notas_servico")
+}
+
+/// Configuração do checklist IDEO por dia/tipo (ABTS | RESGATE).
+model IdeoEntry {
+  id    String @id @default(cuid())
+  dia   Int // 1..31
+  tipo  String // ABTS | RESGATE
+  itens Json // string[]
+
+  atualizadoEm    DateTime @updatedAt
+  atualizadoPorNf String?
+  atualizadoPor   User?    @relation("IdeoEntryAtualizadaPor", fields: [atualizadoPorNf], references: [nf])
+
+  @@unique([dia, tipo])
+  @@map("ideo_entries")
+}
+
+/// Realização do checklist IDEO em uma data específica.
+model IdeoChecklist {
+  id                  String  @id @default(cuid())
+  data                String // YYYY-MM-DD
+  tipo                String // ABTS | RESGATE
+  estado              String // PENDENTE | REALIZADO | NAO_REALIZADO
+  equipamentos        Json // { itemId: boolean }
+  motivoNaoRealizacao String?
+
+  geradoEm      DateTime  @default(now())
+  atestadoEm    DateTime?
+  atestadoPorNf String?
+  atestadoPor   User?     @relation("IdeoChecklistAtestadoPor", fields: [atestadoPorNf], references: [nf])
+
+  @@unique([data, tipo])
+  @@index([data])
+  @@map("ideo_checklists")
+}
+
+/// Troca autorizada — entry da planilha externa "Trocas Autorizadas".
+/// Reimportada periodicamente; chave única é o hash de identificação da linha.
+model TrocaAutorizada {
+  id               String  @id // hash determinístico da linha
+  registradoEm     String
+  emailRegistrante String?
+
+  statusTroca String? // VERIFICADO | PENDENTE
+  statusNome  String?
+
+  dataEscala         String // YYYY-MM-DD
+  escaladoOriginal   String
+  escaladoOriginalNf String?
+  substituto         String
+  substitutoNf       String?
+  funcao             String
+  horario            String
+
+  dataPagamento       String // YYYY-MM-DD
+  escaladoPagamento   String
+  substitutoPagamento String
+  funcaoPagamento     String
+  horarioPagamento    String
+
+  isDobra48h     Boolean @default(false)
+  numeroEdocs    String?
+  numeroRegistro String?
+
+  sincronizadoEm DateTime @default(now())
+
+  @@index([dataEscala])
+  @@index([dataPagamento])
+  @@index([escaladoOriginalNf])
+  @@index([substitutoNf])
+  @@map("trocas_autorizadas")
+}
+
+model Dispensa {
+  id        String  @id @default(cuid())
+  militarNf String
+  militar   Militar @relation(fields: [militarNf], references: [nf])
+
+  tipo        String // I_TAF | II_RECOMPENSA | ... | VIII_DIVERSAS
+  dataInicio  String // YYYY-MM-DD
+  dias        Int
+  numeroEdocs String?
+  observacoes String?
+
+  criadoEm     DateTime  @default(now())
+  criadoPorNf  String
+  criadoPor    User      @relation("DispensaCriadaPor", fields: [criadoPorNf], references: [nf])
+  atualizadoEm DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  @@index([militarNf, dataInicio])
+  @@index([deletedAt])
+  @@map("dispensas")
+}
+
+model Atestado {
+  id        String  @id @default(cuid())
+  militarNf String
+  militar   Militar @relation(fields: [militarNf], references: [nf])
+
+  dataInicio  String // YYYY-MM-DD
+  dias        Int
+  cid10       String?
+  crmMedico   String?
+  observacoes String?
+
+  criadoEm     DateTime  @default(now())
+  criadoPorNf  String
+  criadoPor    User      @relation("AtestadoCriadoPor", fields: [criadoPorNf], references: [nf])
+  atualizadoEm DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  @@index([militarNf, dataInicio])
+  @@index([deletedAt])
+  @@map("atestados")
+}
+
+model Ferias {
+  id        String  @id @default(cuid())
+  militarNf String
+  militar   Militar @relation(fields: [militarNf], references: [nf])
+
+  mesAno      String // YYYY-MM
+  dataInicio  String // YYYY-MM-DD
+  dias        Int     @default(30)
+  observacoes String?
+
+  criadoEm     DateTime  @default(now())
+  criadoPorNf  String
+  criadoPor    User      @relation("FeriasCriadaPor", fields: [criadoPorNf], references: [nf])
+  atualizadoEm DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  @@index([militarNf, mesAno])
+  @@index([deletedAt])
+  @@map("ferias")
+}
+
+/// ISEO Hospitais — escala de indenização HPM/HIMABA (planilha externa).
+/// Chave única: (unidade, dataIso, turno, nf) — admite re-sync periódico.
+model IseoHospitalEntry {
+  id           String  @id @default(cuid())
+  unidade      String // HPM | HIMABA
+  posto        String
+  nome         String
+  nf           String?
+  dataIso      String // YYYY-MM-DD
+  turno        String
+  funcao       String?
+  contato      String?
+  cargaHoraria String?
+  obm          String?
+  lotacao      String?
+
+  sincronizadoEm DateTime @default(now())
+
+  @@unique([unidade, dataIso, turno, nf], name: "iseo_unique")
+  @@index([dataIso])
+  @@index([unidade])
+  @@map("iseo_hospitais")
+}
+
+/// Cache do Mapa Força CIODES + estado do dia (Prévia/Serviço).
+///
+/// Estrutura denormalizada em JSONB no campo `payload` — 20+ subcampos
+/// aninhados (composicaoMf, tripulacao, ideo, dispensas, trocas, swaps,
+/// overrides, etc.). Modelar tudo relacional seria explosão de tabelas
+/// sem ganho prático; a chave funcional é `data` (unique).
+///
+/// Colunas indexáveis ficam fora do JSONB: data, estado, marcos do dia.
+model MapaForcaDiario {
+  id         String @id @default(cuid())
+  data       String @unique // YYYY-MM-DD
+  ano        Int
+  mes        Int
+  dia        Int
+  equipe     String // A | B | C | D
+  equipeNome String
+
+  estadoServico    String    @default("PREVIA") // PREVIA | INICIADO | ENCERRADO
+  previaIniciadaEm DateTime?
+  iniciadoEm       DateTime?
+  encerradoEm      DateTime?
+
+  /// Payload completo: composicaoMf, tripulacao, ideo, dispensas, atestados,
+  /// ferias, trocas, swapsMilitares, overrides*, inconsistencias[], etc.
+  payload Json
+
+  atualizadoEm DateTime @updatedAt
+
+  @@index([ano, mes])
+  @@index([estadoServico])
+  @@map("mapa_forca_diarios")
+}
+
+/// Catálogo BAON (Boletim de Aviso Operacional Normalizado).
+/// Carregado a partir do CSV institucional — readonly em runtime.
+model IncidenteBaon {
+  codigo        String  @id // ex.: Q01A01, M01E
+  descricao     String
+  classificacao String?
+
+  @@map("incidentes_baon")
 }

@@ -8,19 +8,19 @@
 
 ## Status atual
 
-| Sprint | Tema | PR | Status |
-|--------|------|----|--------|
-| S2.1 | Sheets-as-DB Foundation (SA + writer + bootstrap) | #45 | ✅ Merged |
-| S2.2 | Sheets-DB Integration — dual-write Escalas/Especiais/NS | #47 | ✅ Merged |
-| S2.3 | Re-import com bloqueios — Prévia/Serviço protege sobrescrita | #48 | ✅ Merged |
-| S2.4 | Fix troca-senha em prod (cookie 3rd-party bloqueado → Bearer fallback) | #49 | ✅ Merged |
-| S2.5 | Tela de carregamento animada com escalação por tempo | #50 | ✅ Merged |
-| S2.6 | Status dashboard dos serviços externos na home | #51 | ✅ Merged |
-| S2.7 | CRUD admin de usuários (`/configuracoes/usuarios`) | #52 | ✅ Merged |
-| S2.8.1 | ISEO Hospitais — HIMABA em abas pareadas + visão calendário | #53 | ✅ Merged |
-| S2.8.2 | Sheets-DB fonte primária + diff seletivo por dia + rename "Escala Mensal" | #54 | ✅ Merged |
-| S2.8.3 | Trocas Autorizadas com NF direto + STATUS TROCA visível | #55 | ✅ Merged |
-| **S2.8.4** | **Hotfix: Agenda/Mapa Força ↔ Efetivo após bootstrap Sheets-DB** | **#56** | **✅ Merged hoje (2026-05-16)** |
+| Sprint     | Tema                                                                      | PR      | Status                          |
+| ---------- | ------------------------------------------------------------------------- | ------- | ------------------------------- |
+| S2.1       | Sheets-as-DB Foundation (SA + writer + bootstrap)                         | #45     | ✅ Merged                       |
+| S2.2       | Sheets-DB Integration — dual-write Escalas/Especiais/NS                   | #47     | ✅ Merged                       |
+| S2.3       | Re-import com bloqueios — Prévia/Serviço protege sobrescrita              | #48     | ✅ Merged                       |
+| S2.4       | Fix troca-senha em prod (cookie 3rd-party bloqueado → Bearer fallback)    | #49     | ✅ Merged                       |
+| S2.5       | Tela de carregamento animada com escalação por tempo                      | #50     | ✅ Merged                       |
+| S2.6       | Status dashboard dos serviços externos na home                            | #51     | ✅ Merged                       |
+| S2.7       | CRUD admin de usuários (`/configuracoes/usuarios`)                        | #52     | ✅ Merged                       |
+| S2.8.1     | ISEO Hospitais — HIMABA em abas pareadas + visão calendário               | #53     | ✅ Merged                       |
+| S2.8.2     | Sheets-DB fonte primária + diff seletivo por dia + rename "Escala Mensal" | #54     | ✅ Merged                       |
+| S2.8.3     | Trocas Autorizadas com NF direto + STATUS TROCA visível                   | #55     | ✅ Merged                       |
+| **S2.8.4** | **Hotfix: Agenda/Mapa Força ↔ Efetivo após bootstrap Sheets-DB**          | **#56** | **✅ Merged hoje (2026-05-16)** |
 
 ---
 
@@ -54,6 +54,7 @@
   - Error boundary global no frontend (página amigável em vez de tela branca)
 
 **Arquivos críticos:**
+
 - `apps/web/vite.config.ts` — `vite-plugin-pwa`
 - `apps/web/public/manifest.json` (novo)
 - `apps/web/public/icons/` (novo)
@@ -95,6 +96,7 @@
    - Runbook em `docs/runbooks/` para restore
 
 **Riscos:**
+
 - Maior PR da série — tocar todos os módulos
 - Estratégia: 1 PR por módulo (S2.10.1 schema+seed, S2.10.2 Auth+Users, S2.10.3 Cadastros, S2.10.4 Escalas, S2.10.5 Operacional)
 
@@ -161,14 +163,14 @@ S2.9 (Hardening + PWA)
 
 ## Histórico de decisões consolidadas (S2.x)
 
-| Decisão | Sprint | Onde |
-|---------|--------|------|
-| Service Account aprovada (rejeição anterior superada) | S2.1 | `docs/runbooks/google-sheets-db-setup.md` |
-| Sheets-DB como espelho, depois fonte primária | S2.1 → S2.8.2 | ADR pendente |
-| Dual-write fire-and-forget (não bloqueia API) | S2.2 | `sheets-db.service.ts` |
-| Re-import com bloqueio por Prévia/Serviço já confirmado | S2.3 | `escalas.controller.ts` |
-| Auth: Bearer fallback ao cookie httpOnly | S2.4 | `auth-context.tsx` + `auth.guard.ts` |
-| ISEO HIMABA: 1º par = HPM, 2º par = HIMABA (fixo) | S2.8.1 | `iseo-hospitais-csv-parser.ts` |
-| Bootstrap: Sheets-DB sempre vence; XLSX só se Sheets-DB vazio | S2.8.2 | `escalas.service.ts` |
-| Trocas Autorizadas: NF direto da planilha elimina ambiguidade | S2.8.3 | `trocas-autorizadas-csv-parser.ts` |
-| NomeMatcher: NF é chave primária quando preenchida | S2.8.4 | [nome-matching.ts:46-57](apps/api/src/modules/mapa-forca/nome-matching.ts#L46-L57) |
+| Decisão                                                       | Sprint        | Onde                                                                               |
+| ------------------------------------------------------------- | ------------- | ---------------------------------------------------------------------------------- |
+| Service Account aprovada (rejeição anterior superada)         | S2.1          | `docs/runbooks/google-sheets-db-setup.md`                                          |
+| Sheets-DB como espelho, depois fonte primária                 | S2.1 → S2.8.2 | ADR pendente                                                                       |
+| Dual-write fire-and-forget (não bloqueia API)                 | S2.2          | `sheets-db.service.ts`                                                             |
+| Re-import com bloqueio por Prévia/Serviço já confirmado       | S2.3          | `escalas.controller.ts`                                                            |
+| Auth: Bearer fallback ao cookie httpOnly                      | S2.4          | `auth-context.tsx` + `auth.guard.ts`                                               |
+| ISEO HIMABA: 1º par = HPM, 2º par = HIMABA (fixo)             | S2.8.1        | `iseo-hospitais-csv-parser.ts`                                                     |
+| Bootstrap: Sheets-DB sempre vence; XLSX só se Sheets-DB vazio | S2.8.2        | `escalas.service.ts`                                                               |
+| Trocas Autorizadas: NF direto da planilha elimina ambiguidade | S2.8.3        | `trocas-autorizadas-csv-parser.ts`                                                 |
+| NomeMatcher: NF é chave primária quando preenchida            | S2.8.4        | [nome-matching.ts:46-57](apps/api/src/modules/mapa-forca/nome-matching.ts#L46-L57) |
