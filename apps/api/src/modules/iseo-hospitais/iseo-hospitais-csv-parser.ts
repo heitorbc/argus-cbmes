@@ -33,6 +33,17 @@ export interface ParseIseoHospitaisOptions {
    * linha é descartada nesse caso.
    */
   unidadeDefault?: IseoHospitalUnidade;
+  /**
+   * S2.8.1 — Layout pareado (abas ABRIL/MAIO 2026 em diante): 1º par
+   * de NF/NOME/CONTATO (cols 5-7) pertence à `unidadePrimeiroPar`, 2º
+   * par (cols 8-10) pertence à `unidadeSegundoPar`. Sobrescreve
+   * `unidadeFromSheet` e `unidadeDefault` quando presente. Convenção
+   * institucional do XLSM original: HPM | HIMABA.
+   */
+  paredLayout?: {
+    unidadePrimeiroPar: IseoHospitalUnidade;
+    unidadeSegundoPar: IseoHospitalUnidade;
+  };
 }
 
 /**
@@ -121,9 +132,20 @@ export function parseIseoHospitaisCsv(
     if (!turno) continue;
 
     const obm = colObm >= 0 ? clean(row[colObm]) || undefined : undefined;
-    const unidade =
-      opts.unidadeFromSheet ?? inferUnidadeFromObm(obm) ?? opts.unidadeDefault;
-    if (!unidade) continue;
+    // S2.8.1 — Resolução da unidade por par: se `paredLayout` foi
+    // passado, cada par usa unidade explícita (1º par = HPM, 2º par =
+    // HIMABA por convenção). Senão, comportamento legacy: 1ª prioridade
+    // unidadeFromSheet; depois OBM; depois unidadeDefault.
+    const unidade1 =
+      opts.paredLayout?.unidadePrimeiroPar ??
+      opts.unidadeFromSheet ??
+      inferUnidadeFromObm(obm) ??
+      opts.unidadeDefault;
+    const unidade2 =
+      opts.paredLayout?.unidadeSegundoPar ??
+      opts.unidadeFromSheet ??
+      inferUnidadeFromObm(obm) ??
+      opts.unidadeDefault;
 
     const funcao = colFuncao >= 0 ? clean(row[colFuncao]) || undefined : undefined;
     const cargaHoraria = colCarga >= 0 ? clean(row[colCarga]) || undefined : undefined;
@@ -133,11 +155,11 @@ export function parseIseoHospitaisCsv(
     // 1º militar.
     const nf1 = clean(row[colNf]);
     const nome1 = clean(row[colNome]);
-    if (/^\d+$/.test(nf1) && nome1) {
+    if (unidade1 && /^\d+$/.test(nf1) && nome1) {
       const { posto, nome } = splitPostoNome(nome1, postoCompartilhado);
       if (posto && nome) {
         out.push({
-          unidade,
+          unidade: unidade1,
           posto,
           nome,
           nf: nf1,
@@ -153,7 +175,7 @@ export function parseIseoHospitaisCsv(
     }
 
     // 2º militar (apenas se o layout tiver 2 colunas de matrícula).
-    if (colNf2 >= 0) {
+    if (colNf2 >= 0 && unidade2) {
       const nf2 = clean(row[colNf2]);
       const nome2 = clean(row[colNf2 + 1]);
       const contato2 = clean(row[colNf2 + 2]) || undefined;
@@ -161,7 +183,7 @@ export function parseIseoHospitaisCsv(
         const { posto, nome } = splitPostoNome(nome2, postoCompartilhado);
         if (posto && nome) {
           out.push({
-            unidade,
+            unidade: unidade2,
             posto,
             nome,
             nf: nf2,

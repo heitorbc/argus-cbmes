@@ -16,20 +16,19 @@ const HIMABA_JANEIRO_CSV =
   '\n' +
   '3ºSGT,RAFAELA,2511894,15/01/2026,Diurno,Condutor,,,,\n';
 
-const ABRIL_UNIFICADA_CSV =
-  HEADER +
-  '\n' +
-  'CB,FULANO,1111111,01/04/2026,Diurno,Operador,,,HPM,ADM\n' +
-  'CB,BELTRANO,2222222,01/04/2026,Noturno,Operador,,,HIMABA,DOP\n' +
-  'CB,SEM_OBM,3333333,01/04/2026,Diurno,Operador,,,,\n';
+// Estrutura real das abas ABRIL/MAIO 2026 (verificada via WebFetch em S2.8.1):
+// dados compartilhados em B-E (DATA/TURNO/FUNÇÃO/CH), 1º par F-H (HPM:
+// NF/NOME/CONTATO), 2º par I-K (HIMABA: NF/NOME/CONTATO). Sem coluna OBM.
+const ABRIL_REAL_CSV =
+  'ESCALA DE INDENIZAÇÃO SUPLEMENTAR DE ESCALA OPERACIONAL - HOSPITAIS\n' +
+  'POSTO/GRAD,,TURNO,FUNÇÃO,CH,,NOME DO MILITAR,CONTATO,,NOME DO MILITAR,CONTATO\n' +
+  'CB,17/04/2026,Diurno,Condutor,12H,4190726,CB IERACITANO,(27) 99772-4174,3037509,2ºSGT BARCELLOS,(27) 99918-6697\n';
 
-// Estrutura real das abas MAIO 2026 / ABRIL 2026 — sem OBM, header alternativo
-// com "MATRÍCULA" no lugar de "NF". Service deve aplicar `unidadeDefault: 'HPM'`.
 const MAIO_REAL_CSV =
   'ESCALA DE INDENIZAÇÃO SUPLEMENTAR DE ESCALA OPERACIONAL - HOSPITAIS\n' +
-  'POSTO/GRAD,DATA,TURNO,FUNÇÃO,CH,MATRÍCULA,NOME DO MILITAR,CONTATO\n' +
-  '2ºSGT,29/05/2026,Diurno,Condutor,12H,3037509,2ºSGT BARCELLOS,(27) 99918-6697\n' +
-  '3ºSGT,01/05/2026,Diurno,Operador,12H,3131335,3ºSGT ELIZANGELA,(27) 99507-2834\n';
+  'POSTO/GRAD,,TURNO,FUNÇÃO,CH,,NOME DO MILITAR,CONTATO,,NOME DO MILITAR,CONTATO\n' +
+  '2ºSGT,29/05/2026,Diurno,Condutor,12H,3037509,2ºSGT BARCELLOS,(27) 99918-6697,2981378,2ºSGT MATEUS,(27) 99999-9999\n' +
+  '3ºSGT,01/05/2026,Diurno,Operador,12H,3131335,3ºSGT ELIZANGELA,(27) 99507-2834,2894688,2ºSGT VICTOR DIAS,(28) 99968-0140\n';
 
 function makeConfig(sheetNames?: string): ConfigService {
   const map: Record<string, string | undefined> = {
@@ -49,7 +48,7 @@ function csvForSheet(url: string): string {
   const name = decodeURIComponent(m[1]!);
   if (name === 'HPM JANEIRO 2026') return HPM_JANEIRO_CSV;
   if (name === 'HIMABA JANEIRO 2026') return HIMABA_JANEIRO_CSV;
-  if (name === 'ABRIL 2026') return ABRIL_UNIFICADA_CSV;
+  if (name === 'ABRIL 2026') return ABRIL_REAL_CSV;
   if (name === 'MAIO 2026') return MAIO_REAL_CSV;
   return '';
 }
@@ -72,37 +71,37 @@ describe('IseoHospitaisService', () => {
   it('list() combina todas as abas (HPM/HIMABA por nome + unificada por OBM/default)', async () => {
     const svc = new IseoHospitaisService(makeConfig());
     const all = await svc.list();
-    // HPM JANEIRO=2 + HIMABA JANEIRO=1 + ABRIL=3 (HPM,HIMABA + SEM_OBM via default HPM) + MAIO=2 = 8
-    expect(all.length).toBe(8);
-    expect(all.filter((e) => e.unidade === 'HPM').length).toBe(6);
-    expect(all.filter((e) => e.unidade === 'HIMABA').length).toBe(2);
+    // HPM JANEIRO=2 + HIMABA JANEIRO=1 + ABRIL=2 (1 linha × 2 pares HPM+HIMABA)
+    //   + MAIO=4 (2 linhas × 2 pares cada) = 9
+    expect(all.length).toBe(9);
+    expect(all.filter((e) => e.unidade === 'HPM').length).toBe(5);
+    expect(all.filter((e) => e.unidade === 'HIMABA').length).toBe(4);
   });
 
-  it('aba unificada com OBM: respeita OBM; sem OBM cai no default HPM', async () => {
+  it('aba unificada (ABRIL/MAIO): 1º par = HPM, 2º par = HIMABA (S2.8.1)', async () => {
     const svc = new IseoHospitaisService(makeConfig('ABRIL 2026'));
     const all = await svc.list();
-    expect(all.length).toBe(3); // SEM_OBM agora vai para HPM (default)
-    expect(all.find((e) => e.nf === '1111111')?.unidade).toBe('HPM');
-    expect(all.find((e) => e.nf === '2222222')?.unidade).toBe('HIMABA');
-    expect(all.find((e) => e.nf === '3333333')?.unidade).toBe('HPM'); // default
+    expect(all.length).toBe(2);
+    expect(all.find((e) => e.nf === '4190726')?.unidade).toBe('HPM'); // 1º par
+    expect(all.find((e) => e.nf === '3037509')?.unidade).toBe('HIMABA'); // 2º par
   });
 
-  it('aba unificada estilo MAIO 2026 (header alternativo MATRÍCULA, sem OBM): carrega Heitor', async () => {
+  it('aba unificada estilo MAIO 2026 (pareada): Heitor aparece como HPM em 29/05', async () => {
     const svc = new IseoHospitaisService(makeConfig('MAIO 2026'));
     const meus = await svc.listByMilitar('3037509');
     expect(meus.length).toBe(1);
     expect(meus[0]?.dataIso).toBe('2026-05-29');
-    expect(meus[0]?.unidade).toBe('HPM');
+    expect(meus[0]?.unidade).toBe('HPM'); // 1º par
     expect(meus[0]?.turno).toBe('Diurno');
   });
 
   it('listByMilitar consolida entries do militar em todas as abas', async () => {
     const svc = new IseoHospitaisService(makeConfig());
     const meus = await svc.listByMilitar('3037509');
-    // BARCELLOS aparece 1x na aba MAIO 2026 (HPM 29/05 via default)
-    expect(meus.length).toBe(1);
-    expect(meus[0]?.dataIso).toBe('2026-05-29');
-    expect(meus[0]?.unidade).toBe('HPM');
+    // BARCELLOS aparece 1x em MAIO (29/05 HPM) e 1x em ABRIL (17/04 HIMABA, 2º par)
+    expect(meus.length).toBe(2);
+    const datas = meus.map((m) => `${m.dataIso}/${m.unidade}`).sort();
+    expect(datas).toEqual(['2026-04-17/HIMABA', '2026-05-29/HPM']);
   });
 
   it('dedupa entries duplicadas (mesma unidade+data+turno+nf em 2 abas)', async () => {
@@ -115,8 +114,10 @@ describe('IseoHospitaisService', () => {
   it('listDoDia filtra por dataIso', async () => {
     const svc = new IseoHospitaisService(makeConfig());
     const dia = await svc.listDoDia('2026-05-29');
-    expect(dia.length).toBe(1);
-    expect(dia[0]?.nome).toBe('BARCELLOS');
+    // 29/05 tem 1 linha × 2 pares = 2 entries (Heitor HPM + Mateus HIMABA)
+    expect(dia.length).toBe(2);
+    expect(dia.find((e) => e.nf === '3037509')?.unidade).toBe('HPM');
+    expect(dia.find((e) => e.nf === '2981378')?.unidade).toBe('HIMABA');
   });
 
   it('cache evita refetch dentro do TTL', async () => {
