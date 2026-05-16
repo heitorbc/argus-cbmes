@@ -1,4 +1,4 @@
-import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, Optional, type OnModuleInit } from '@nestjs/common';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EscalaEspecialMensal } from '@argus/shared-types';
@@ -7,6 +7,8 @@ import {
   parseEscalaEspecialXlsm,
   parseFilenameEspecial,
 } from './escala-especial-xlsm-parser';
+import { SheetsDbService } from '../sheets-db/sheets-db.service';
+import { escalaEspecialToRows } from '../sheets-db/sheets-db-serializers';
 
 interface EscalaKey {
   ano: number;
@@ -25,6 +27,8 @@ function key(k: EscalaKey): string {
 export class EscalasEspeciaisService implements OnModuleInit {
   private readonly logger = new Logger(EscalasEspeciaisService.name);
   private readonly byMes = new Map<string, EscalaEspecialMensal>();
+
+  constructor(@Optional() private readonly sheetsDb?: SheetsDbService) {}
 
   async onModuleInit(): Promise<void> {
     if (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test') return;
@@ -100,13 +104,41 @@ export class EscalasEspeciaisService implements OnModuleInit {
     return this.byMes.get(key({ ano, mes })) ?? null;
   }
 
+  /**
+   * S2.2 — dual-write: persiste in-memory e dispara replace no Sheets-DB
+   * em background. Falhas Sheets logam warning mas não derrubam.
+   */
   save(escala: EscalaEspecialMensal): EscalaEspecialMensal {
     this.byMes.set(key(escala), escala);
+    this.syncToSheetsDb(escala);
     return escala;
   }
 
   delete(ano: number, mes: number): boolean {
-    return this.byMes.delete(key({ ano, mes }));
+    const removed = this.byMes.delete(key({ ano, mes }));
+    if (removed) this.deleteFromSheetsDb(ano, mes);
+    return removed;
+  }
+
+  private syncToSheetsDb(escala: EscalaEspecialMensal): void {
+    if (!this.sheetsDb?.isEnabled()) return;
+    const rows = escalaEspecialToRows(escala);
+    void this.sheetsDb
+      .replaceEscalaEspecialMes(escala.ano, escala.mes, rows)
+      .catch((err) => {
+        this.logger.warn(
+          `Sheets-DB write falhou para escala especial ${escala.mes}/${escala.ano}: ${(err as Error).message}.`,
+        );
+      });
+  }
+
+  private deleteFromSheetsDb(ano: number, mes: number): void {
+    if (!this.sheetsDb?.isEnabled()) return;
+    void this.sheetsDb.replaceEscalaEspecialMes(ano, mes, []).catch((err) => {
+      this.logger.warn(
+        `Sheets-DB delete falhou para escala especial ${mes}/${ano}: ${(err as Error).message}.`,
+      );
+    });
   }
 
   /** Atos especiais que ocorrem em uma data específica. Útil para Prévia (S6b). */

@@ -1,4 +1,4 @@
-import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, Optional, type OnModuleInit } from '@nestjs/common';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
@@ -10,6 +10,8 @@ import type {
 } from '@argus/shared-types';
 import { resolveDataDir } from '../../common/dev-fixtures';
 import { parseEscalaXlsx, parseFilename } from './escala-xlsx-parser';
+import { SheetsDbService } from '../sheets-db/sheets-db.service';
+import { escalaMensalToRows } from '../sheets-db/sheets-db-serializers';
 
 interface EscalaKey {
   ano: number;
@@ -82,6 +84,10 @@ export class EscalasService implements OnModuleInit {
   private readonly logger = new Logger(EscalasService.name);
   private readonly byMes = new Map<string, EscalaMensal>();
 
+  // S2.2 — SheetsDbService é injetado opcionalmente para permitir tests
+  // que não precisam mockar Sheets-DB. Em runtime, sempre presente.
+  constructor(@Optional() private readonly sheetsDb?: SheetsDbService) {}
+
   async onModuleInit(): Promise<void> {
     if (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test') return;
     if (this.byMes.size > 0) return;
@@ -147,14 +153,40 @@ export class EscalasService implements OnModuleInit {
   /**
    * Upserta a escala do mês. Se já existir, sobrescreve completamente — o caller é
    * responsável por confirmar o diff antes (via preview/confirm).
+   *
+   * S2.2 — dual-write: persiste in-memory (síncrono) e dispara replace
+   * para o Sheets-DB em background (fire-and-forget). Falhas de Sheets
+   * não derrubam a operação principal.
    */
   save(escala: EscalaMensal): EscalaMensal {
     this.byMes.set(key(escala), escala);
+    this.syncToSheetsDb(escala);
     return escala;
   }
 
   delete(ano: number, mes: number): boolean {
-    return this.byMes.delete(key({ ano, mes }));
+    const removed = this.byMes.delete(key({ ano, mes }));
+    if (removed) this.deleteFromSheetsDb(ano, mes);
+    return removed;
+  }
+
+  private syncToSheetsDb(escala: EscalaMensal): void {
+    if (!this.sheetsDb?.isEnabled()) return;
+    const rows = escalaMensalToRows(escala);
+    void this.sheetsDb.replaceEscalaMensalMes(escala.ano, escala.mes, rows).catch((err) => {
+      this.logger.warn(
+        `Sheets-DB write falhou para escala ${escala.mes}/${escala.ano}: ${(err as Error).message}. In-memory OK.`,
+      );
+    });
+  }
+
+  private deleteFromSheetsDb(ano: number, mes: number): void {
+    if (!this.sheetsDb?.isEnabled()) return;
+    void this.sheetsDb.replaceEscalaMensalMes(ano, mes, []).catch((err) => {
+      this.logger.warn(
+        `Sheets-DB delete falhou para escala ${mes}/${ano}: ${(err as Error).message}.`,
+      );
+    });
   }
 
   /**
