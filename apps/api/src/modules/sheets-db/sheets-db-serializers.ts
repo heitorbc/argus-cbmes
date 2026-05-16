@@ -43,8 +43,7 @@ export function escalaMensalToRows(escala: EscalaMensal): string[][] {
   for (const [dataIso, equipe] of Object.entries(escala.diaEquipe)) {
     if (!equipe) continue;
     const q = quinzenaDoDia(dataIso, escala);
-    const bucket =
-      q === 1 ? escala.composicaoPorQuinzena.q1 : escala.composicaoPorQuinzena.q2;
+    const bucket = q === 1 ? escala.composicaoPorQuinzena.q1 : escala.composicaoPorQuinzena.q2;
     const entries = bucket.filter((c) => c.equipe === equipe);
     for (const e of entries) {
       rows.push([
@@ -206,9 +205,7 @@ export function escalaEspecialToRows(escala: EscalaEspecialMensal): string[][] {
  * S2.8.2 — Reagrupa rows do Sheets-DB de volta em EscalaEspecialMensal por
  * (ano, mes). Mais simples que a mensal porque `atos[]` é flat.
  */
-export function rowsToEscalasEspeciais(
-  rows: string[][],
-): Map<string, EscalaEspecialMensal> {
+export function rowsToEscalasEspeciais(rows: string[][]): Map<string, EscalaEspecialMensal> {
   const porMes = new Map<string, string[][]>();
   for (const row of rows) {
     const ano = row[0] ?? '';
