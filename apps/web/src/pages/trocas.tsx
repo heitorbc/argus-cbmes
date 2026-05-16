@@ -132,6 +132,7 @@ export function TrocasPage() {
             <table className="min-w-full text-xs">
               <thead className="bg-slate-100">
                 <tr className="text-left">
+                  <th className="px-2 py-2">Status</th>
                   <th className="px-2 py-2">Data Escala</th>
                   <th className="px-2 py-2">Escalado</th>
                   <th className="px-2 py-2">Substituto</th>
@@ -150,9 +151,26 @@ export function TrocasPage() {
                     onClick={() => setSelecionada(t)}
                     className="cursor-pointer border-t border-slate-200 hover:bg-cbmes-blue/5"
                   >
+                    <td className="px-2 py-2">
+                      <StatusTrocaBadge status={t.statusTroca} />
+                    </td>
                     <td className="px-2 py-2 font-medium">{formatDataBr(t.dataEscala)}</td>
-                    <td className="px-2 py-2">{t.escaladoOriginal}</td>
-                    <td className="px-2 py-2">{t.substituto}</td>
+                    <td className="px-2 py-2">
+                      {t.escaladoOriginal}
+                      {t.escaladoOriginalNf && (
+                        <span className="ml-1 text-[10px] text-slate-500">
+                          (NF {t.escaladoOriginalNf})
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-2 py-2">
+                      {t.substituto}
+                      {t.substitutoNf && (
+                        <span className="ml-1 text-[10px] text-slate-500">
+                          (NF {t.substitutoNf})
+                        </span>
+                      )}
+                    </td>
                     <td className="px-2 py-2">{t.funcao}</td>
                     <td className="px-2 py-2 whitespace-nowrap">{t.horario}</td>
                     <td className="px-2 py-2 font-medium">{formatDataBr(t.dataPagamento)}</td>
@@ -184,8 +202,13 @@ export function TrocasPage() {
             onClick={(e) => e.stopPropagation()}
             className="max-w-lg rounded border border-slate-300 bg-white p-4 shadow-lg"
           >
-            <h2 className="text-base font-bold text-cbmes-blue">Detalhes da troca</h2>
+            <div className="flex items-baseline justify-between">
+              <h2 className="text-base font-bold text-cbmes-blue">Detalhes da troca</h2>
+              <StatusTrocaBadge status={selecionada.statusTroca} />
+            </div>
             <dl className="mt-3 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-xs">
+              <dt className="font-medium text-slate-600">Status nome:</dt>
+              <dd className="text-slate-500">{selecionada.statusNome ?? '—'}</dd>
               <dt className="font-medium text-slate-600">Registro Nº:</dt>
               <dd>{selecionada.numeroRegistro ?? '—'}</dd>
               <dt className="font-medium text-slate-600">Registrado em:</dt>
@@ -234,4 +257,41 @@ export function TrocasPage() {
 function formatDataBr(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
   return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
+}
+
+/**
+ * S2.8.3 — Badge visual do STATUS TROCA da planilha. Verde = ambos
+ * militares preencheram o formulário (troca confiável). Amarelo = só
+ * um lado preencheu (pendente). Cinza = status não-padronizado.
+ */
+export function StatusTrocaBadge({
+  status,
+}: {
+  status: 'VERIFICADO' | 'PENDENTE' | undefined;
+}) {
+  if (status === 'VERIFICADO') {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800"
+        title="Ambos militares preencheram o formulário institucional"
+      >
+        🟢 VERIFICADO
+      </span>
+    );
+  }
+  if (status === 'PENDENTE') {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800"
+        title="Apenas um lado preencheu o formulário — confirme com o militar antes de considerar a troca"
+      >
+        🟡 PENDENTE
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+      —
+    </span>
+  );
 }
