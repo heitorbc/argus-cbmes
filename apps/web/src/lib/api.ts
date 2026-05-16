@@ -36,6 +36,7 @@ import type {
   IdeoMatrix,
   IdeoStatusDoDia,
   AgendaResponse,
+  HealthStatus,
   IncidenteBaon,
   IntegracaoStatus,
   IseoHospitalEntry,
@@ -168,6 +169,9 @@ export const api = {
     }),
 
   me: () => request<UserSession>('/auth/me'),
+
+  // S2.6 — Status agregado dos serviços (StatusBar na home).
+  healthStatus: () => request<HealthStatus>('/health/status'),
 
   changePassword: (input: ChangePasswordInput) =>
     request<ChangePasswordResponse>('/auth/change-password', {

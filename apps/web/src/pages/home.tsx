@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth-context';
 import { canSeeSection } from '@/lib/permissions';
 import { AgendaCard } from '@/components/AgendaCard';
+import { StatusBar } from '@/components/StatusBar';
 
 const PAPEL_LABEL: Record<string, string> = {
   admin: 'Administrador',
@@ -137,10 +138,13 @@ export function HomePage() {
         )}
 
         <div className="mt-6 rounded border border-slate-200 bg-white p-4 text-xs text-slate-500">
-          <p className="font-medium text-slate-700">Sprint atual: S6f — RBAC visual da home</p>
-          <p className="mt-1">
-            Próximo: S5b (persistência Supabase), S9 (escrita MF), S10-S11 (Parte Diária).
+          <p className="font-medium text-slate-700">
+            Sprint atual: S2.6 — Status dashboard
           </p>
+          <p className="mt-1">
+            Próximo: S2.7 (admin de usuários), S2.8 (PWA + hardening), S2.9 (Supabase).
+          </p>
+          <StatusBar />
         </div>
 
         <button

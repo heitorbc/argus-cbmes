@@ -8,6 +8,7 @@ export * from './escala.js';
 export * from './escala-especial.js';
 export * from './ferias.js';
 export * from './fiscal.js';
+export * from './health-status.js';
 export * from './ideo.js';
 export * from './incidente-baon.js';
 export * from './iseo-hospital.js';
