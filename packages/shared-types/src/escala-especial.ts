@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { bloqueioReimportSchema } from './escala.js';
 
 /**
  * Um ato de Escala Especial — atribuição pontual de um militar a um turno
@@ -39,5 +40,7 @@ export const previewEscalaEspecialResponseSchema = z.object({
   escala: escalaEspecialMensalSchema,
   /** Total de atos descartados (XXX = turno vago). */
   descartados: z.number().int().nonnegative(),
+  /** S2.3 — dias com Prévia/Serviço já iniciado (bloqueia confirm). */
+  bloqueios: z.array(bloqueioReimportSchema).default([]),
 });
 export type PreviewEscalaEspecialResponse = z.infer<typeof previewEscalaEspecialResponseSchema>;

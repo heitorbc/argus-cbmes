@@ -2,7 +2,8 @@ import { Test } from '@nestjs/testing';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { Reflector } from '@nestjs/core';
 import { EscalasEspeciaisController } from './escalas-especiais.controller';
-import { EscalasEspeciaisModule } from './escalas-especiais.module';
+import { EscalasEspeciaisService } from './escalas-especiais.service';
+import { ServicoService } from '../servico/servico.service';
 
 /**
  * Smoke test do `EscalasEspeciaisController` — garante que o módulo é instanciável
@@ -16,8 +17,18 @@ describe('EscalasEspeciaisController (smoke)', () => {
   let reflector: Reflector;
 
   beforeAll(async () => {
+    // Tests não importam EscalasEspeciaisModule inteiro pra evitar a cadeia
+    // de deps (Sheets-DB, ServicoModule → MapaForcaModule → AtestadosModule…).
+    // Provê apenas o controller + service + mock de ServicoService.
     const moduleRef = await Test.createTestingModule({
-      imports: [EscalasEspeciaisModule],
+      controllers: [EscalasEspeciaisController],
+      providers: [
+        EscalasEspeciaisService,
+        {
+          provide: ServicoService,
+          useValue: { get: (data: string) => ({ data, estado: 'NAO_INICIADO' }) },
+        },
+      ],
     }).compile();
     controller = moduleRef.get(EscalasEspeciaisController);
     reflector = new Reflector();

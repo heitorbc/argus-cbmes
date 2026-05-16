@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
@@ -22,6 +23,11 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { UserSession } from '@argus/shared-types';
 import { EscalasService, computeDiff } from './escalas.service';
 import { EscalaXlsxParseError, parseEscalaXlsx } from './escala-xlsx-parser';
+import { ServicoService } from '../servico/servico.service';
+import {
+  bloqueiosToMessage,
+  computeBloqueios,
+} from '../servico/bloqueio-reimport';
 
 const listQuerySchema = z.object({
   ano: z
@@ -66,7 +72,10 @@ function ensureXlsx(file: MulterFile | undefined): MulterFile {
 
 @Controller('escalas')
 export class EscalasController {
-  constructor(private readonly escalas: EscalasService) {}
+  constructor(
+    private readonly escalas: EscalasService,
+    private readonly servico: ServicoService,
+  ) {}
 
   @Get()
   list(@Query() query: unknown) {
@@ -143,7 +152,12 @@ export class EscalasController {
     }
     const vigente = this.escalas.get(escala.ano, escala.mes);
     const diff = vigente ? computeDiff(vigente, escala) : null;
-    return { escala, diff };
+    // S2.3 — bloqueios: dias da escala que já têm Prévia/Serviço iniciado.
+    // Se algum dia for bloqueado, o frontend mostra o aviso e o user precisa
+    // destravar antes de chamar `confirm`.
+    const datas = Object.keys(escala.diaEquipe);
+    const bloqueios = computeBloqueios(this.servico, datas);
+    return { escala, diff, bloqueios };
   }
 
   /**
@@ -162,6 +176,17 @@ export class EscalasController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     }
+    // S2.3 — segurança extra: re-checa bloqueios no confirm. Caso o user
+    // tenha demorado entre preview e confirm e algum dia tenha sido
+    // travado nesse intervalo, rejeita com 409.
+    const datas = Object.keys(parsed.data.diaEquipe);
+    const bloqueios = computeBloqueios(this.servico, datas);
+    if (bloqueios.length > 0) {
+      throw new ConflictException({
+        message: bloqueiosToMessage(bloqueios),
+        bloqueios,
+      });
+    }
     return this.escalas.save(parsed.data);
   }
 
@@ -173,6 +198,18 @@ export class EscalasController {
     const m = Number.parseInt(mes, 10);
     if (!Number.isFinite(a) || !Number.isFinite(m)) {
       throw new BadRequestException('ano/mês inválidos');
+    }
+    // S2.3 — bloqueia delete se algum dia da escala está em uso.
+    const escala = this.escalas.get(a, m);
+    if (escala) {
+      const datas = Object.keys(escala.diaEquipe);
+      const bloqueios = computeBloqueios(this.servico, datas);
+      if (bloqueios.length > 0) {
+        throw new ConflictException({
+          message: bloqueiosToMessage(bloqueios),
+          bloqueios,
+        });
+      }
     }
     this.escalas.delete(a, m);
   }

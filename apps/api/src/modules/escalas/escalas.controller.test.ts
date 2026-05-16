@@ -1,7 +1,19 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { EscalaMensal } from '@argus/shared-types';
+import type { EscalaMensal, ServicoEstado } from '@argus/shared-types';
 import { EscalasController } from './escalas.controller';
 import { EscalasService } from './escalas.service';
+import type { ServicoService } from '../servico/servico.service';
+
+/**
+ * Mock do ServicoService — todos os dias retornam NAO_INICIADO (não há
+ * bloqueios). Tests específicos de bloqueio podem injetar um mock
+ * próprio com estados específicos.
+ */
+function makeServicoMockSemBloqueio(): ServicoService {
+  return {
+    get: (data: string): ServicoEstado => ({ data, estado: 'NAO_INICIADO' }),
+  } as unknown as ServicoService;
+}
 
 /**
  * Regressão (homologação 2026-05-13): o `POST /escalas/confirm` antes
@@ -18,7 +30,7 @@ describe('EscalasController.confirm (homologação fix)', () => {
 
   beforeEach(() => {
     service = new EscalasService();
-    controller = new EscalasController(service);
+    controller = new EscalasController(service, makeServicoMockSemBloqueio());
   });
 
   function fakeEscala(): EscalaMensal {

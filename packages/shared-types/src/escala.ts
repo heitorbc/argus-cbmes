@@ -228,8 +228,28 @@ export const escalaDiffSchema = z.object({
 });
 export type EscalaDiff = z.infer<typeof escalaDiffSchema>;
 
+/**
+ * S2.3 — Re-import com diff + bloqueios.
+ *
+ * Um dia "bloqueado" é aquele cuja Prévia já foi iniciada ou cujo Serviço
+ * já está em andamento (estado != NAO_INICIADO no `ServicoService`). O
+ * frontend deve listar esses dias antes de confirmar e o backend deve
+ * rejeitar o `confirm` com 409 se houver qualquer bloqueio.
+ *
+ * Estratégia conservadora: bloqueio TOTAL — se algum dia da escala está em
+ * uso, todo o save é rejeitado. User precisa "destravar" (cancelar Prévia
+ * ou aguardar encerramento do Serviço) antes de poder reimportar.
+ */
+export const bloqueioReimportSchema = z.object({
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  estado: z.string(),
+  motivo: z.string(),
+});
+export type BloqueioReimport = z.infer<typeof bloqueioReimportSchema>;
+
 export const previewEscalaResponseSchema = z.object({
   escala: escalaMensalSchema,
   diff: escalaDiffSchema.nullable(),
+  bloqueios: z.array(bloqueioReimportSchema).default([]),
 });
 export type PreviewEscalaResponse = z.infer<typeof previewEscalaResponseSchema>;
