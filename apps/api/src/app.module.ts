@@ -34,6 +34,13 @@ import { ViaturasModule } from './modules/viaturas/viaturas.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      // Lê env vars em ordem de prioridade (primeiro encontrado vence). Em
+      // dev, `nest start --watch` roda com cwd em `apps/api/`, então usamos
+      // caminhos relativos. `.env.local` na raiz é o padrão para overrides
+      // pessoais (ex.: credenciais SA do Sheets-DB) — fica fora do git.
+      // Em produção (Render), as vars vêm do painel; estes paths simplesmente
+      // não existem e o ConfigModule cai no `process.env`.
+      envFilePath: ['.env.local', '../../.env.local', '.env', '../../.env'],
     }),
     AtestadosModule,
     AuthModule,
