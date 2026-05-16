@@ -8,7 +8,10 @@ import {
   parseFilenameEspecial,
 } from './escala-especial-xlsm-parser';
 import { SheetsDbService } from '../sheets-db/sheets-db.service';
-import { escalaEspecialToRows } from '../sheets-db/sheets-db-serializers';
+import {
+  escalaEspecialToRows,
+  rowsToEscalasEspeciais,
+} from '../sheets-db/sheets-db-serializers';
 
 interface EscalaKey {
   ano: number;
@@ -31,9 +34,36 @@ export class EscalasEspeciaisService implements OnModuleInit {
   constructor(@Optional() private readonly sheetsDb?: SheetsDbService) {}
 
   async onModuleInit(): Promise<void> {
-    if (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test') return;
+    if (process.env.NODE_ENV === 'test') return;
     if (this.byMes.size > 0) return;
-    await this.bootstrapFromFilesystem();
+    // S2.8.2 — Sheets-DB é fonte primária; XLSM é fallback dev.
+    await this.bootstrapFromSheetsDb();
+    if (this.byMes.size === 0 && process.env.NODE_ENV !== 'production') {
+      await this.bootstrapFromFilesystem();
+    }
+  }
+
+  private async bootstrapFromSheetsDb(): Promise<void> {
+    if (!this.sheetsDb?.isEnabled()) {
+      this.logger.log(
+        'Bootstrap escala especial: Sheets-DB desabilitado, tentando XLSM local.',
+      );
+      return;
+    }
+    try {
+      const rows = await this.sheetsDb.readEscalaEspecial();
+      const escalas = rowsToEscalasEspeciais(rows);
+      for (const [k, escala] of escalas.entries()) {
+        this.byMes.set(k, escala);
+      }
+      this.logger.log(
+        `Bootstrap escala especial: ${escalas.size} meses carregados do Sheets-DB (${rows.length} linhas).`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Bootstrap escala especial Sheets-DB falhou: ${(err as Error).message}. Tentando XLSM local.`,
+      );
+    }
   }
 
   /**

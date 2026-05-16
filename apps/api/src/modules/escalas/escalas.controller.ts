@@ -17,11 +17,19 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { z } from 'zod';
-import { escalaMensalSchema, type PreviewEscalaResponse } from '@argus/shared-types';
+import {
+  confirmEscalaInputSchema,
+  escalaMensalSchema,
+  type PreviewEscalaResponse,
+} from '@argus/shared-types';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { UserSession } from '@argus/shared-types';
-import { EscalasService, computeDiff } from './escalas.service';
+import {
+  EscalasService,
+  computeDiff,
+  mergeEscalaPreservandoDias,
+} from './escalas.service';
 import { EscalaXlsxParseError, parseEscalaXlsx } from './escala-xlsx-parser';
 import { ServicoService } from '../servico/servico.service';
 import {
@@ -172,14 +180,37 @@ export class EscalasController {
   @Post('confirm')
   @HttpCode(HttpStatus.OK)
   confirm(@Body() body: unknown) {
-    const parsed = escalaMensalSchema.safeParse(body);
-    if (!parsed.success) {
-      throw new BadRequestException(parsed.error.errors.map((e) => e.message));
+    // S2.8.2 — body novo aceita `{ escala, diasDescartados? }`. Para
+    // backwards compat com clients antigos que enviam `EscalaMensal` puro,
+    // aceitamos ambos os formatos.
+    const parsedNew = confirmEscalaInputSchema.safeParse(body);
+    let escala;
+    let diasDescartados: readonly string[] = [];
+    if (parsedNew.success) {
+      escala = parsedNew.data.escala;
+      diasDescartados = parsedNew.data.diasDescartados ?? [];
+    } else {
+      const parsedLegacy = escalaMensalSchema.safeParse(body);
+      if (!parsedLegacy.success) {
+        throw new BadRequestException(
+          parsedLegacy.error.errors.map((e) => e.message),
+        );
+      }
+      escala = parsedLegacy.data;
     }
-    // S2.3 — segurança extra: re-checa bloqueios no confirm. Caso o user
-    // tenha demorado entre preview e confirm e algum dia tenha sido
-    // travado nesse intervalo, rejeita com 409.
-    const datas = Object.keys(parsed.data.diaEquipe);
+
+    // S2.8.2 — merge: para cada dia em `diasDescartados`, preserva a
+    // equipe que está na escala vigente. Sem `diasDescartados`, retorna
+    // `escala` inalterada (= comportamento legacy).
+    const vigente = this.escalas.get(escala.ano, escala.mes);
+    const escalaFinal = vigente
+      ? mergeEscalaPreservandoDias(vigente, escala, diasDescartados)
+      : escala;
+
+    // S2.3 — re-checa bloqueios no confirm. Caso o user tenha demorado
+    // entre preview e confirm e algum dia tenha sido travado nesse
+    // intervalo, rejeita com 409.
+    const datas = Object.keys(escalaFinal.diaEquipe);
     const bloqueios = computeBloqueios(this.servico, datas);
     if (bloqueios.length > 0) {
       throw new ConflictException({
@@ -187,7 +218,7 @@ export class EscalasController {
         bloqueios,
       });
     }
-    return this.escalas.save(parsed.data);
+    return this.escalas.save(escalaFinal);
   }
 
   @Roles('admin')

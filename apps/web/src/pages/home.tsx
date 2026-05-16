@@ -104,7 +104,7 @@ export function HomePage() {
             accent="border-l-cbmes-blue"
           >
             <CardLink to="/cadastros/efetivo" icon="👥" label="Efetivo" />
-            <CardLink to="/cadastros/escalas" icon="📅" label="Escala Mensal (XLSX)" />
+            <CardLink to="/cadastros/escalas" icon="📅" label="Escala Mensal" />
             <CardLink to="/cadastros/escalas-especiais" icon="📆" label="Escala Especial (XLSM)" />
             <CardLink to="/cadastros/dispensas" icon="🏖️" label="Dispensas" />
             <CardLink to="/cadastros/ferias" icon="🏝️" label="Férias" />

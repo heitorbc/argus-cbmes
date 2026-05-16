@@ -11,7 +11,10 @@ import type {
 import { resolveDataDir } from '../../common/dev-fixtures';
 import { parseEscalaXlsx, parseFilename } from './escala-xlsx-parser';
 import { SheetsDbService } from '../sheets-db/sheets-db.service';
-import { escalaMensalToRows } from '../sheets-db/sheets-db-serializers';
+import {
+  escalaMensalToRows,
+  rowsToEscalasMensais,
+} from '../sheets-db/sheets-db-serializers';
 
 interface EscalaKey {
   ano: number;
@@ -54,6 +57,35 @@ function diffComposicao(
 }
 
 /**
+ * S2.8.2 — Merge "preservando dias": para cada `dataIso` em
+ * `diasDescartados`, mantém a equipe que estava na escala VIGENTE (atual)
+ * em vez da equipe que veio na NOVA. Composição da quinzena segue a
+ * NOVA escala (não há granularidade por dia na composição — todos os
+ * dias de uma quinzena compartilham a mesma composição por equipe).
+ *
+ * Se `diasDescartados` está vazio, retorna `depois` inalterado (comportamento
+ * padrão pré-S2.8.2).
+ */
+export function mergeEscalaPreservandoDias(
+  antes: EscalaMensal,
+  depois: EscalaMensal,
+  diasDescartados: readonly string[],
+): EscalaMensal {
+  if (diasDescartados.length === 0) return depois;
+  const novoDiaEquipe = { ...depois.diaEquipe };
+  for (const data of diasDescartados) {
+    const equipeAntiga = antes.diaEquipe[data];
+    if (equipeAntiga) {
+      novoDiaEquipe[data] = equipeAntiga;
+    } else {
+      // Antes não tinha equipe naquele dia; manter atual = remover do dia.
+      delete novoDiaEquipe[data];
+    }
+  }
+  return { ...depois, diaEquipe: novoDiaEquipe };
+}
+
+/**
  * Computa o diff entre duas escalas do mesmo mês/ano. Útil para reupload — antes de
  * sobrescrever uma escala vigente, mostra o que vai mudar. Composição é comparada
  * separadamente por quinzena.
@@ -89,9 +121,41 @@ export class EscalasService implements OnModuleInit {
   constructor(@Optional() private readonly sheetsDb?: SheetsDbService) {}
 
   async onModuleInit(): Promise<void> {
-    if (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test') return;
+    if (process.env.NODE_ENV === 'test') return;
     if (this.byMes.size > 0) return;
-    await this.bootstrapFromFilesystem();
+    // S2.8.2 — Sheets-DB é fonte primária. Roda em qualquer ambiente
+    // (inclusive produção). Em dev, se Sheets-DB vier vazio/desabilitado,
+    // o XLSX local cobre como fallback.
+    await this.bootstrapFromSheetsDb();
+    if (this.byMes.size === 0 && process.env.NODE_ENV !== 'production') {
+      await this.bootstrapFromFilesystem();
+    }
+  }
+
+  /**
+   * S2.8.2 — Lê todas as escalas mensais do Sheets-DB e popula o cache
+   * in-memory. Idempotente. Sheets-DB desabilitado (sem credenciais) =
+   * no-op silencioso, o caller cai no XLSX fallback.
+   */
+  private async bootstrapFromSheetsDb(): Promise<void> {
+    if (!this.sheetsDb?.isEnabled()) {
+      this.logger.log('Bootstrap escalas: Sheets-DB desabilitado, tentando XLSX local.');
+      return;
+    }
+    try {
+      const rows = await this.sheetsDb.readEscalaMensal();
+      const escalas = rowsToEscalasMensais(rows);
+      for (const [k, escala] of escalas.entries()) {
+        this.byMes.set(k, escala);
+      }
+      this.logger.log(
+        `Bootstrap escalas: ${escalas.size} meses carregados do Sheets-DB (${rows.length} linhas).`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Bootstrap escalas Sheets-DB falhou: ${(err as Error).message}. Tentando XLSX local.`,
+      );
+    }
   }
 
   /**

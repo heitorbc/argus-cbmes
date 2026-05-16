@@ -336,10 +336,14 @@ export const api = {
     return json as PreviewEscalaResponse;
   },
 
-  escalasConfirm: (escala: EscalaMensal) =>
+  /**
+   * S2.8.2 — accept opcional `diasDescartados` (datas que admin escolheu
+   * manter na versão atual em vez de aceitar a nova).
+   */
+  escalasConfirm: (escala: EscalaMensal, diasDescartados: string[] = []) =>
     request<EscalaMensal>('/escalas/confirm', {
       method: 'POST',
-      body: JSON.stringify(escala),
+      body: JSON.stringify({ escala, diasDescartados }),
     }),
 
   escalasDelete: (ano: number, mes: number) =>
