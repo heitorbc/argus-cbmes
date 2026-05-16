@@ -189,14 +189,20 @@ export class IseoHospitaisService {
     }
 
     const unidadeFromSheet = parseUnidadeFromSheetName(sheet);
-    // Abas unificadas (ABRIL/MAIO 2026 em diante) não têm coluna OBM nem
-    // prefixo de unidade no nome. Por convenção institucional, marcamos
-    // como HPM (escala principal). Se a planilha futuramente discriminar
-    // via OBM, o `inferUnidadeFromObm` ganha precedência.
-    const parsed = parseIseoHospitaisCsv(csv, {
-      unidadeFromSheet,
-      unidadeDefault: unidadeFromSheet ? undefined : 'HPM',
-    });
+    // S2.8.1 — Em abas unificadas (ABRIL/MAIO 2026 em diante), cada
+    // linha tem 2 pares de NF/NOME/CONTATO. Convenção institucional do
+    // XLSM original: 1º par (cols F-H) = HPM, 2º par (cols I-K) =
+    // HIMABA. Antes víamos só HPM porque o parser usava `unidadeDefault`
+    // único para ambos os pares.
+    //
+    // Em abas prefixadas (HPM JANEIRO 2026 etc.) o nome do arquivo já
+    // discrimina — usa o caminho legacy via `unidadeFromSheet`.
+    const parsed = parseIseoHospitaisCsv(
+      csv,
+      unidadeFromSheet
+        ? { unidadeFromSheet }
+        : { paredLayout: { unidadePrimeiroPar: 'HPM', unidadeSegundoPar: 'HIMABA' } },
+    );
     return { parsed, syncedAt: Date.now() };
   }
 }
