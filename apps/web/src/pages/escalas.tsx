@@ -57,6 +57,9 @@ export function EscalasPage() {
   const [preview, setPreview] = useState<EscalaMensal | null>(null);
   const [diff, setDiff] = useState<EscalaDiff | null>(null);
   const [bloqueios, setBloqueios] = useState<BloqueioReimport[]>([]);
+  // S2.8.2 — datas em que admin escolheu MANTER a escala vigente
+  // (desmarcou "aceitar nova"). Default: aceitar tudo (lista vazia).
+  const [diasDescartados, setDiasDescartados] = useState<Set<string>>(new Set());
   const [uploading, setUploading] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
@@ -114,6 +117,7 @@ export function EscalasPage() {
     setPreview(null);
     setDiff(null);
     setBloqueios([]);
+    setDiasDescartados(new Set());
     try {
       const r = await api.escalasPreview(file);
       setPreview(r.escala);
@@ -132,10 +136,11 @@ export function EscalasPage() {
     setConfirming(true);
     setError(null);
     try {
-      await api.escalasConfirm(preview);
+      await api.escalasConfirm(preview, [...diasDescartados]);
       setPreview(null);
       setDiff(null);
       setBloqueios([]);
+      setDiasDescartados(new Set());
       await reload();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Erro ao confirmar escala');
@@ -148,6 +153,16 @@ export function EscalasPage() {
     setPreview(null);
     setDiff(null);
     setBloqueios([]);
+    setDiasDescartados(new Set());
+  };
+
+  const toggleDiaDescartado = (data: string) => {
+    setDiasDescartados((prev) => {
+      const next = new Set(prev);
+      if (next.has(data)) next.delete(data);
+      else next.add(data);
+      return next;
+    });
   };
 
   const handleDelete = async (ano: number, mes: number) => {
@@ -168,7 +183,10 @@ export function EscalasPage() {
           ← Início
         </Link>
         <h1 className="mt-1 text-lg font-bold">Escala Mensal</h1>
-        <p className="text-xs opacity-90">Cadastros Mestre · Upload do XLSX do Sargenteante</p>
+        <p className="text-xs opacity-90">
+          Fonte primária: planilha-DB (aba <code>bd_escala_mensal</code>) · XLSX
+          aceito apenas para popular ou atualizar a planilha
+        </p>
       </header>
 
       <section className="mx-auto max-w-4xl p-4">
@@ -220,6 +238,8 @@ export function EscalasPage() {
             diff={diff}
             bloqueios={bloqueios}
             confirming={confirming}
+            diasDescartados={diasDescartados}
+            onToggleDia={toggleDiaDescartado}
             onConfirm={handleConfirm}
             onCancel={handleCancel}
           />
@@ -437,6 +457,8 @@ function PreviewPanel({
   diff,
   bloqueios,
   confirming,
+  diasDescartados,
+  onToggleDia,
   onConfirm,
   onCancel,
 }: {
@@ -444,6 +466,8 @@ function PreviewPanel({
   diff: EscalaDiff | null;
   bloqueios: BloqueioReimport[];
   confirming: boolean;
+  diasDescartados: Set<string>;
+  onToggleDia: (data: string) => void;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -485,16 +509,92 @@ function PreviewPanel({
             Reupload — diferenças em relação à escala vigente
           </p>
           {diff!.diasAlterados.length > 0 && (
-            <div className="mt-2">
-              <p className="font-medium">Dias com mudança de equipe:</p>
-              <ul className="mt-1 list-inside list-disc">
-                {diff!.diasAlterados.map((d) => (
-                  <li key={d.data}>
-                    {d.data}: {d.equipeAntes ?? '∅'} →{' '}
-                    <strong>{d.equipeDepois ?? '∅'}</strong>
-                  </li>
-                ))}
+            <div className="mt-3">
+              <p className="font-medium text-amber-900">
+                Dias com mudança de equipe — escolha para cada dia:
+              </p>
+              <p className="mt-0.5 text-[10px] text-amber-800">
+                Default = aceitar nova (do XLSX). Desmarque para manter a versão atual.
+              </p>
+              <ul className="mt-2 space-y-2">
+                {diff!.diasAlterados.map((d) => {
+                  const manterAtual = diasDescartados.has(d.data);
+                  return (
+                    <li
+                      key={d.data}
+                      className="grid grid-cols-1 gap-2 rounded border border-amber-200 bg-white p-2 sm:grid-cols-[1fr_auto_1fr_auto]"
+                    >
+                      <label
+                        className={`flex cursor-pointer items-start gap-2 rounded border p-2 ${
+                          manterAtual
+                            ? 'border-cbmes-blue bg-cbmes-blue/5'
+                            : 'border-slate-200'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name={`escolha-${d.data}`}
+                          checked={manterAtual}
+                          onChange={() => {
+                            if (!manterAtual) onToggleDia(d.data);
+                          }}
+                          className="mt-0.5"
+                        />
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wide text-slate-500">
+                            Manter atual
+                          </div>
+                          <div className="mt-0.5 font-semibold text-slate-800">
+                            {d.data}
+                          </div>
+                          <div className="mt-0.5 text-slate-700">
+                            Equipe: <strong>{d.equipeAntes ?? '∅'}</strong>
+                          </div>
+                        </div>
+                      </label>
+                      <span className="hidden self-center text-slate-400 sm:inline">
+                        →
+                      </span>
+                      <label
+                        className={`flex cursor-pointer items-start gap-2 rounded border p-2 ${
+                          !manterAtual
+                            ? 'border-cbmes-red bg-cbmes-red/5'
+                            : 'border-slate-200'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name={`escolha-${d.data}`}
+                          checked={!manterAtual}
+                          onChange={() => {
+                            if (manterAtual) onToggleDia(d.data);
+                          }}
+                          className="mt-0.5"
+                        />
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wide text-slate-500">
+                            Aceitar nova (padrão)
+                          </div>
+                          <div className="mt-0.5 font-semibold text-slate-800">
+                            {d.data}
+                          </div>
+                          <div className="mt-0.5 text-slate-700">
+                            Equipe: <strong>{d.equipeDepois ?? '∅'}</strong>
+                          </div>
+                        </div>
+                      </label>
+                      <span className="self-center" />
+                    </li>
+                  );
+                })}
               </ul>
+              {diasDescartados.size > 0 && (
+                <p className="mt-2 text-[11px] italic text-cbmes-blue">
+                  {diasDescartados.size} dia
+                  {diasDescartados.size > 1 ? 's serão mantidos' : ' será mantido'}{' '}
+                  na versão atual ao confirmar.
+                </p>
+              )}
             </div>
           )}
           <DiffComposicaoBlock titulo="Composição 1ª quinzena alterada" entries={diffQ1} />

@@ -253,3 +253,20 @@ export const previewEscalaResponseSchema = z.object({
   bloqueios: z.array(bloqueioReimportSchema).default([]),
 });
 export type PreviewEscalaResponse = z.infer<typeof previewEscalaResponseSchema>;
+
+/**
+ * S2.8.2 — Re-import com diff seletivo por dia.
+ *
+ * Admin escolhe, para cada dia com diferença em relação à escala vigente,
+ * se quer manter a versão atual (preserva) ou aceitar a versão nova
+ * (sobrescreve). `diasDescartados` lista as datas em que o admin escolheu
+ * MANTER o atual (default = aceitar tudo = lista vazia).
+ */
+export const confirmEscalaInputSchema = z.object({
+  escala: escalaMensalSchema,
+  diasDescartados: z
+    .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/))
+    .optional()
+    .default([]),
+});
+export type ConfirmEscalaInput = z.infer<typeof confirmEscalaInputSchema>;
