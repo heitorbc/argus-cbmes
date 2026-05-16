@@ -2,11 +2,14 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
   NotFoundException,
+  Param,
   Post,
+  Put,
   Res,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -14,13 +17,16 @@ import type { Response } from 'express';
 import { z } from 'zod';
 import {
   changePasswordInputSchema,
+  createUsuarioInputSchema,
   loginInputSchema,
+  updateUsuarioInputSchema,
   type ChangePasswordResponse,
   type LoginResponse,
   type UserSession,
 } from '@argus/shared-types';
 import { AuthService, JWT_TTL_SECONDS } from './auth.service';
 import { Public } from './decorators/public.decorator';
+import { Roles } from './decorators/roles.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 
 const personaLoginSchema = z.object({ nf: z.string().min(1) });
@@ -124,6 +130,49 @@ export class AuthController {
     if (this.config.get<string>('ARGUS_PERSONA_PICKER') !== 'true') {
       throw new NotFoundException();
     }
+  }
+
+  // ── S2.7 — Admin CRUD de usuários ─────────────────────────────
+
+  /**
+   * Lista todos os usuários cadastrados (admin only).
+   * Cuidado: papéis incluem `admin` — qualquer admin enxerga todos os outros admins.
+   */
+  @Roles('admin')
+  @Get('usuarios')
+  listUsuarios(): UserSession[] {
+    return this.authService.listUsuarios();
+  }
+
+  @Roles('admin')
+  @Post('usuarios')
+  @HttpCode(HttpStatus.CREATED)
+  async createUsuario(@Body() body: unknown): Promise<UserSession> {
+    const parsed = createUsuarioInputSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.errors.map((e) => e.message));
+    }
+    return this.authService.createUsuario(parsed.data);
+  }
+
+  @Roles('admin')
+  @Put('usuarios/:nf')
+  async updateUsuario(
+    @Param('nf') nf: string,
+    @Body() body: unknown,
+  ): Promise<UserSession> {
+    const parsed = updateUsuarioInputSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.errors.map((e) => e.message));
+    }
+    return this.authService.updateUsuario(nf, parsed.data);
+  }
+
+  @Roles('admin')
+  @Delete('usuarios/:nf')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  removeUsuario(@Param('nf') nf: string, @CurrentUser() current: UserSession): void {
+    this.authService.removeUsuario(nf, current.nf);
   }
 
   private setSessionCookie(res: Response, token: string): void {

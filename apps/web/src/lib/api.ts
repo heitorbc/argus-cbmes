@@ -3,6 +3,9 @@ import type {
   AlteracaoDiversa,
   ChangePasswordInput,
   ChangePasswordResponse,
+  CreateUsuarioInput,
+  UpdateUsuarioInput,
+  UsuarioAdmin,
   ComposicaoEntry,
   ConferenciaEquipeEntry,
   ConferenciaMateriaisDoDia,
@@ -172,6 +175,21 @@ export const api = {
 
   // S2.6 — Status agregado dos serviços (StatusBar na home).
   healthStatus: () => request<HealthStatus>('/health/status'),
+
+  // S2.7 — Admin CRUD de usuários (`/configuracoes/usuarios`).
+  usuariosList: () => request<UsuarioAdmin[]>('/auth/usuarios'),
+  usuarioCreate: (input: CreateUsuarioInput) =>
+    request<UsuarioAdmin>('/auth/usuarios', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  usuarioUpdate: (nf: string, input: UpdateUsuarioInput) =>
+    request<UsuarioAdmin>(`/auth/usuarios/${nf}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+  usuarioRemove: (nf: string) =>
+    request<void>(`/auth/usuarios/${nf}`, { method: 'DELETE' }),
 
   changePassword: (input: ChangePasswordInput) =>
     request<ChangePasswordResponse>('/auth/change-password', {

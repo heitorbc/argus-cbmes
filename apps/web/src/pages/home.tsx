@@ -132,6 +132,7 @@ export function HomePage() {
             descricao="Admin · Unidades e Integrações."
             accent="border-l-slate-600"
           >
+            <CardLink to="/configuracoes/usuarios" icon="👥" label="Usuários" />
             <CardLink to="/configuracoes/unidades" icon="🏛️" label="Unidades" />
             <CardLink to="/configuracoes/integracoes" icon="🔗" label="Integrações" />
           </ModuloSection>

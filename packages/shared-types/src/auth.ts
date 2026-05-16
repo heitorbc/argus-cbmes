@@ -67,6 +67,36 @@ export const userSessionSchema = z.object({
 });
 export type UserSession = z.infer<typeof userSessionSchema>;
 
+/**
+ * S2.7 — Admin CRUD de usuários. `senhaInicial` é opcional; se omitida,
+ * o backend usa `batalhao01` como default. `primeiroAcesso` é sempre
+ * `true` em novos usuários (forçará troca de senha no 1º login).
+ */
+export const createUsuarioInputSchema = z.object({
+  nf: z.string().regex(/^\d+$/, 'NF deve conter apenas dígitos'),
+  nome: z.string().trim().min(1, 'Nome obrigatório'),
+  posto: z.string().trim().min(1, 'Posto obrigatório'),
+  ant: z.number().int().nonnegative(),
+  papeis: z.array(z.enum(PAPEIS)).min(1, 'Pelo menos 1 papel'),
+  senhaInicial: z.string().min(6).optional(),
+});
+export type CreateUsuarioInput = z.infer<typeof createUsuarioInputSchema>;
+
+/** Atualização parcial — qualquer campo exceto NF (key imutável). */
+export const updateUsuarioInputSchema = z.object({
+  nome: z.string().trim().min(1).optional(),
+  posto: z.string().trim().min(1).optional(),
+  ant: z.number().int().nonnegative().optional(),
+  papeis: z.array(z.enum(PAPEIS)).min(1).optional(),
+  /** Se preenchido, reseta a senha e marca `primeiroAcesso=true`. */
+  resetSenha: z.boolean().optional(),
+});
+export type UpdateUsuarioInput = z.infer<typeof updateUsuarioInputSchema>;
+
+/** Listagem admin — não inclui senhaHash. */
+export const usuarioAdminSchema = userSessionSchema;
+export type UsuarioAdmin = UserSession;
+
 // ---------- API responses ---------- //
 
 /**
