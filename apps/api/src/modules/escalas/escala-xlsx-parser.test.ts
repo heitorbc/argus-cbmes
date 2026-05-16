@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
@@ -13,6 +13,14 @@ const FIXTURES_DIR = resolve(__dirname, '..', '..', '..', '..', '..', 'data', 'E
 
 function loadFixture(filename: string): Buffer {
   return readFileSync(resolve(FIXTURES_DIR, filename));
+}
+
+/**
+ * `data/` é gitignored (planilhas institucionais com nomes reais — fora do repo
+ * por LGPD). Estes blocos só rodam localmente; em CI fazem skip silencioso.
+ */
+function fixturesAvailable(...filenames: string[]): boolean {
+  return filenames.every((f) => existsSync(resolve(FIXTURES_DIR, f)));
 }
 
 describe('parseFilename', () => {
@@ -75,146 +83,161 @@ describe('parseMilitarCell', () => {
   });
 });
 
-describe('parseEscalaXlsx (fixture: 05 MAIO 2026)', () => {
-  it('reconhece estrutura canônica com 4 equipes e dias 1-29', async () => {
-    const buffer = loadFixture('05 MAIO DE 2026.xlsx');
-    const escala = await parseEscalaXlsx({
-      buffer,
-      filename: '05 MAIO DE 2026.xlsx',
+describe.skipIf(!fixturesAvailable('05 MAIO DE 2026.xlsx'))(
+  'parseEscalaXlsx (fixture: 05 MAIO 2026)',
+  () => {
+    it('reconhece estrutura canônica com 4 equipes e dias 1-29', async () => {
+      const buffer = loadFixture('05 MAIO DE 2026.xlsx');
+      const escala = await parseEscalaXlsx({
+        buffer,
+        filename: '05 MAIO DE 2026.xlsx',
+      });
+      expect(escala.mes).toBe(5);
+      expect(escala.ano).toBe(2026);
+
+      // 14 + 15 = 29 dias, ou um pouco menos se algum dia ficou sem letra
+      const dias = Object.keys(escala.diaEquipe);
+      expect(dias.length).toBeGreaterThanOrEqual(20);
+
+      // Equipes presentes
+      const equipes = new Set(Object.values(escala.diaEquipe));
+      expect(equipes.has('A')).toBe(true);
+      expect(equipes.has('B')).toBe(true);
+      expect(equipes.has('C')).toBe(true);
+      expect(equipes.has('D')).toBe(true);
     });
-    expect(escala.mes).toBe(5);
-    expect(escala.ano).toBe(2026);
 
-    // 14 + 15 = 29 dias, ou um pouco menos se algum dia ficou sem letra
-    const dias = Object.keys(escala.diaEquipe);
-    expect(dias.length).toBeGreaterThanOrEqual(20);
+    it('extrai composição de equipe CHARLIE com BARCELLOS como Ch ABTS', async () => {
+      const buffer = loadFixture('05 MAIO DE 2026.xlsx');
+      const escala = await parseEscalaXlsx({ buffer, filename: '05 MAIO DE 2026.xlsx' });
 
-    // Equipes presentes
-    const equipes = new Set(Object.values(escala.diaEquipe));
-    expect(equipes.has('A')).toBe(true);
-    expect(equipes.has('B')).toBe(true);
-    expect(equipes.has('C')).toBe(true);
-    expect(equipes.has('D')).toBe(true);
-  });
+      const charlie = escala.composicaoPorQuinzena.q1.filter((c) => c.equipe === 'C');
+      expect(charlie.length).toBeGreaterThan(0);
 
-  it('extrai composição de equipe CHARLIE com BARCELLOS como Ch ABTS', async () => {
-    const buffer = loadFixture('05 MAIO DE 2026.xlsx');
-    const escala = await parseEscalaXlsx({ buffer, filename: '05 MAIO DE 2026.xlsx' });
+      const chAbts = charlie.find((c) => /ABTS/i.test(c.viatura) && /^Ch$/i.test(c.funcao.trim()));
+      expect(chAbts).toBeDefined();
+      expect(chAbts!.militar.nomeGuerra).toMatch(/BARCELL/);
+    });
 
-    const charlie = escala.composicaoPorQuinzena.q1.filter((c) => c.equipe === 'C');
-    expect(charlie.length).toBeGreaterThan(0);
+    it('extrai composição de equipe ALFA com FABRE como Op 1 ABTS', async () => {
+      const buffer = loadFixture('05 MAIO DE 2026.xlsx');
+      const escala = await parseEscalaXlsx({ buffer, filename: '05 MAIO DE 2026.xlsx' });
 
-    const chAbts = charlie.find((c) => /ABTS/i.test(c.viatura) && /^Ch$/i.test(c.funcao.trim()));
-    expect(chAbts).toBeDefined();
-    expect(chAbts!.militar.nomeGuerra).toMatch(/BARCELL/);
-  });
+      const alfa = escala.composicaoPorQuinzena.q1.filter((c) => c.equipe === 'A');
+      const op1 = alfa.find((c) => /ABTS/i.test(c.viatura) && /Op\s*1/i.test(c.funcao));
+      expect(op1).toBeDefined();
+      expect(op1!.militar.nomeGuerra).toBe('FABRE');
+    });
 
-  it('extrai composição de equipe ALFA com FABRE como Op 1 ABTS', async () => {
-    const buffer = loadFixture('05 MAIO DE 2026.xlsx');
-    const escala = await parseEscalaXlsx({ buffer, filename: '05 MAIO DE 2026.xlsx' });
+    // F3a (S5) — Bug fix: 3 sentinelas da GUARDA têm a mesma funcao "Sent." no XLSX, e
+    // o parser colapsava por chave equipe|viatura|funcao. Solução: renumerar
+    // como "Sent. 1", "Sent. 2", "Sent. 3" durante o parse.
+    it('preserva 3 sentinelas distintos por equipe (Sent. 1/2/3) — F3a', async () => {
+      const buffer = loadFixture('05 MAIO DE 2026.xlsx');
+      const escala = await parseEscalaXlsx({ buffer, filename: '05 MAIO DE 2026.xlsx' });
 
-    const alfa = escala.composicaoPorQuinzena.q1.filter((c) => c.equipe === 'A');
-    const op1 = alfa.find((c) => /ABTS/i.test(c.viatura) && /Op\s*1/i.test(c.funcao));
-    expect(op1).toBeDefined();
-    expect(op1!.militar.nomeGuerra).toBe('FABRE');
-  });
+      for (const equipe of ['A', 'B', 'C', 'D'] as const) {
+        const guarda = escala.composicaoPorQuinzena.q1.filter(
+          (c) => c.equipe === equipe && c.viatura === 'GUARDA',
+        );
+        expect(guarda.length, `${equipe} deveria ter 3 sentinelas`).toBe(3);
+        const funcoes = new Set(guarda.map((g) => g.funcao));
+        expect(funcoes.size, `${equipe} deveria ter 3 funções únicas`).toBe(3);
+        // Esperamos "Sent. 1", "Sent. 2", "Sent. 3"
+        expect([...funcoes].sort()).toEqual(['Sent. 1', 'Sent. 2', 'Sent. 3']);
+      }
+    });
+  },
+);
 
-  // F3a (S5) — Bug fix: 3 sentinelas da GUARDA têm a mesma funcao "Sent." no XLSX, e
-  // o parser colapsava por chave equipe|viatura|funcao. Solução: renumerar
-  // como "Sent. 1", "Sent. 2", "Sent. 3" durante o parse.
-  it('preserva 3 sentinelas distintos por equipe (Sent. 1/2/3) — F3a', async () => {
-    const buffer = loadFixture('05 MAIO DE 2026.xlsx');
-    const escala = await parseEscalaXlsx({ buffer, filename: '05 MAIO DE 2026.xlsx' });
+describe.skipIf(!fixturesAvailable('04 ABRIL DE 2026.xlsx'))(
+  'parseEscalaXlsx (fixture: 04 ABRIL 2026)',
+  () => {
+    it('reconhece estrutura mensal sem erros', async () => {
+      const buffer = loadFixture('04 ABRIL DE 2026.xlsx');
+      const escala = await parseEscalaXlsx({ buffer, filename: '04 ABRIL DE 2026.xlsx' });
+      expect(escala.mes).toBe(4);
+      expect(escala.ano).toBe(2026);
+      expect(Object.keys(escala.diaEquipe).length).toBeGreaterThanOrEqual(20);
+      expect(escala.composicaoPorQuinzena.q1.length).toBeGreaterThan(20);
+    });
+  },
+);
 
-    for (const equipe of ['A', 'B', 'C', 'D'] as const) {
-      const guarda = escala.composicaoPorQuinzena.q1.filter(
-        (c) => c.equipe === equipe && c.viatura === 'GUARDA',
+describe.skipIf(!fixturesAvailable('06 JUNHO DE 2026.xlsx'))(
+  'parseEscalaXlsx (fixture: 06 JUNHO 2026)',
+  () => {
+    it('reconhece estrutura mensal sem erros', async () => {
+      const buffer = loadFixture('06 JUNHO DE 2026.xlsx');
+      const escala = await parseEscalaXlsx({ buffer, filename: '06 JUNHO DE 2026.xlsx' });
+      expect(escala.mes).toBe(6);
+      expect(escala.ano).toBe(2026);
+      expect(Object.keys(escala.diaEquipe).length).toBeGreaterThanOrEqual(20);
+    });
+
+    // Regressão da separação por quinzena: junho/2026 tem composições diferentes
+    // entre 1ª e 2ª quinzena. Antes esses 11 casos emitiam
+    // "Composição diverge entre quinzenas… Mantendo 1ª quinzena." e a 2ª era
+    // perdida. Agora as duas quinzenas são preservadas. `ultimoDiaQ1` deve ser
+    // 13 ou 14 conforme o nome da aba 1 do XLSX original.
+    it('preserva quinzenas separadamente, sem avisos de divergência', async () => {
+      const buffer = loadFixture('06 JUNHO DE 2026.xlsx');
+      const escala = await parseEscalaXlsx({ buffer, filename: '06 JUNHO DE 2026.xlsx' });
+
+      const avisosDivergencia = escala.avisos.filter((a) => /diverge entre quinzenas/i.test(a));
+      expect(avisosDivergencia).toEqual([]);
+
+      expect([13, 14]).toContain(escala.composicaoPorQuinzena.ultimoDiaQ1);
+      expect(escala.composicaoPorQuinzena.q1.length).toBeGreaterThan(0);
+      expect(escala.composicaoPorQuinzena.q2.length).toBeGreaterThan(0);
+
+      // Pelo menos 11 posições têm militar diferente entre as duas quinzenas
+      const key = (c: { equipe: string; viatura: string; funcao: string }) =>
+        `${c.equipe}|${c.viatura}|${c.funcao}`;
+      const q1Map = new Map(escala.composicaoPorQuinzena.q1.map((c) => [key(c), c.militar.raw]));
+      let divergencias = 0;
+      for (const c of escala.composicaoPorQuinzena.q2) {
+        const raw1 = q1Map.get(key(c));
+        if (raw1 !== undefined && raw1 !== c.militar.raw) divergencias += 1;
+      }
+      expect(divergencias).toBeGreaterThanOrEqual(11);
+    });
+  },
+);
+
+describe.skipIf(!fixturesAvailable('PROVA CHS.xlsx', 'dia da mulher.xlsx'))(
+  'parseEscalaXlsx — rejeição de não-escalas',
+  () => {
+    it('rejeita PROVA CHS.xlsx pelo nome', async () => {
+      const buffer = loadFixture('PROVA CHS.xlsx');
+      await expect(parseEscalaXlsx({ buffer, filename: 'PROVA CHS.xlsx' })).rejects.toThrow(
+        /não contém/,
       );
-      expect(guarda.length, `${equipe} deveria ter 3 sentinelas`).toBe(3);
-      const funcoes = new Set(guarda.map((g) => g.funcao));
-      expect(funcoes.size, `${equipe} deveria ter 3 funções únicas`).toBe(3);
-      // Esperamos "Sent. 1", "Sent. 2", "Sent. 3"
-      expect([...funcoes].sort()).toEqual(['Sent. 1', 'Sent. 2', 'Sent. 3']);
-    }
-  });
-});
-
-describe('parseEscalaXlsx (fixture: 04 ABRIL 2026)', () => {
-  it('reconhece estrutura mensal sem erros', async () => {
-    const buffer = loadFixture('04 ABRIL DE 2026.xlsx');
-    const escala = await parseEscalaXlsx({ buffer, filename: '04 ABRIL DE 2026.xlsx' });
-    expect(escala.mes).toBe(4);
-    expect(escala.ano).toBe(2026);
-    expect(Object.keys(escala.diaEquipe).length).toBeGreaterThanOrEqual(20);
-    expect(escala.composicaoPorQuinzena.q1.length).toBeGreaterThan(20);
-  });
-});
-
-describe('parseEscalaXlsx (fixture: 06 JUNHO 2026)', () => {
-  it('reconhece estrutura mensal sem erros', async () => {
-    const buffer = loadFixture('06 JUNHO DE 2026.xlsx');
-    const escala = await parseEscalaXlsx({ buffer, filename: '06 JUNHO DE 2026.xlsx' });
-    expect(escala.mes).toBe(6);
-    expect(escala.ano).toBe(2026);
-    expect(Object.keys(escala.diaEquipe).length).toBeGreaterThanOrEqual(20);
-  });
-
-  // Regressão da separação por quinzena: junho/2026 tem composições diferentes
-  // entre 1ª e 2ª quinzena. Antes esses 11 casos emitiam
-  // "Composição diverge entre quinzenas… Mantendo 1ª quinzena." e a 2ª era
-  // perdida. Agora as duas quinzenas são preservadas. `ultimoDiaQ1` deve ser
-  // 13 ou 14 conforme o nome da aba 1 do XLSX original.
-  it('preserva quinzenas separadamente, sem avisos de divergência', async () => {
-    const buffer = loadFixture('06 JUNHO DE 2026.xlsx');
-    const escala = await parseEscalaXlsx({ buffer, filename: '06 JUNHO DE 2026.xlsx' });
-
-    const avisosDivergencia = escala.avisos.filter((a) => /diverge entre quinzenas/i.test(a));
-    expect(avisosDivergencia).toEqual([]);
-
-    expect([13, 14]).toContain(escala.composicaoPorQuinzena.ultimoDiaQ1);
-    expect(escala.composicaoPorQuinzena.q1.length).toBeGreaterThan(0);
-    expect(escala.composicaoPorQuinzena.q2.length).toBeGreaterThan(0);
-
-    // Pelo menos 11 posições têm militar diferente entre as duas quinzenas
-    const key = (c: { equipe: string; viatura: string; funcao: string }) =>
-      `${c.equipe}|${c.viatura}|${c.funcao}`;
-    const q1Map = new Map(escala.composicaoPorQuinzena.q1.map((c) => [key(c), c.militar.raw]));
-    let divergencias = 0;
-    for (const c of escala.composicaoPorQuinzena.q2) {
-      const raw1 = q1Map.get(key(c));
-      if (raw1 !== undefined && raw1 !== c.militar.raw) divergencias += 1;
-    }
-    expect(divergencias).toBeGreaterThanOrEqual(11);
-  });
-});
-
-describe('parseEscalaXlsx — rejeição de não-escalas', () => {
-  it('rejeita PROVA CHS.xlsx pelo nome', async () => {
-    const buffer = loadFixture('PROVA CHS.xlsx');
-    await expect(parseEscalaXlsx({ buffer, filename: 'PROVA CHS.xlsx' })).rejects.toThrow(
-      /não contém/,
-    );
-  });
-
-  it('rejeita "dia da mulher.xlsx" pelo nome', async () => {
-    const buffer = loadFixture('dia da mulher.xlsx');
-    await expect(parseEscalaXlsx({ buffer, filename: 'dia da mulher.xlsx' })).rejects.toThrow(
-      /não contém/,
-    );
-  });
-});
-
-describe('parseEscalaXlsx — reupload parcial', () => {
-  it('05 MAIO 11 A 15 também é parseado e retorna mes=5/ano=2026', async () => {
-    const buffer = loadFixture('05 MAIO DE 2026 11 A 15.xlsx');
-    const escala = await parseEscalaXlsx({
-      buffer,
-      filename: '05 MAIO DE 2026 11 A 15.xlsx',
     });
-    expect(escala.mes).toBe(5);
-    expect(escala.ano).toBe(2026);
-  });
-});
+
+    it('rejeita "dia da mulher.xlsx" pelo nome', async () => {
+      const buffer = loadFixture('dia da mulher.xlsx');
+      await expect(parseEscalaXlsx({ buffer, filename: 'dia da mulher.xlsx' })).rejects.toThrow(
+        /não contém/,
+      );
+    });
+  },
+);
+
+describe.skipIf(!fixturesAvailable('05 MAIO DE 2026 11 A 15.xlsx'))(
+  'parseEscalaXlsx — reupload parcial',
+  () => {
+    it('05 MAIO 11 A 15 também é parseado e retorna mes=5/ano=2026', async () => {
+      const buffer = loadFixture('05 MAIO DE 2026 11 A 15.xlsx');
+      const escala = await parseEscalaXlsx({
+        buffer,
+        filename: '05 MAIO DE 2026 11 A 15.xlsx',
+      });
+      expect(escala.mes).toBe(5);
+      expect(escala.ano).toBe(2026);
+    });
+  },
+);
 
 describe('expandViaturaFuncao (S6n-fix)', () => {
   it('"ABTS 01" normaliza para "ABTS_01" mantendo funcao', () => {
