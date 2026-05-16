@@ -2,6 +2,7 @@ import type {
   AddAlteracaoDiversaInput,
   AlteracaoDiversa,
   ChangePasswordInput,
+  ChangePasswordResponse,
   ComposicaoEntry,
   ConferenciaEquipeEntry,
   ConferenciaMateriaisDoDia,
@@ -85,14 +86,49 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * S2.4 — Bearer token storage (fallback ao cookie httpOnly).
+ *
+ * Por que: em produção (Vercel ↔ Render), browsers cada vez mais bloqueam
+ * cookies 3rd-party em contexto cross-site, mesmo com sameSite=none e
+ * secure=true. O bug "Sessão ausente" no /auth/change-password vinha daí.
+ *
+ * Estratégia: backend continua setando o cookie (defesa em profundidade)
+ * E retorna o token no body do login/change-password. Frontend persiste
+ * o token em sessionStorage (limpo ao fechar a aba — mais seguro que
+ * localStorage) e envia em todo request via `Authorization: Bearer`.
+ *
+ * Uso de sessionStorage (em vez de localStorage):
+ * - Limita exposição se a aba for compartilhada
+ * - JWT TTL de 8h cobre uma jornada típica do usuário
+ * - Logout limpa explicitamente
+ */
+const TOKEN_STORAGE_KEY = 'argus.session.token';
+
+export function setSessionToken(token: string | null): void {
+  if (typeof sessionStorage === 'undefined') return;
+  if (token) sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+  else sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+}
+
+export function getSessionToken(): string | null {
+  if (typeof sessionStorage === 'undefined') return null;
+  return sessionStorage.getItem(TOKEN_STORAGE_KEY);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getSessionToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...((init?.headers ?? {}) as Record<string, string>),
+  };
+  if (token && !headers['Authorization']) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
   const res = await fetch(`${API_URL}${path}`, {
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {}),
-    },
     ...init,
+    credentials: 'include',
+    headers,
   });
 
   if (res.status === 204) {
@@ -134,7 +170,7 @@ export const api = {
   me: () => request<UserSession>('/auth/me'),
 
   changePassword: (input: ChangePasswordInput) =>
-    request<{ user: UserSession }>('/auth/change-password', {
+    request<ChangePasswordResponse>('/auth/change-password', {
       method: 'POST',
       body: JSON.stringify(input),
     }),
@@ -143,7 +179,7 @@ export const api = {
   listPersonas: () => request<PersonaSummary[]>('/auth/dev/personas'),
 
   personaLogin: (nf: string) =>
-    request<{ user: UserSession }>('/auth/dev/persona-login', {
+    request<LoginResponse>('/auth/dev/persona-login', {
       method: 'POST',
       body: JSON.stringify({ nf }),
     }),

@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { UserSession } from '@argus/shared-types';
-import { ApiError, api } from './api';
+import { ApiError, api, setSessionToken } from './api';
 
 interface AuthContextValue {
   user: UserSession | null;
@@ -49,12 +49,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (nf: string, senha: string) => {
     const result = await api.login({ nf, senha });
+    // S2.4 — persiste token Bearer (fallback ao cookie httpOnly).
+    if (result.token) setSessionToken(result.token);
     setUser(result.user);
     return result.user;
   }, []);
 
   const loginAsPersona = useCallback(async (nf: string) => {
     const result = await api.personaLogin(nf);
+    if (result.token) setSessionToken(result.token);
     setUser(result.user);
     return result.user;
   }, []);
@@ -63,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await api.logout();
     } finally {
+      setSessionToken(null);
       setUser(null);
     }
   }, []);

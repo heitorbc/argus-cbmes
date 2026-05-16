@@ -38,7 +38,20 @@ export class AuthGuard implements CanActivate {
     }
   }
 
+  /**
+   * S2.4 — Extrai JWT em ordem de prioridade:
+   *   1. `Authorization: Bearer <token>` header (preferido em SPA cross-origin
+   *      pois browsers bloqueiam cada vez mais cookies 3rd-party)
+   *   2. Cookie `argus_session` (fallback / compat com clients antigos)
+   *
+   * Defesa em profundidade — qualquer um dos dois funciona.
+   */
   private extractToken(req: Request): string | undefined {
+    const authHeader = req.headers['authorization'];
+    if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.slice('Bearer '.length).trim();
+      if (token) return token;
+    }
     const cookieName = 'argus_session';
     const cookies = (req as Request & { cookies?: Record<string, string> }).cookies;
     return cookies?.[cookieName];
