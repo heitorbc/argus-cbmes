@@ -78,15 +78,9 @@ export function StatusBar() {
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600">
-      <span className="font-medium uppercase tracking-wide text-slate-500">
-        Status:
-      </span>
+      <span className="font-medium uppercase tracking-wide text-slate-500">Status:</span>
       {servicos.map(([key, svc]) => (
-        <span
-          key={key}
-          className="flex items-center gap-1"
-          title={tooltipFor(svc)}
-        >
+        <span key={key} className="flex items-center gap-1" title={tooltipFor(svc)}>
           <Dot estado={svc.estado} />
           <span className="text-slate-700">{SERVICOS_LABEL[key]}</span>
         </span>

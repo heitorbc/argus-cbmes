@@ -61,8 +61,7 @@ export class HealthController {
     if (!s.enabled) {
       return {
         estado: 'pending',
-        detalhe:
-          s.ultimoErro ?? 'Sheets-DB desabilitado (sem GOOGLE_SHEETS_SA_KEY_BASE64)',
+        detalhe: s.ultimoErro ?? 'Sheets-DB desabilitado (sem GOOGLE_SHEETS_SA_KEY_BASE64)',
       };
     }
     const todasExistem = s.abas.every((a) => a.existe);

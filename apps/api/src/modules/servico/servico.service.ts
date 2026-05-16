@@ -86,9 +86,7 @@ export class ServicoService {
       );
     }
     if (!isAdmin && current.previaIniciadaPorNf !== nf) {
-      throw new ForbiddenException(
-        `Apenas quem iniciou a Prévia ou admin podem cancelá-la.`,
-      );
+      throw new ForbiddenException(`Apenas quem iniciou a Prévia ou admin podem cancelá-la.`);
     }
     const updated: ServicoEstado = {
       data: current.data,

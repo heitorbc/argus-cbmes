@@ -27,10 +27,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { parseNotaServicoPdf, type ParseNotaServicoPdfResult } from './nota-servico-pdf-parser';
 import { NotasServicoService } from './notas-servico.service';
 import { ServicoService } from '../servico/servico.service';
-import {
-  bloqueiosToMessage,
-  computeBloqueios,
-} from '../servico/bloqueio-reimport';
+import { bloqueiosToMessage, computeBloqueios } from '../servico/bloqueio-reimport';
 
 interface MulterFile {
   buffer: Buffer;

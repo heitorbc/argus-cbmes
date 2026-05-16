@@ -1,5 +1,9 @@
 import { parse } from 'csv-parse/sync';
-import type { IseoHospitalEntry, IseoHospitalUnidade, IseoHospitalTurno } from '@argus/shared-types';
+import type {
+  IseoHospitalEntry,
+  IseoHospitalUnidade,
+  IseoHospitalTurno,
+} from '@argus/shared-types';
 
 /**
  * Layout da planilha "Escala ISEO Hospitais"
@@ -112,7 +116,9 @@ export function parseIseoHospitaisCsv(
   if (colNf < 0) colNf = inferNfCol(rows, headerIdx, colNome);
 
   if (colData < 0 || colNf < 0) {
-    throw new Error('Colunas DATA e NF/MATRÍCULA não localizáveis (nem por header nem por posição).');
+    throw new Error(
+      'Colunas DATA e NF/MATRÍCULA não localizáveis (nem por header nem por posição).',
+    );
   }
 
   // Detecta se a aba tem 2 militares lado a lado (ABRIL 2026 em diante):
@@ -208,11 +214,7 @@ export function parseIseoHospitaisCsv(
  * "NOME DO MILITAR" para o 2º militar. Como `findCol` retorna a primeira
  * ocorrência, varremos manualmente o resto do header.
  */
-function findSecondNfColumn(
-  rows: string[][],
-  headerIdx: number,
-  colNf: number,
-): number {
+function findSecondNfColumn(rows: string[][], headerIdx: number, colNf: number): number {
   const header = (rows[headerIdx] ?? []).map(normalize);
   // Caso A: header tem "MATRICULA" ou "NF" repetido após colNf.
   for (let c = colNf + 1; c < header.length; c++) {
@@ -294,10 +296,7 @@ function looksLikeNfColumn(rows: string[][], headerIdx: number, col: number): bo
  * "BARCELLOS" (posto separado em `colPosto`). Tenta separar; se não der,
  * usa `postoFallback` (do header da linha).
  */
-function splitPostoNome(
-  raw: string,
-  postoFallback: string,
-): { posto: string; nome: string } {
+function splitPostoNome(raw: string, postoFallback: string): { posto: string; nome: string } {
   const re =
     /^(?<posto>(?:[1-3]º\s*)?(?:CEL|TEN\s*CEL|MAJ|CAP|TEN(?:\s+QOC)?|SUB\s*TEN|SGT|CB|SD|AL))\s+(?<nome>.+)$/i;
   const m = raw.match(re);
@@ -341,12 +340,7 @@ function findCol(header: string[], candidates: string[]): number {
 }
 
 function normalize(s: string | undefined | null): string {
-  return (s ?? '')
-    .toString()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toUpperCase()
-    .trim();
+  return (s ?? '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim();
 }
 
 function clean(s: string | undefined | null): string {

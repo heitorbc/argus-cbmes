@@ -90,8 +90,7 @@ export function MapaForcaDetalhePage() {
     estado === 'NAO_INICIADO' && (isAdmin || (fiscalNf !== null && fiscalNf === user?.nf));
 
   // Pode iniciar Serviço se: estado é PREVIA_INICIADA E (admin OR initiator)
-  const podeIniciarServico =
-    estado === 'PREVIA_INICIADA' && (isAdmin || isPreviaInitiator);
+  const podeIniciarServico = estado === 'PREVIA_INICIADA' && (isAdmin || isPreviaInitiator);
 
   // Pode salvar Prévia (fechar banner de edição mantendo PREVIA_INICIADA):
   // mesmo critério do iniciar serviço.
@@ -151,12 +150,15 @@ export function MapaForcaDetalhePage() {
           funcaoB: funcao,
         },
       ];
-      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`, {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...ajustes, swapsMilitares: novosSwaps }),
-      }).then((res) => {
+      await fetch(
+        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`,
+        {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...ajustes, swapsMilitares: novosSwaps }),
+        },
+      ).then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
       });
       setSwapOrigem(null);
@@ -175,12 +177,15 @@ export function MapaForcaDetalhePage() {
     try {
       const ajustes = extractAjustes(previa);
       const novosSwaps = ajustes.swapsMilitares.filter((_, i) => i !== index);
-      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`, {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...ajustes, swapsMilitares: novosSwaps }),
-      }).then((res) => {
+      await fetch(
+        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`,
+        {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...ajustes, swapsMilitares: novosSwaps }),
+        },
+      ).then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
       });
       reload();
@@ -206,12 +211,15 @@ export function MapaForcaDetalhePage() {
       const novos = existe
         ? ajustes.overridesMergulho.filter((o) => o.data !== data)
         : [...ajustes.overridesMergulho, { data, swap: true as const }];
-      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`, {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...ajustes, overridesMergulho: novos }),
-      }).then((res) => {
+      await fetch(
+        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`,
+        {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...ajustes, overridesMergulho: novos }),
+        },
+      ).then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
       });
       reload();
@@ -232,18 +240,19 @@ export function MapaForcaDetalhePage() {
     setError(null);
     try {
       const ajustes = extractAjustes(previa);
-      const existe = ajustes.overridesParesRecursos.some(
-        (o) => o.data === data && o.par === par,
-      );
+      const existe = ajustes.overridesParesRecursos.some((o) => o.data === data && o.par === par);
       const novos = existe
         ? ajustes.overridesParesRecursos.filter((o) => !(o.data === data && o.par === par))
         : [...ajustes.overridesParesRecursos, { data, par, swap: true as const }];
-      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`, {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...ajustes, overridesParesRecursos: novos }),
-      }).then((res) => {
+      await fetch(
+        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/mapa-forca/${data}/ajustes`,
+        {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...ajustes, overridesParesRecursos: novos }),
+        },
+      ).then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
       });
       reload();
@@ -385,9 +394,7 @@ export function MapaForcaDetalhePage() {
           ← Voltar para o calendário
         </Link>
         <h1 className="mt-1 text-lg font-bold">Mapa Força — {formatDataBr(data)}</h1>
-        <p className="text-xs opacity-90">
-          Composição do dia · {ESTADO_SERVICO_LABEL[estado]}
-        </p>
+        <p className="text-xs opacity-90">Composição do dia · {ESTADO_SERVICO_LABEL[estado]}</p>
       </header>
 
       <section className="mx-auto max-w-3xl p-4">
@@ -546,8 +553,8 @@ export function MapaForcaDetalhePage() {
                       Realocações internas da equipe ({previa.swapsMilitares.length})
                     </summary>
                     <p className="mt-1 text-[10px] italic text-slate-500">
-                      Movimentações da prévia do dia. Não constituem trocas de serviço — não
-                      são registradas em Parte Diária nem como ajuste pré-escala.
+                      Movimentações da prévia do dia. Não constituem trocas de serviço — não são
+                      registradas em Parte Diária nem como ajuste pré-escala.
                     </p>
                     <ul className="mt-2 space-y-1">
                       {previa.swapsMilitares.map((s, i) => (
@@ -590,140 +597,142 @@ export function MapaForcaDetalhePage() {
                       : null;
                     const showSwapPar = !!parInfo && podeSwap;
                     return (
-                    <article key={viatura} className="rounded border border-slate-200 bg-white p-3">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <p className="text-sm font-bold text-cbmes-blue">
-                          {viatura}
-                          {swapAtivo && isMergulho && (
-                            <span className="ml-2 rounded-full bg-cbmes-blue/10 px-2 py-0.5 text-[10px] font-medium text-cbmes-blue">
-                              ⇄ M01↔M02 trocados
-                            </span>
-                          )}
-                          {overridePar && parInfo && (
-                            <span className="ml-2 rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-medium text-amber-900">
-                              ⇄ {parInfo.par} 01↔02 trocados
-                            </span>
-                          )}
-                        </p>
-                        {showSwapMergulho && (
-                          <button
-                            type="button"
-                            onClick={() => void handleToggleOverrideMergulho()}
-                            disabled={swapInflight}
-                            title="Trocar quem está em MERGULHO 01 com MERGULHO 02 neste dia"
-                            className="rounded border border-cbmes-blue px-2 py-0.5 text-[10px] font-medium text-cbmes-blue hover:bg-cbmes-blue/10 disabled:opacity-50"
-                          >
-                            {swapAtivo ? '↶ desfazer' : '⇄ Trocar M01↔M02'}
-                          </button>
-                        )}
-                        {showSwapPar && parInfo && (
-                          <button
-                            type="button"
-                            onClick={() => void handleToggleOverridePar(parInfo.par)}
-                            disabled={swapInflight}
-                            title={`Trocar tripulação entre ${parInfo.v01} e ${parInfo.v02} neste dia`}
-                            className="rounded border border-cbmes-blue px-2 py-0.5 text-[10px] font-medium text-cbmes-blue hover:bg-cbmes-blue/10 disabled:opacity-50"
-                          >
-                            {overridePar ? '↶ desfazer' : `⇄ Trocar ${parInfo.par} 01↔02`}
-                          </button>
-                        )}
-                      </div>
-                      <div className="mt-1 grid grid-cols-1 gap-3 md:grid-cols-2">
-                        <div>
-                          <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-cbmes-blue">
-                            Próximo turno (XLSX)
+                      <article
+                        key={viatura}
+                        className="rounded border border-slate-200 bg-white p-3"
+                      >
+                        <div className="flex items-baseline justify-between gap-2">
+                          <p className="text-sm font-bold text-cbmes-blue">
+                            {viatura}
+                            {swapAtivo && isMergulho && (
+                              <span className="ml-2 rounded-full bg-cbmes-blue/10 px-2 py-0.5 text-[10px] font-medium text-cbmes-blue">
+                                ⇄ M01↔M02 trocados
+                              </span>
+                            )}
+                            {overridePar && parInfo && (
+                              <span className="ml-2 rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-medium text-amber-900">
+                                ⇄ {parInfo.par} 01↔02 trocados
+                              </span>
+                            )}
                           </p>
-                          {linhas.length === 0 && (
-                            <p className="rounded border border-dashed border-slate-300 bg-slate-50 px-2 py-1.5 text-xs italic text-slate-500">
-                              Sem equipe escalada para esta viatura no XLSX.
-                            </p>
+                          {showSwapMergulho && (
+                            <button
+                              type="button"
+                              onClick={() => void handleToggleOverrideMergulho()}
+                              disabled={swapInflight}
+                              title="Trocar quem está em MERGULHO 01 com MERGULHO 02 neste dia"
+                              className="rounded border border-cbmes-blue px-2 py-0.5 text-[10px] font-medium text-cbmes-blue hover:bg-cbmes-blue/10 disabled:opacity-50"
+                            >
+                              {swapAtivo ? '↶ desfazer' : '⇄ Trocar M01↔M02'}
+                            </button>
                           )}
-                          <ul className="divide-y divide-slate-100 text-sm">
-                            {linhas.map((t, i) => {
-                              const isOrigemSelecionada =
-                                swapOrigem?.equipe === t.equipe &&
-                                swapOrigem?.viatura === t.viatura &&
-                                swapOrigem?.funcao === t.funcao;
-                              const swapDisabled =
-                                !!swapOrigem && swapOrigem.equipe !== t.equipe;
-                              return (
-                                <li
-                                  key={i}
-                                  className={`flex items-baseline justify-between gap-2 py-1 ${
-                                    t.isFiscal ? 'rounded bg-cbmes-red/5 px-2' : ''
-                                  } ${isOrigemSelecionada ? 'rounded bg-cbmes-blue/10 px-2' : ''}`}
-                                >
-                                  <span className="text-xs uppercase text-slate-500">
-                                    {t.funcao || '—'}
-                                    {t.isFiscal && (
-                                      <span className="ml-2 rounded-full bg-cbmes-red px-2 py-0.5 text-[10px] font-bold text-white">
-                                        FISCAL
-                                      </span>
-                                    )}
-                                  </span>
-                                  <span className="flex items-baseline gap-2 text-right">
-                                    <span>
-                                      {t.militarResolvido ? (
-                                        <>
-                                          <span className="font-medium">
-                                            {t.militarResolvido.posto}{' '}
-                                            {t.militarResolvido.nomeGuerra ??
-                                              t.militarResolvido.nome.split(' ')[0]}
-                                          </span>
-                                          <span className="ml-2 text-xs text-slate-500">
-                                            NF {t.militarResolvido.nf} · ANT{' '}
-                                            {t.militarResolvido.ant}
-                                          </span>
-                                        </>
-                                      ) : (
-                                        <span className="text-feedback-warn">
-                                          {t.militarRef.raw}{' '}
-                                          <span className="text-xs">(sem NF)</span>
+                          {showSwapPar && parInfo && (
+                            <button
+                              type="button"
+                              onClick={() => void handleToggleOverridePar(parInfo.par)}
+                              disabled={swapInflight}
+                              title={`Trocar tripulação entre ${parInfo.v01} e ${parInfo.v02} neste dia`}
+                              className="rounded border border-cbmes-blue px-2 py-0.5 text-[10px] font-medium text-cbmes-blue hover:bg-cbmes-blue/10 disabled:opacity-50"
+                            >
+                              {overridePar ? '↶ desfazer' : `⇄ Trocar ${parInfo.par} 01↔02`}
+                            </button>
+                          )}
+                        </div>
+                        <div className="mt-1 grid grid-cols-1 gap-3 md:grid-cols-2">
+                          <div>
+                            <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-cbmes-blue">
+                              Próximo turno (XLSX)
+                            </p>
+                            {linhas.length === 0 && (
+                              <p className="rounded border border-dashed border-slate-300 bg-slate-50 px-2 py-1.5 text-xs italic text-slate-500">
+                                Sem equipe escalada para esta viatura no XLSX.
+                              </p>
+                            )}
+                            <ul className="divide-y divide-slate-100 text-sm">
+                              {linhas.map((t, i) => {
+                                const isOrigemSelecionada =
+                                  swapOrigem?.equipe === t.equipe &&
+                                  swapOrigem?.viatura === t.viatura &&
+                                  swapOrigem?.funcao === t.funcao;
+                                const swapDisabled = !!swapOrigem && swapOrigem.equipe !== t.equipe;
+                                return (
+                                  <li
+                                    key={i}
+                                    className={`flex items-baseline justify-between gap-2 py-1 ${
+                                      t.isFiscal ? 'rounded bg-cbmes-red/5 px-2' : ''
+                                    } ${isOrigemSelecionada ? 'rounded bg-cbmes-blue/10 px-2' : ''}`}
+                                  >
+                                    <span className="text-xs uppercase text-slate-500">
+                                      {t.funcao || '—'}
+                                      {t.isFiscal && (
+                                        <span className="ml-2 rounded-full bg-cbmes-red px-2 py-0.5 text-[10px] font-bold text-white">
+                                          FISCAL
                                         </span>
                                       )}
                                     </span>
-                                    {podeSwap && t.viatura === 'CHEFE DE OPERAÇÕES' && t.funcao === 'Ch' ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => setChopModalOpen(true)}
-                                        disabled={swapInflight}
-                                        title="Trocar Chefe de Operações (lista da planilha ChOp)"
-                                        className="rounded border border-cbmes-blue px-2 py-0.5 text-[10px] text-cbmes-blue hover:bg-cbmes-blue/10 disabled:opacity-30"
-                                      >
-                                        🔄 ChOp
-                                      </button>
-                                    ) : (
-                                      podeSwap && (
+                                    <span className="flex items-baseline gap-2 text-right">
+                                      <span>
+                                        {t.militarResolvido ? (
+                                          <>
+                                            <span className="font-medium">
+                                              {t.militarResolvido.posto}{' '}
+                                              {t.militarResolvido.nomeGuerra ??
+                                                t.militarResolvido.nome.split(' ')[0]}
+                                            </span>
+                                            <span className="ml-2 text-xs text-slate-500">
+                                              NF {t.militarResolvido.nf} · ANT{' '}
+                                              {t.militarResolvido.ant}
+                                            </span>
+                                          </>
+                                        ) : (
+                                          <span className="text-feedback-warn">
+                                            {t.militarRef.raw}{' '}
+                                            <span className="text-xs">(sem NF)</span>
+                                          </span>
+                                        )}
+                                      </span>
+                                      {podeSwap &&
+                                      t.viatura === 'CHEFE DE OPERAÇÕES' &&
+                                      t.funcao === 'Ch' ? (
                                         <button
                                           type="button"
-                                          onClick={() =>
-                                            void handleSwapClick(t.equipe, t.viatura, t.funcao)
-                                          }
-                                          disabled={swapInflight || swapDisabled}
-                                          title={
-                                            swapDisabled
-                                              ? 'Swap apenas dentro da mesma equipe'
-                                              : isOrigemSelecionada
-                                                ? 'Cancelar swap'
-                                                : 'Trocar com outra posição'
-                                          }
-                                          className="rounded border border-slate-300 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-50 disabled:opacity-30"
+                                          onClick={() => setChopModalOpen(true)}
+                                          disabled={swapInflight}
+                                          title="Trocar Chefe de Operações (lista da planilha ChOp)"
+                                          className="rounded border border-cbmes-blue px-2 py-0.5 text-[10px] text-cbmes-blue hover:bg-cbmes-blue/10 disabled:opacity-30"
                                         >
-                                          {isOrigemSelecionada ? '×' : '🔄'}
+                                          🔄 ChOp
                                         </button>
-                                      )
-                                    )}
-                                  </span>
-                                </li>
-                              );
-                            })}
-                          </ul>
+                                      ) : (
+                                        podeSwap && (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              void handleSwapClick(t.equipe, t.viatura, t.funcao)
+                                            }
+                                            disabled={swapInflight || swapDisabled}
+                                            title={
+                                              swapDisabled
+                                                ? 'Swap apenas dentro da mesma equipe'
+                                                : isOrigemSelecionada
+                                                  ? 'Cancelar swap'
+                                                  : 'Trocar com outra posição'
+                                            }
+                                            className="rounded border border-slate-300 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-50 disabled:opacity-30"
+                                          >
+                                            {isOrigemSelecionada ? '×' : '🔄'}
+                                          </button>
+                                        )
+                                      )}
+                                    </span>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </div>
+                          <ComposicaoAtualMfPanel atual={mfAtualPorRecurso.get(viatura) ?? null} />
                         </div>
-                        <ComposicaoAtualMfPanel
-                          atual={mfAtualPorRecurso.get(viatura) ?? null}
-                        />
-                      </div>
-                    </article>
+                      </article>
                     );
                   })}
                 </div>
@@ -749,9 +758,7 @@ export function MapaForcaDetalhePage() {
                       key={f.feriasId}
                       className="rounded border border-amber-200 bg-amber-50 p-3 text-sm"
                     >
-                      <p className="font-medium text-amber-900">
-                        🏝️ {f.militarRaw}
-                      </p>
+                      <p className="font-medium text-amber-900">🏝️ {f.militarRaw}</p>
                       <p className="mt-0.5 text-xs text-amber-800">
                         Início {formatDataBr(f.dataInicio)} · {f.dias} dias · mês previsto{' '}
                         {f.mesAno}
@@ -928,9 +935,7 @@ function ComposicaoAtualMfPanel({
  * Reconhece se a viatura faz parte de um par operacional 01/02 reroteável
  * pelo Fiscal (ABTS/RESGATE/SALVAMAR/QUADRICICLO). Mergulho tem botão próprio.
  */
-function detectarParRecurso(
-  viatura: string,
-): { par: ParRecurso; v01: string; v02: string } | null {
+function detectarParRecurso(viatura: string): { par: ParRecurso; v01: string; v02: string } | null {
   const tabela: Array<{ par: ParRecurso; v01: string; v02: string }> = [
     { par: 'ABTS', v01: 'ABTS_01', v02: 'ABTS_02' },
     { par: 'RESGATE', v01: 'RESGATE 01', v02: 'RESGATE 02' },
@@ -1403,8 +1408,8 @@ function ServicoCard({
             <div>
               <h3 className="text-sm font-semibold text-cbmes-red">Pronto para iniciar serviço</h3>
               <p className="text-xs text-slate-700">
-                Quando os ajustes pré-turno estiverem revisados, clique para congelar a Prévia
-                e abrir as Conferências.
+                Quando os ajustes pré-turno estiverem revisados, clique para congelar a Prévia e
+                abrir as Conferências.
               </p>
             </div>
             <button
@@ -1427,9 +1432,7 @@ function ServicoCard({
       <section className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-amber-900">
         <div className="flex items-baseline justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold">
-              ⚙️ Serviço — {ESTADO_SERVICO_LABEL[estado]}
-            </h3>
+            <h3 className="text-sm font-semibold">⚙️ Serviço — {ESTADO_SERVICO_LABEL[estado]}</h3>
             <p className="text-xs">
               {previa.iniciadoEm && (
                 <>
@@ -1493,8 +1496,7 @@ function ProgressoConferenciasBox({
   // S0.x/dev-fixes — Aparece também em EQUIPE_CONFERIDA: o backend faz
   // soft-promote para VIATURA_CONFERIDA quando o auto-detect não disparou
   // (composicaoMf sem viaturas DISPONIVEL ou divergência de prefixo).
-  const podePreencherInicial =
-    estado === 'VIATURA_CONFERIDA' || estado === 'EQUIPE_CONFERIDA';
+  const podePreencherInicial = estado === 'VIATURA_CONFERIDA' || estado === 'EQUIPE_CONFERIDA';
   const jaPreencheu = estado === 'PREENCHENDO_MF';
   const dirtyDesde = previa.mfDirtyDesde;
   const podeAtualizar = jaPreencheu && Boolean(dirtyDesde);
@@ -1573,7 +1575,10 @@ function ProgressoConferenciasBox({
                   </h3>
                   <p className="text-xs text-slate-600">
                     {previa.mfPreenchidoEm && (
-                      <>Última atualização: {new Date(previa.mfPreenchidoEm).toLocaleString('pt-BR')}.</>
+                      <>
+                        Última atualização:{' '}
+                        {new Date(previa.mfPreenchidoEm).toLocaleString('pt-BR')}.
+                      </>
                     )}{' '}
                     Aguarda nova alteração estrutural para reativar.
                   </p>
@@ -1633,7 +1638,11 @@ function ProgressoConferenciasBox({
 }
 
 const STATUS_EQUIPE_BADGE: Record<string, { bg: string; text: string; label: string }> = {
-  nao_conferida: { bg: 'bg-rose-100 border-rose-300', text: 'text-rose-700', label: 'Não conferida' },
+  nao_conferida: {
+    bg: 'bg-rose-100 border-rose-300',
+    text: 'text-rose-700',
+    label: 'Não conferida',
+  },
   em_conferencia: {
     bg: 'bg-amber-100 border-amber-300',
     text: 'text-amber-800',
@@ -1699,9 +1708,7 @@ function ConferenciaEquipeBox({ previa }: { previa: MapaForcaDoDia }) {
 
   return (
     <div className="rounded border border-slate-200 bg-white p-3">
-      <h4 className="text-xs font-semibold uppercase text-cbmes-blue">
-        👥 Conferência de Equipe
-      </h4>
+      <h4 className="text-xs font-semibold uppercase text-cbmes-blue">👥 Conferência de Equipe</h4>
       <ul className="mt-2 space-y-1">
         {recursosComEquipe.map((c) => {
           const status = statusPorRecurso.get(c.recurso) ?? 'nao_conferida';
@@ -1727,13 +1734,21 @@ function ConferenciaEquipeBox({ previa }: { previa: MapaForcaDoDia }) {
 }
 
 const STATUS_VIATURA_BOX_BADGE: Record<string, { bg: string; text: string; label: string }> = {
-  nao_conferida: { bg: 'bg-rose-100 border-rose-300', text: 'text-rose-700', label: 'Não conferida' },
+  nao_conferida: {
+    bg: 'bg-rose-100 border-rose-300',
+    text: 'text-rose-700',
+    label: 'Não conferida',
+  },
   conferida: {
     bg: 'bg-emerald-100 border-emerald-300',
     text: 'text-emerald-800',
     label: 'Conferida',
   },
-  baixada: { bg: 'bg-slate-100 border-slate-300', text: 'text-slate-600', label: 'Baixada (pulada)' },
+  baixada: {
+    bg: 'bg-slate-100 border-slate-300',
+    text: 'text-slate-600',
+    label: 'Baixada (pulada)',
+  },
 };
 
 /**
@@ -1763,9 +1778,7 @@ function ConferenciaViaturaBox({ previa }: { previa: MapaForcaDoDia }) {
 
   return (
     <div className="rounded border border-slate-200 bg-white p-3">
-      <h4 className="text-xs font-semibold uppercase text-cbmes-blue">
-        🚒 Conferência de Viatura
-      </h4>
+      <h4 className="text-xs font-semibold uppercase text-cbmes-blue">🚒 Conferência de Viatura</h4>
       <ul className="mt-2 space-y-1">
         {viaturas.map((c) => {
           const baixada = c.vtrStatus !== 'DISPONIVEL';
@@ -2097,8 +2110,8 @@ function ModalAlteracaoDiversa({
                   className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
                 />
                 <p className="mt-1 text-[11px] italic text-slate-500">
-                  Ex.: 14:00 — entra como "Às 14h00, X foi substituído por Y" em
-                  Alterações Diversas e na Parte Diária.
+                  Ex.: 14:00 — entra como "Às 14h00, X foi substituído por Y" em Alterações Diversas
+                  e na Parte Diária.
                 </p>
               </label>
             </>
@@ -2928,7 +2941,12 @@ function AtivarRecursoCard({
   const [viaturas, setViaturas] = useState<Viatura[]>([]);
   const [recurso, setRecurso] = useState('');
   const [vtrPrefixo, setVtrPrefixo] = useState('');
-  const [chefeRef, setChefeRef] = useState<{ nf: string; raw: string; postoAbreviado: string; nomeGuerra: string } | null>(null);
+  const [chefeRef, setChefeRef] = useState<{
+    nf: string;
+    raw: string;
+    postoAbreviado: string;
+    nomeGuerra: string;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -3056,8 +3074,8 @@ function AtivarRecursoCard({
                 className="flex items-center justify-between gap-2 rounded border border-slate-200 bg-slate-50 p-2"
               >
                 <span>
-                  <strong>{a.recurso}</strong> · {a.vtrPrefixo} · Ch:{' '}
-                  {a.chefe.postoAbreviado} {a.chefe.nomeGuerra}
+                  <strong>{a.recurso}</strong> · {a.vtrPrefixo} · Ch: {a.chefe.postoAbreviado}{' '}
+                  {a.chefe.nomeGuerra}
                 </span>
                 {!isReadOnly && (
                   <button
@@ -3217,10 +3235,13 @@ function PreviaEstadoBanner({
             {previa.fiscal?.militarResolvido && (
               <>
                 {' '}
-                Fiscal: <strong>{previa.fiscal.militarResolvido.posto}{' '}
-                {previa.fiscal.militarResolvido.nomeGuerra ??
-                  previa.fiscal.militarResolvido.nome.split(' ')[0]}</strong> (NF{' '}
-                {previa.fiscal.militarNf}).
+                Fiscal:{' '}
+                <strong>
+                  {previa.fiscal.militarResolvido.posto}{' '}
+                  {previa.fiscal.militarResolvido.nomeGuerra ??
+                    previa.fiscal.militarResolvido.nome.split(' ')[0]}
+                </strong>{' '}
+                (NF {previa.fiscal.militarNf}).
               </>
             )}
           </p>
@@ -3243,12 +3264,12 @@ function PreviaEstadoBanner({
         {podeSalvarPrevia ? (
           <>
             <p className="mt-1 text-xs">
-              Faça os ajustes necessários abaixo. Os ajustes ficam <strong>salvos
-              automaticamente</strong> a cada alteração. Quando terminar, clique em
+              Faça os ajustes necessários abaixo. Os ajustes ficam{' '}
+              <strong>salvos automaticamente</strong> a cada alteração. Quando terminar, clique em
               <strong> "Salvar Prévia"</strong> para confirmar; o Mapa Força permanece em
               <strong> "Em prévia"</strong> até alguém clicar em <strong>"Iniciar Serviço"</strong>,
-              quando os dados são congelados e ficam disponíveis para o preenchimento do
-              Mapa Força CIODES e da Parte Diária.
+              quando os dados são congelados e ficam disponíveis para o preenchimento do Mapa Força
+              CIODES e da Parte Diária.
             </p>
             <div className="mt-2 flex items-center gap-2">
               <button
@@ -3260,10 +3281,7 @@ function PreviaEstadoBanner({
                 Salvar Prévia
               </button>
               {salvoFeedback && (
-                <span
-                  role="status"
-                  className="text-xs font-medium text-green-700"
-                >
+                <span role="status" className="text-xs font-medium text-green-700">
                   ✓ Prévia salva — ajustes preservados
                 </span>
               )}
@@ -3271,8 +3289,8 @@ function PreviaEstadoBanner({
           </>
         ) : (
           <p className="mt-1 text-xs italic">
-            Você visualiza esta Prévia em modo leitura — apenas o Fiscal que iniciou (ou admin)
-            pode editá-la.
+            Você visualiza esta Prévia em modo leitura — apenas o Fiscal que iniciou (ou admin) pode
+            editá-la.
           </p>
         )}
       </div>
@@ -3284,8 +3302,8 @@ function PreviaEstadoBanner({
       <div className="mt-3 rounded border border-slate-300 bg-slate-50 p-3 text-sm text-slate-700">
         <p className="font-semibold">🔒 Serviço encerrado</p>
         <p className="mt-1 text-xs">
-          Encerrado pela passagem de serviço. Dados arquivados — consulte a Parte Diária do dia
-          para o histórico completo.
+          Encerrado pela passagem de serviço. Dados arquivados — consulte a Parte Diária do dia para
+          o histórico completo.
         </p>
       </div>
     );
@@ -3295,14 +3313,12 @@ function PreviaEstadoBanner({
   // serviço em andamento; alterações vão para a Parte Diária / livro / MF CIODES.
   return (
     <div className="mt-3 rounded border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
-      <p className="font-semibold">
-        🚒 Serviço Iniciado — em andamento
-      </p>
+      <p className="font-semibold">🚒 Serviço Iniciado — em andamento</p>
       <p className="mt-1 text-xs">
-        A Prévia foi congelada e os dados estão disponíveis para preenchimento do Mapa Força
-        CIODES (não-implementado) e da Parte Diária. <strong>Toda alteração</strong> a partir
-        deste momento deve constar em livro na seção específica do tipo de alteração; alterações
-        em recursos exigem também atualização no Mapa Força CIODES.
+        A Prévia foi congelada e os dados estão disponíveis para preenchimento do Mapa Força CIODES
+        (não-implementado) e da Parte Diária. <strong>Toda alteração</strong> a partir deste momento
+        deve constar em livro na seção específica do tipo de alteração; alterações em recursos
+        exigem também atualização no Mapa Força CIODES.
       </p>
       <Link
         to={`/parte-diaria?data=${previa.data}`}
@@ -3320,11 +3336,7 @@ function PreviaEstadoBanner({
  * manuais no `state.trocas`, e cada save duplicava (loop infinito de
  * concatenação). Agora ficam isoladas aqui, fora do estado editável.
  */
-function TrocasAutorizadasReadOnly({
-  trocas,
-}: {
-  trocas: MapaForcaDoDia['trocas'];
-}) {
+function TrocasAutorizadasReadOnly({ trocas }: { trocas: MapaForcaDoDia['trocas'] }) {
   if (trocas.length === 0) return null;
   return (
     <details className="mt-4 rounded border border-cbmes-blue/30 bg-cbmes-blue/5 p-3">
@@ -3332,8 +3344,8 @@ function TrocasAutorizadasReadOnly({
         📜 Trocas Autorizadas (planilha) — {trocas.length} ato(s)
       </summary>
       <p className="mt-1 text-[11px] italic text-slate-600">
-        Trocas vindas da planilha externa de Trocas Autorizadas. Read-only —
-        para alterar, edite a planilha. Não duplicam ao salvar ajustes.
+        Trocas vindas da planilha externa de Trocas Autorizadas. Read-only — para alterar, edite a
+        planilha. Não duplicam ao salvar ajustes.
       </p>
       <ul className="mt-2 space-y-1">
         {trocas.map((t, i) => (
@@ -3344,10 +3356,14 @@ function TrocasAutorizadasReadOnly({
             <div className="flex items-center justify-between gap-2">
               <span>
                 <strong>{t.substituidoRaw}</strong>
-                {t.substituidoNf && <span className="ml-1 text-slate-500">(NF {t.substituidoNf})</span>}
+                {t.substituidoNf && (
+                  <span className="ml-1 text-slate-500">(NF {t.substituidoNf})</span>
+                )}
                 {' → '}
                 <strong>{t.substitutoRaw}</strong>
-                {t.substitutoNf && <span className="ml-1 text-slate-500">(NF {t.substitutoNf})</span>}
+                {t.substitutoNf && (
+                  <span className="ml-1 text-slate-500">(NF {t.substitutoNf})</span>
+                )}
               </span>
               <span className="flex items-center gap-1">
                 {/* S2.8.3 — badge VERIFICADO/PENDENTE para o Fiscal */}
@@ -3403,9 +3419,9 @@ function ModalSwapChefeOperacoes({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [habilitados, setHabilitados] = useState<
-    import('@/lib/api').ChefeOperacoesHabilitado[]
-  >([]);
+  const [habilitados, setHabilitados] = useState<import('@/lib/api').ChefeOperacoesHabilitado[]>(
+    [],
+  );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -3497,15 +3513,16 @@ function ModalSwapChefeOperacoes({
       >
         <header className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
           <div>
-            <h2 className="text-base font-semibold text-cbmes-blue">
-              Trocar Chefe de Operações
-            </h2>
+            <h2 className="text-base font-semibold text-cbmes-blue">Trocar Chefe de Operações</h2>
             {chefeAtual?.militarResolvido && (
               <p className="text-xs text-slate-600">
-                Atual: <strong>{chefeAtual.militarResolvido.posto}{' '}
-                {chefeAtual.militarResolvido.nomeGuerra ??
-                  chefeAtual.militarResolvido.nome.split(' ')[0]}</strong> (NF{' '}
-                {chefeAtual.militarResolvido.nf})
+                Atual:{' '}
+                <strong>
+                  {chefeAtual.militarResolvido.posto}{' '}
+                  {chefeAtual.militarResolvido.nomeGuerra ??
+                    chefeAtual.militarResolvido.nome.split(' ')[0]}
+                </strong>{' '}
+                (NF {chefeAtual.militarResolvido.nf})
               </p>
             )}
           </div>
@@ -3564,10 +3581,7 @@ function ModalSwapChefeOperacoes({
                 const isOverrideAtual = overrideAtivo?.novoChefeNf === h.nf;
                 const isAtual = chefeAtual?.militarResolvido?.nf === h.nf;
                 return (
-                  <li
-                    key={h.nf}
-                    className="border-b border-slate-100 last:border-0"
-                  >
+                  <li key={h.nf} className="border-b border-slate-100 last:border-0">
                     <button
                       type="button"
                       onClick={() => void handleSelecionar(h.nf)}
@@ -3577,7 +3591,9 @@ function ModalSwapChefeOperacoes({
                       }`}
                     >
                       <span>
-                        <strong>{h.posto || '(sem posto)'} {h.nomeGuerra}</strong>
+                        <strong>
+                          {h.posto || '(sem posto)'} {h.nomeGuerra}
+                        </strong>
                         <span className="ml-2 text-xs text-slate-500">NF {h.nf}</span>
                       </span>
                       {isAtual && (

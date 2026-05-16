@@ -25,7 +25,12 @@ const escalaMensalBase: EscalaMensal = {
         equipe: 'A',
         viatura: 'ABTS_01',
         funcao: 'Motorista',
-        militar: { raw: '2ºSGT BARCELLOS', postoAbreviado: '2ºSGT', nomeGuerra: 'BARCELLOS', nf: '3037509' },
+        militar: {
+          raw: '2ºSGT BARCELLOS',
+          postoAbreviado: '2ºSGT',
+          nomeGuerra: 'BARCELLOS',
+          nf: '3037509',
+        },
       },
       {
         equipe: 'B',

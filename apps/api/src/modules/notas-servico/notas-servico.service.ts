@@ -13,10 +13,7 @@ import type {
   UpdateNotaServicoInput,
 } from '@argus/shared-types';
 import { SheetsDbService } from '../sheets-db/sheets-db.service';
-import {
-  notaServicoToRow,
-  rowToNotaServico,
-} from '../sheets-db/sheets-db-serializers';
+import { notaServicoToRow, rowToNotaServico } from '../sheets-db/sheets-db-serializers';
 
 /**
  * S6l — CRUD de Notas de Serviço.
@@ -146,9 +143,7 @@ export class NotasServicoService implements OnModuleInit {
   private syncToSheetsDb(ns: NotaServico): void {
     if (!this.sheetsDb?.isEnabled()) return;
     void this.sheetsDb.upsertNotaServico(notaServicoToRow(ns)).catch((err) => {
-      this.logger.warn(
-        `Sheets-DB upsert NS ${ns.id} falhou: ${(err as Error).message}.`,
-      );
+      this.logger.warn(`Sheets-DB upsert NS ${ns.id} falhou: ${(err as Error).message}.`);
     });
   }
 

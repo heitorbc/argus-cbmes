@@ -135,9 +135,7 @@ export function MapaForcaPage() {
       >
         <span className="leading-none">{children}</span>
         {equipe && (
-          <span className="mt-0.5 text-[10px] font-bold tracking-widest opacity-90">
-            {equipe}
-          </span>
+          <span className="mt-0.5 text-[10px] font-bold tracking-widest opacity-90">{equipe}</span>
         )}
       </button>
     );
@@ -214,9 +212,7 @@ export function MapaForcaPage() {
           </div>
         )}
 
-        {loading && (
-          <p className="mt-4 text-center text-sm text-slate-500">Carregando…</p>
-        )}
+        {loading && <p className="mt-4 text-center text-sm text-slate-500">Carregando…</p>}
 
         {!loading && diasComEscala.length === 0 && !error && (
           <div className="mt-6 rounded border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
@@ -224,7 +220,11 @@ export function MapaForcaPage() {
             <strong>
               {String(mesNum).padStart(2, '0')}/{ano}
             </strong>
-            . Importe pela seção <Link to="/cadastros/escalas" className="underline">Escala Mensal</Link>.
+            . Importe pela seção{' '}
+            <Link to="/cadastros/escalas" className="underline">
+              Escala Mensal
+            </Link>
+            .
           </div>
         )}
 
@@ -250,8 +250,8 @@ export function MapaForcaPage() {
 
         {!loading && diasComEscala.length > 0 && viewMode === 'calendario' && (
           <p className="mt-2 text-center text-[11px] italic text-slate-500">
-            Dias coloridos têm escala importada · letra abaixo do número indica a equipe.
-            Toque em um dia para abrir o Mapa Força.
+            Dias coloridos têm escala importada · letra abaixo do número indica a equipe. Toque em
+            um dia para abrir o Mapa Força.
           </p>
         )}
 

@@ -30,8 +30,19 @@ const PERIODO_LABEL: Record<PeriodoPreset, string> = {
 };
 
 const POSTO_ORDER = [
-  'CEL', 'TC', 'MAJ', 'CAP', '1ºTEN', '2ºTEN', 'ASP',
-  'SUBTEN', '1ºSGT', '2ºSGT', '3ºSGT', 'CB', 'SD',
+  'CEL',
+  'TC',
+  'MAJ',
+  'CAP',
+  '1ºTEN',
+  '2ºTEN',
+  'ASP',
+  'SUBTEN',
+  '1ºSGT',
+  '2ºSGT',
+  '3ºSGT',
+  'CB',
+  'SD',
 ];
 function postoIdx(p: string): number {
   const i = POSTO_ORDER.findIndex((x) => p.toUpperCase().startsWith(x));
@@ -181,10 +192,10 @@ export function IseoHospitaisPage() {
 
       <section className="mx-auto max-w-5xl p-4">
         <div className="rounded border border-slate-200 bg-white p-3 text-xs text-slate-600">
-          <strong>Fonte:</strong> planilha institucional ISEO Hospitais (Google Sheets, sincronização
-          a cada ~5min). As entradas alimentam automaticamente a <strong>Agenda do militar</strong>
-          {' '}e ficam disponíveis para detecção de conflito com outras escalas (Mensal, Especial,
-          Notas de Serviço).
+          <strong>Fonte:</strong> planilha institucional ISEO Hospitais (Google Sheets,
+          sincronização a cada ~5min). As entradas alimentam automaticamente a{' '}
+          <strong>Agenda do militar</strong> e ficam disponíveis para detecção de conflito com
+          outras escalas (Mensal, Especial, Notas de Serviço).
         </div>
 
         {error && (
@@ -199,7 +210,9 @@ export function IseoHospitaisPage() {
             type="button"
             onClick={() => setTab('HPM')}
             className={`rounded-button px-3 py-1.5 text-xs font-medium ${
-              tab === 'HPM' ? 'bg-cbmes-blue text-white' : 'border border-slate-300 bg-white text-slate-700'
+              tab === 'HPM'
+                ? 'bg-cbmes-blue text-white'
+                : 'border border-slate-300 bg-white text-slate-700'
             }`}
           >
             HPM ({countsByUnidade.HPM})
@@ -208,7 +221,9 @@ export function IseoHospitaisPage() {
             type="button"
             onClick={() => setTab('HIMABA')}
             className={`rounded-button px-3 py-1.5 text-xs font-medium ${
-              tab === 'HIMABA' ? 'bg-cbmes-blue text-white' : 'border border-slate-300 bg-white text-slate-700'
+              tab === 'HIMABA'
+                ? 'bg-cbmes-blue text-white'
+                : 'border border-slate-300 bg-white text-slate-700'
             }`}
           >
             HIMABA ({countsByUnidade.HIMABA})
@@ -243,9 +258,7 @@ export function IseoHospitaisPage() {
         {/* Filtros: período + militar */}
         <div className="mt-3 grid grid-cols-1 gap-3 rounded border border-slate-200 bg-white p-3 sm:grid-cols-[1fr_1fr]">
           <label className="block">
-            <span className="text-[10px] uppercase tracking-wide text-slate-500">
-              Período
-            </span>
+            <span className="text-[10px] uppercase tracking-wide text-slate-500">Período</span>
             <select
               value={periodo}
               onChange={(e) => setPeriodo(e.target.value as PeriodoPreset)}
@@ -332,8 +345,7 @@ function ListaView({ entries }: { entries: IseoHospitalEntry[] }) {
             <span className="text-xs text-slate-600">{e.unidade}</span>
           </div>
           <div className="mt-1 text-slate-800">
-            <strong>{e.posto}</strong> {e.nome}{' '}
-            <span className="text-slate-500">· NF {e.nf}</span>
+            <strong>{e.posto}</strong> {e.nome} <span className="text-slate-500">· NF {e.nf}</span>
           </div>
           {(e.funcao || e.cargaHoraria) && (
             <div className="mt-0.5 text-xs text-slate-600">
@@ -342,9 +354,7 @@ function ListaView({ entries }: { entries: IseoHospitalEntry[] }) {
               {e.cargaHoraria && <span>Carga: {e.cargaHoraria}</span>}
             </div>
           )}
-          {e.contato && (
-            <div className="mt-0.5 text-xs text-slate-500">Contato: {e.contato}</div>
-          )}
+          {e.contato && <div className="mt-0.5 text-xs text-slate-500">Contato: {e.contato}</div>}
         </li>
       ))}
     </ul>
@@ -410,7 +420,7 @@ function CalendarioView({
   }, [range]);
 
   const hojeIso = new Date().toISOString().slice(0, 10);
-  const detalheDia = diaSelecionado ? entriesPorData.get(diaSelecionado) ?? [] : [];
+  const detalheDia = diaSelecionado ? (entriesPorData.get(diaSelecionado) ?? []) : [];
 
   return (
     <div className="mt-3">
@@ -427,13 +437,14 @@ function CalendarioView({
           const isHoje = data === hojeIso;
           const isSelecionado = data === diaSelecionado;
           const dia = Number.parseInt(data.slice(8, 10), 10);
-          const corBase = lista.length === 0
-            ? 'border-slate-100 bg-slate-50/50'
-            : isSelecionado
-              ? 'border-cbmes-red bg-cbmes-red/10'
-              : isHoje
-                ? 'border-cbmes-blue bg-cbmes-blue/5'
-                : 'border-slate-200 bg-white';
+          const corBase =
+            lista.length === 0
+              ? 'border-slate-100 bg-slate-50/50'
+              : isSelecionado
+                ? 'border-cbmes-red bg-cbmes-red/10'
+                : isHoje
+                  ? 'border-cbmes-blue bg-cbmes-blue/5'
+                  : 'border-slate-200 bg-white';
           return (
             <button
               key={data}
@@ -442,11 +453,7 @@ function CalendarioView({
               className={`min-h-[56px] rounded border p-1 text-left text-[10px] transition hover:border-cbmes-blue ${corBase}`}
             >
               <div className="flex items-center gap-1">
-                <span
-                  className={`font-semibold ${
-                    isHoje ? 'text-cbmes-blue' : 'text-slate-700'
-                  }`}
-                >
+                <span className={`font-semibold ${isHoje ? 'text-cbmes-blue' : 'text-slate-700'}`}>
                   {dia}
                 </span>
               </div>
@@ -495,9 +502,7 @@ function CalendarioView({
             </button>
           </div>
           {detalheDia.length === 0 ? (
-            <p className="mt-2 text-xs italic text-slate-500">
-              Sem escala neste dia para {tab}.
-            </p>
+            <p className="mt-2 text-xs italic text-slate-500">Sem escala neste dia para {tab}.</p>
           ) : (
             <ListaView entries={detalheDia} />
           )}

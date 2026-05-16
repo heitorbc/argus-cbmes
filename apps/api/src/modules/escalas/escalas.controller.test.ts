@@ -86,17 +86,13 @@ describe('EscalasController.confirm (homologação fix)', () => {
           q1: {
             E: {
               letra: 'E',
-              supervisores: [
-                { raw: '3º SGT DAN', postoAbreviado: '3ºSGT', nomeGuerra: 'DAN' },
-              ],
+              supervisores: [{ raw: '3º SGT DAN', postoAbreviado: '3ºSGT', nomeGuerra: 'DAN' }],
             },
           },
           q2: {
             E: {
               letra: 'E',
-              supervisores: [
-                { raw: '3º SGT DAN', postoAbreviado: '3ºSGT', nomeGuerra: 'DAN' },
-              ],
+              supervisores: [{ raw: '3º SGT DAN', postoAbreviado: '3ºSGT', nomeGuerra: 'DAN' }],
             },
           },
           ultimoDiaQ1: 14,

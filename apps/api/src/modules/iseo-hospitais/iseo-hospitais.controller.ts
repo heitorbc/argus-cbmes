@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  Controller,
-  Get,
-  Param,
-  Query,
-} from '@nestjs/common';
+import { BadRequestException, Controller, Get, Param, Query } from '@nestjs/common';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { IseoHospitaisService } from './iseo-hospitais.service';
 import type {

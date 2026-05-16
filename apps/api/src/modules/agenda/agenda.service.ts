@@ -1,9 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type {
-  AgendaConflito,
-  AgendaItem,
-  AgendaResponse,
-} from '@argus/shared-types';
+import type { AgendaConflito, AgendaItem, AgendaResponse } from '@argus/shared-types';
 import { MapaForcaService } from '../mapa-forca/mapa-forca.service';
 import { NomeMatcher } from '../mapa-forca/nome-matching';
 import { NotasServicoService } from '../notas-servico/notas-servico.service';
@@ -127,11 +123,7 @@ export class AgendaService {
    * trocas autorizadas integradas na tripulação, fiscal, escala especial
    * misturada na composição do dia.
    */
-  private async coletarDoMapaForca(
-    nf: string,
-    inicio: string,
-    fim: string,
-  ): Promise<AgendaItem[]> {
+  private async coletarDoMapaForca(nf: string, inicio: string, fim: string): Promise<AgendaItem[]> {
     const out: AgendaItem[] = [];
     const dias = [...iterDias(inicio, fim)];
     const resultados = await Promise.all(
@@ -308,11 +300,7 @@ export class AgendaService {
     return out;
   }
 
-  private async coletarAtestados(
-    nf: string,
-    inicio: string,
-    fim: string,
-  ): Promise<AgendaItem[]> {
+  private async coletarAtestados(nf: string, inicio: string, fim: string): Promise<AgendaItem[]> {
     const out: AgendaItem[] = [];
     for (const data of iterDias(inicio, fim)) {
       const ativos = this.atestados.listAtivosNoDia(data);
@@ -331,11 +319,7 @@ export class AgendaService {
     return out;
   }
 
-  private async coletarDispensas(
-    nf: string,
-    inicio: string,
-    fim: string,
-  ): Promise<AgendaItem[]> {
+  private async coletarDispensas(nf: string, inicio: string, fim: string): Promise<AgendaItem[]> {
     const out: AgendaItem[] = [];
     for (const data of iterDias(inicio, fim)) {
       const ativas = this.dispensas.listAtivasNoDia(data);
@@ -354,11 +338,7 @@ export class AgendaService {
     return out;
   }
 
-  private async coletarFerias(
-    nf: string,
-    inicio: string,
-    fim: string,
-  ): Promise<AgendaItem[]> {
+  private async coletarFerias(nf: string, inicio: string, fim: string): Promise<AgendaItem[]> {
     const out: AgendaItem[] = [];
     for (const data of iterDias(inicio, fim)) {
       const ativas = this.ferias.listAtivasNoDia(data);

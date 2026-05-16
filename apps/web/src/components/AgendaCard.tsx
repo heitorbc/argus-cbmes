@@ -107,10 +107,7 @@ export function FonteBadge({ fonte }: { fonte: AgendaItem['fonte'] }) {
   );
 }
 
-export const FONTE_CFG: Record<
-  AgendaItem['fonte'],
-  { label: string; classes: string }
-> = {
+export const FONTE_CFG: Record<AgendaItem['fonte'], { label: string; classes: string }> = {
   escala_mensal: { label: 'Mensal', classes: 'bg-cbmes-blue/15 text-cbmes-blue' },
   escala_especial: { label: 'Especial', classes: 'bg-purple-100 text-purple-800' },
   nota_servico: { label: 'NS', classes: 'bg-green-100 text-green-800' },

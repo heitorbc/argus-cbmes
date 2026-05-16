@@ -77,8 +77,13 @@ class FakeViaturasService {
 
 class FakeChefesOperacoesService {
   habilitadosNfs: Set<string> = new Set();
-  escaladosDoDia: Array<{ posto: string; nomeGuerra: string; nf: string; telefone?: string; marcador?: string }> =
-    [];
+  escaladosDoDia: Array<{
+    posto: string;
+    nomeGuerra: string;
+    nf: string;
+    telefone?: string;
+    marcador?: string;
+  }> = [];
   async getEscaladosDoDia(): Promise<typeof this.escaladosDoDia> {
     return this.escaladosDoDia;
   }
@@ -376,8 +381,7 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
     // Continua BARCELLOS — swap descartado.
     expect(abtsCh?.militarResolvido?.nf).toBe('3037509');
     const inc = r.inconsistencias.find(
-      (i) =>
-        (i.detalhe as Record<string, unknown> | undefined)?.origem === 'swap-militar',
+      (i) => (i.detalhe as Record<string, unknown> | undefined)?.origem === 'swap-militar',
     );
     expect(inc).toBeDefined();
   });
@@ -436,8 +440,7 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
     const r = await previa.getMapaForcaDoDia('2026-04-23');
     const inc = r.inconsistencias.find(
       (i) =>
-        (i.detalhe as Record<string, unknown> | undefined)?.origem ===
-        'troca-chop-nao-habilitado',
+        (i.detalhe as Record<string, unknown> | undefined)?.origem === 'troca-chop-nao-habilitado',
     );
     expect(inc).toBeDefined();
     expect(inc!.mensagem).toContain('CB FABRE');
@@ -466,8 +469,7 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
     const r = await previa.getMapaForcaDoDia('2026-04-23');
     const inc = r.inconsistencias.find(
       (i) =>
-        (i.detalhe as Record<string, unknown> | undefined)?.origem ===
-        'troca-chop-nao-habilitado',
+        (i.detalhe as Record<string, unknown> | undefined)?.origem === 'troca-chop-nao-habilitado',
     );
     expect(inc).toBeUndefined();
   });
@@ -667,8 +669,7 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
     );
     const r = await previa.getMapaForcaDoDia('2026-04-23');
     const inc = r.inconsistencias.find(
-      (i) =>
-        (i.detalhe as Record<string, unknown> | undefined)?.origem === 'ativacao-recurso',
+      (i) => (i.detalhe as Record<string, unknown> | undefined)?.origem === 'ativacao-recurso',
     );
     expect(inc).toBeDefined();
   });

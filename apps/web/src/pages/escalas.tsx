@@ -184,8 +184,8 @@ export function EscalasPage() {
         </Link>
         <h1 className="mt-1 text-lg font-bold">Escala Mensal</h1>
         <p className="text-xs opacity-90">
-          Fonte primária: planilha-DB (aba <code>bd_escala_mensal</code>) · XLSX
-          aceito apenas para popular ou atualizar a planilha
+          Fonte primária: planilha-DB (aba <code>bd_escala_mensal</code>) · XLSX aceito apenas para
+          popular ou atualizar a planilha
         </p>
       </header>
 
@@ -426,8 +426,7 @@ function QuinzenaTabs({
   ultimoDiaMes: number;
 }) {
   const inicioQ2 = ultimoDiaQ1 + 1;
-  const baseBtn =
-    'flex-1 min-h-[44px] rounded-button text-xs font-semibold transition-colors';
+  const baseBtn = 'flex-1 min-h-[44px] rounded-button text-xs font-semibold transition-colors';
   return (
     <div className="mt-3 flex gap-1 rounded-button bg-slate-100 p-1">
       <button
@@ -477,7 +476,8 @@ function PreviewPanel({
     preview.composicaoPorQuinzena.q1.length + preview.composicaoPorQuinzena.q2.length;
   const diffQ1 = diff?.composicaoAlteradaPorQuinzena.q1 ?? [];
   const diffQ2 = diff?.composicaoAlteradaPorQuinzena.q2 ?? [];
-  const hasDiff = diff !== null && (diff.diasAlterados.length > 0 || diffQ1.length > 0 || diffQ2.length > 0);
+  const hasDiff =
+    diff !== null && (diff.diasAlterados.length > 0 || diffQ1.length > 0 || diffQ2.length > 0);
 
   return (
     <div className="mt-4 rounded border-2 border-cbmes-blue bg-white p-4">
@@ -487,7 +487,8 @@ function PreviewPanel({
       <p className="mt-1 text-xs text-slate-600">
         Origem: <span className="font-mono">{preview.origemArquivo}</span> ·{' '}
         {Object.keys(preview.diaEquipe).length} dias mapeados · {totalPosicoes} posições (
-        {preview.composicaoPorQuinzena.q1.length} na 1ª, {preview.composicaoPorQuinzena.q2.length} na 2ª)
+        {preview.composicaoPorQuinzena.q1.length} na 1ª, {preview.composicaoPorQuinzena.q2.length}{' '}
+        na 2ª)
       </p>
 
       {preview.avisos.length > 0 && (
@@ -526,9 +527,7 @@ function PreviewPanel({
                     >
                       <label
                         className={`flex cursor-pointer items-start gap-2 rounded border p-2 ${
-                          manterAtual
-                            ? 'border-cbmes-blue bg-cbmes-blue/5'
-                            : 'border-slate-200'
+                          manterAtual ? 'border-cbmes-blue bg-cbmes-blue/5' : 'border-slate-200'
                         }`}
                       >
                         <input
@@ -544,22 +543,16 @@ function PreviewPanel({
                           <div className="text-[10px] uppercase tracking-wide text-slate-500">
                             Manter atual
                           </div>
-                          <div className="mt-0.5 font-semibold text-slate-800">
-                            {d.data}
-                          </div>
+                          <div className="mt-0.5 font-semibold text-slate-800">{d.data}</div>
                           <div className="mt-0.5 text-slate-700">
                             Equipe: <strong>{d.equipeAntes ?? '∅'}</strong>
                           </div>
                         </div>
                       </label>
-                      <span className="hidden self-center text-slate-400 sm:inline">
-                        →
-                      </span>
+                      <span className="hidden self-center text-slate-400 sm:inline">→</span>
                       <label
                         className={`flex cursor-pointer items-start gap-2 rounded border p-2 ${
-                          !manterAtual
-                            ? 'border-cbmes-red bg-cbmes-red/5'
-                            : 'border-slate-200'
+                          !manterAtual ? 'border-cbmes-red bg-cbmes-red/5' : 'border-slate-200'
                         }`}
                       >
                         <input
@@ -575,9 +568,7 @@ function PreviewPanel({
                           <div className="text-[10px] uppercase tracking-wide text-slate-500">
                             Aceitar nova (padrão)
                           </div>
-                          <div className="mt-0.5 font-semibold text-slate-800">
-                            {d.data}
-                          </div>
+                          <div className="mt-0.5 font-semibold text-slate-800">{d.data}</div>
                           <div className="mt-0.5 text-slate-700">
                             Equipe: <strong>{d.equipeDepois ?? '∅'}</strong>
                           </div>
@@ -591,8 +582,8 @@ function PreviewPanel({
               {diasDescartados.size > 0 && (
                 <p className="mt-2 text-[11px] italic text-cbmes-blue">
                   {diasDescartados.size} dia
-                  {diasDescartados.size > 1 ? 's serão mantidos' : ' será mantido'}{' '}
-                  na versão atual ao confirmar.
+                  {diasDescartados.size > 1 ? 's serão mantidos' : ' será mantido'} na versão atual
+                  ao confirmar.
                 </p>
               )}
             </div>
@@ -634,8 +625,8 @@ function PreviewPanel({
             ))}
           </ul>
           <p className="mt-2 text-[11px] italic">
-            Cancele a Prévia ou aguarde o encerramento do Serviço dos dias acima
-            antes de re-importar a escala.
+            Cancele a Prévia ou aguarde o encerramento do Serviço dos dias acima antes de
+            re-importar a escala.
           </p>
         </div>
       )}
@@ -677,13 +668,10 @@ function DiffComposicaoBlock({
       <ul className="mt-1 list-inside list-disc">
         {entries.slice(0, 20).map((c, i) => (
           <li key={i}>
-            {c.equipe}/{c.viatura}/{c.funcao}: {c.antes ?? '∅'} →{' '}
-            <strong>{c.depois ?? '∅'}</strong>
+            {c.equipe}/{c.viatura}/{c.funcao}: {c.antes ?? '∅'} → <strong>{c.depois ?? '∅'}</strong>
           </li>
         ))}
-        {entries.length > 20 && (
-          <li className="italic">+ {entries.length - 20} outras</li>
-        )}
+        {entries.length > 20 && <li className="italic">+ {entries.length - 20} outras</li>}
       </ul>
     </div>
   );

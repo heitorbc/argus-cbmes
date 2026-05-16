@@ -392,9 +392,7 @@ function buildFormFromStatuses(
   for (const s of statuses) {
     const itens = previa?.ideo.find((i) => i.tipo === s.tipo)?.itens ?? [];
     const equipamentos: IdeoEquipamentoFormItem[] = itens.map((it) => {
-      const match = (s.equipamentos ?? []).find(
-        (eq: IdeoEquipamentoAlteracao) => eq.item === it,
-      );
+      const match = (s.equipamentos ?? []).find((eq: IdeoEquipamentoAlteracao) => eq.item === it);
       return {
         item: it,
         alteracao: Boolean(match),

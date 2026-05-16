@@ -178,24 +178,14 @@ export function AgendaPage() {
         ) : visao === 'lista' ? (
           <ListaView itens={itensFiltrados} datasConflito={datasComConflito} />
         ) : (
-          <CalendarioView
-            itens={itensFiltrados}
-            datasConflito={datasComConflito}
-            dias={dias}
-          />
+          <CalendarioView itens={itensFiltrados} datasConflito={datasComConflito} dias={dias} />
         )}
       </section>
     </main>
   );
 }
 
-function ListaView({
-  itens,
-  datasConflito,
-}: {
-  itens: AgendaItem[];
-  datasConflito: Set<string>;
-}) {
+function ListaView({ itens, datasConflito }: { itens: AgendaItem[]; datasConflito: Set<string> }) {
   if (itens.length === 0) {
     return <p className="mt-4 text-sm italic text-slate-500">Nenhuma escala encontrada.</p>;
   }

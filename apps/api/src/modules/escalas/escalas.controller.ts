@@ -25,17 +25,10 @@ import {
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { UserSession } from '@argus/shared-types';
-import {
-  EscalasService,
-  computeDiff,
-  mergeEscalaPreservandoDias,
-} from './escalas.service';
+import { EscalasService, computeDiff, mergeEscalaPreservandoDias } from './escalas.service';
 import { EscalaXlsxParseError, parseEscalaXlsx } from './escala-xlsx-parser';
 import { ServicoService } from '../servico/servico.service';
-import {
-  bloqueiosToMessage,
-  computeBloqueios,
-} from '../servico/bloqueio-reimport';
+import { bloqueiosToMessage, computeBloqueios } from '../servico/bloqueio-reimport';
 
 const listQuerySchema = z.object({
   ano: z
@@ -192,9 +185,7 @@ export class EscalasController {
     } else {
       const parsedLegacy = escalaMensalSchema.safeParse(body);
       if (!parsedLegacy.success) {
-        throw new BadRequestException(
-          parsedLegacy.error.errors.map((e) => e.message),
-        );
+        throw new BadRequestException(parsedLegacy.error.errors.map((e) => e.message));
       }
       escala = parsedLegacy.data;
     }

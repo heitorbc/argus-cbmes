@@ -29,25 +29,14 @@ pós-assinatura/envio. Isso fecha o ciclo iniciado em S10/S11.
 - [x] **F1** Schema `parteDiariaSchema`: 2 campos novos
       `finalizadoEm: string | null`, `finalizadoPorNf: string | null`
       (defaults `null`).
-- [x] **F2** `ParteDiariaService`:
-      - `lockByData: Map<string, {finalizadoEm, finalizadoPorNf}>`.
-      - `finalizar(data, nf)`, `reabrir(data)`.
-      - `salvar()` lança `ConflictException` se locked.
-      - `get()` sempre devolve os campos `finalizado*` (null quando
-        sem lock).
-      - `reset()` limpa lock também.
-- [x] **F3** REST:
-      - `POST /parte-diaria/:data/finalizar` (admin/fiscal).
-      - `POST /parte-diaria/:data/reabrir` (admin only).
-- [x] **F4** Frontend `/parte-diaria`:
-      - Banner verde **"✓ Parte Diária FINALIZADA"** com NF e data
-        quando locked.
-      - Botão **"Finalizar PD"** (admin/fiscal) na toolbar.
-      - Botão **"Reabrir PD"** (admin only) quando locked.
-      - Todos os inputs editáveis ficam `disabled` quando locked
-        (via `podeEditar = isFiscalOuAdmin && !finalizada`).
+- [x] **F2** `ParteDiariaService`: - `lockByData: Map<string, {finalizadoEm, finalizadoPorNf}>`. - `finalizar(data, nf)`, `reabrir(data)`. - `salvar()` lança `ConflictException` se locked. - `get()` sempre devolve os campos `finalizado*` (null quando
+      sem lock). - `reset()` limpa lock também.
+- [x] **F3** REST: - `POST /parte-diaria/:data/finalizar` (admin/fiscal). - `POST /parte-diaria/:data/reabrir` (admin only).
+- [x] **F4** Frontend `/parte-diaria`: - Banner verde **"✓ Parte Diária FINALIZADA"** com NF e data
+      quando locked. - Botão **"Finalizar PD"** (admin/fiscal) na toolbar. - Botão **"Reabrir PD"** (admin only) quando locked. - Todos os inputs editáveis ficam `disabled` quando locked
+      (via `podeEditar = isFiscalOuAdmin && !finalizada`).
 - [x] **F5** Tests +2 cenários: `finalizar → salvar 409`; `reabrir
-      limpa lock + salvar volta a funcionar`.
+limpa lock + salvar volta a funcionar`.
 - [x] Backend 311 → **314 passing** (1 bcrypt flake preexistente).
 - [x] Pipeline: typecheck + lint + format + build verdes.
 

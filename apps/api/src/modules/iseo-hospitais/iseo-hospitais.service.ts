@@ -1,18 +1,11 @@
-import {
-  Injectable,
-  Logger,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type {
   IseoHospitalEntry,
   IseoHospitalSyncStatus,
   IseoHospitalUnidade,
 } from '@argus/shared-types';
-import {
-  parseIseoHospitaisCsv,
-  parseUnidadeFromSheetName,
-} from './iseo-hospitais-csv-parser';
+import { parseIseoHospitaisCsv, parseUnidadeFromSheetName } from './iseo-hospitais-csv-parser';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 15_000;
@@ -136,9 +129,7 @@ export class IseoHospitaisService {
     return DEFAULT_SHEET_NAMES;
   }
 
-  private async getEntry(
-    sheet: string,
-  ): Promise<{ entry: CacheEntry; stale: boolean }> {
+  private async getEntry(sheet: string): Promise<{ entry: CacheEntry; stale: boolean }> {
     const now = Date.now();
     const cached = this.cache.get(sheet);
     if (cached && now - cached.syncedAt < CACHE_TTL_MS) {

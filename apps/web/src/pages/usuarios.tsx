@@ -82,9 +82,9 @@ export function UsuariosPage() {
 
       <section className="mx-auto max-w-3xl p-4">
         <div className="rounded border border-slate-200 bg-white p-3 text-xs text-slate-600">
-          <strong>Storage:</strong> in-memory (Fase 1). Usuários criados aqui se perdem
-          ao restart do backend até a migração Supabase (S2.9). Para deploy permanente
-          enquanto isso, ainda é necessário PR de código.
+          <strong>Storage:</strong> in-memory (Fase 1). Usuários criados aqui se perdem ao restart
+          do backend até a migração Supabase (S2.9). Para deploy permanente enquanto isso, ainda é
+          necessário PR de código.
         </div>
 
         {error && (
@@ -127,9 +127,7 @@ export function UsuariosPage() {
         {loading ? (
           <p className="mt-4 text-sm text-slate-500">Carregando…</p>
         ) : filtrados.length === 0 ? (
-          <p className="mt-4 text-sm italic text-slate-500">
-            Nenhum usuário encontrado.
-          </p>
+          <p className="mt-4 text-sm italic text-slate-500">Nenhum usuário encontrado.</p>
         ) : (
           <ul className="mt-4 divide-y divide-slate-200 rounded border border-slate-200 bg-white">
             {filtrados.map((u) => (
@@ -179,9 +177,7 @@ export function UsuariosPage() {
                           await api.usuarioRemove(u.nf);
                           await reload();
                         } catch (e) {
-                          setError(
-                            e instanceof ApiError ? e.message : 'Erro ao remover',
-                          );
+                          setError(e instanceof ApiError ? e.message : 'Erro ao remover');
                         }
                       }}
                       className="rounded border border-feedback-error/40 px-2 py-1 text-feedback-error hover:bg-feedback-error/10"
@@ -294,9 +290,7 @@ function UsuarioForm({
           />
         </label>
         <label>
-          <span className="text-xs font-medium text-slate-700">
-            ANT (antiguidade)
-          </span>
+          <span className="text-xs font-medium text-slate-700">ANT (antiguidade)</span>
           <input
             type="number"
             value={ant}

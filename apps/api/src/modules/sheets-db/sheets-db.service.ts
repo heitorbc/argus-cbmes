@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  type OnModuleInit,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Injectable, Logger, type OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   clearAndWrite,
@@ -152,12 +147,9 @@ export class SheetsDbService implements OnModuleInit {
     const client = await getSheetsClient(this.saKey);
     const sumario: string[] = [];
     for (const cfg of Object.values(SHEETS)) {
-      const { created } = await createSheetIfMissing(
-        client,
-        this.spreadsheetId,
-        cfg.name,
-        [...cfg.headers],
-      );
+      const { created } = await createSheetIfMissing(client, this.spreadsheetId, cfg.name, [
+        ...cfg.headers,
+      ]);
       this.abasExistentes.add(cfg.name);
       sumario.push(`${cfg.name}=${created ? 'criada' : 'OK'}`);
     }
@@ -200,9 +192,7 @@ export class SheetsDbService implements OnModuleInit {
     const client = await getSheetsClient(this.saKey!);
     const all = await readAll(client, this.spreadsheetId!, SHEETS.ESCALA_MENSAL.name);
     const header = all[0] ?? [...SHEETS.ESCALA_MENSAL.headers];
-    const outras = all
-      .slice(1)
-      .filter((row) => row[0] !== String(ano) || row[1] !== String(mes));
+    const outras = all.slice(1).filter((row) => row[0] !== String(ano) || row[1] !== String(mes));
     const merged = [...outras, ...novasLinhas];
     await clearAndWrite(client, this.spreadsheetId!, SHEETS.ESCALA_MENSAL.name, merged);
     this.logger.log(
@@ -215,9 +205,7 @@ export class SheetsDbService implements OnModuleInit {
     if (!this.isEnabled()) return;
     const client = await getSheetsClient(this.saKey!);
     const all = await readAll(client, this.spreadsheetId!, SHEETS.ESCALA_ESPECIAL.name);
-    const outras = all
-      .slice(1)
-      .filter((row) => row[0] !== String(ano) || row[1] !== String(mes));
+    const outras = all.slice(1).filter((row) => row[0] !== String(ano) || row[1] !== String(mes));
     const merged = [...outras, ...novasLinhas];
     await clearAndWrite(client, this.spreadsheetId!, SHEETS.ESCALA_ESPECIAL.name, merged);
     this.logger.log(

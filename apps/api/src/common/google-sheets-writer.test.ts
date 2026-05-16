@@ -30,13 +30,17 @@ function makeClient(initialSheets: Record<string, string[][]> = {}): MockClient 
       get: vi.fn(async () => ({
         data: { sheets: [...data.keys()].map((title) => ({ properties: { title } })) },
       })),
-      batchUpdate: vi.fn(async (req: { requestBody: { requests: Array<{ addSheet?: { properties?: { title?: string } } }> } }) => {
-        for (const r of req.requestBody.requests) {
-          const title = r.addSheet?.properties?.title;
-          if (title && !data.has(title)) data.set(title, []);
-        }
-        return { data: {} };
-      }),
+      batchUpdate: vi.fn(
+        async (req: {
+          requestBody: { requests: Array<{ addSheet?: { properties?: { title?: string } } }> };
+        }) => {
+          for (const r of req.requestBody.requests) {
+            const title = r.addSheet?.properties?.title;
+            if (title && !data.has(title)) data.set(title, []);
+          }
+          return { data: {} };
+        },
+      ),
       values: {
         get: vi.fn(async (req: { range: string }) => {
           const sheetName = req.range.split('!')[0]!;
@@ -88,9 +92,7 @@ describe('decodeServiceAccountKey', () => {
   });
 
   it('lança erro se faltam campos obrigatórios', () => {
-    expect(() => decodeServiceAccountKey('{"foo":"bar"}')).toThrow(
-      /client_email ou private_key/,
-    );
+    expect(() => decodeServiceAccountKey('{"foo":"bar"}')).toThrow(/client_email ou private_key/);
   });
 });
 
@@ -150,11 +152,7 @@ describe('readAll / clearAndWrite', () => {
 
   it('clearAndWrite limpa A2+ e escreve novas linhas', async () => {
     const client = makeClient({
-      tabela: [
-        ['col1'],
-        ['old1'],
-        ['old2'],
-      ],
+      tabela: [['col1'], ['old1'], ['old2']],
     });
     await clearAndWrite(client as unknown as sheets_v4.Sheets, 'sid', 'tabela', [
       ['novo1'],
@@ -182,9 +180,7 @@ describe('upsertByKey', () => {
         ['2', 'keep'],
       ],
     });
-    await upsertByKey(client as unknown as sheets_v4.Sheets, 'sid', 'tabela', 0, [
-      ['1', 'new'],
-    ]);
+    await upsertByKey(client as unknown as sheets_v4.Sheets, 'sid', 'tabela', 0, [['1', 'new']]);
     const after = await readAll(client as unknown as sheets_v4.Sheets, 'sid', 'tabela');
     // Linha 0 = header, depois as data merged
     expect(after[0]).toEqual(['id', 'val']);

@@ -1,10 +1,6 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type {
-  ContatoLogistico,
-  ViaturaCbmes,
-  ViaturaQdvBaseLista,
-} from '@argus/shared-types';
+import type { ContatoLogistico, ViaturaCbmes, ViaturaQdvBaseLista } from '@argus/shared-types';
 import {
   parseContatosLogisticasCsv,
   parseQdvBaseListaCsv,
@@ -112,7 +108,8 @@ export class ViaturasQdvExtrasService {
 
   private getCacheFor<T>(sheetName: string): CacheEntry<T> | null {
     if (sheetName === 'BASE_LISTA') return this.cacheBaseLista as CacheEntry<T> | null;
-    if (sheetName === 'BASE_VTR_LISTA_PRINCIPAL') return this.cacheVtrPrincipal as CacheEntry<T> | null;
+    if (sheetName === 'BASE_VTR_LISTA_PRINCIPAL')
+      return this.cacheVtrPrincipal as CacheEntry<T> | null;
     return this.cacheContatos as CacheEntry<T> | null;
   }
 
@@ -124,8 +121,7 @@ export class ViaturasQdvExtrasService {
   }
 
   private getInflightFor<T>(sheetName: string): Promise<CacheEntry<T>> | null {
-    if (sheetName === 'BASE_LISTA')
-      return this.inflightBaseLista as Promise<CacheEntry<T>> | null;
+    if (sheetName === 'BASE_LISTA') return this.inflightBaseLista as Promise<CacheEntry<T>> | null;
     if (sheetName === 'BASE_VTR_LISTA_PRINCIPAL')
       return this.inflightVtrPrincipal as Promise<CacheEntry<T>> | null;
     return this.inflightContatos as Promise<CacheEntry<T>> | null;
@@ -170,9 +166,11 @@ export class ViaturasQdvExtrasService {
   }
 }
 
-function cacheStatus(
-  cache: { syncedAt: number; parsed: unknown[] } | null,
-): { syncedAt: string | null; count: number; stale: boolean } {
+function cacheStatus(cache: { syncedAt: number; parsed: unknown[] } | null): {
+  syncedAt: string | null;
+  count: number;
+  stale: boolean;
+} {
   if (!cache) return { syncedAt: null, count: 0, stale: false };
   return {
     syncedAt: new Date(cache.syncedAt).toISOString(),

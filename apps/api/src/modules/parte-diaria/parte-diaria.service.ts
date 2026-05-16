@@ -133,9 +133,7 @@ export class ParteDiariaService {
     // KM inicial por recurso vem do último entry em `historicoKm` da viatura
     // (origem 'conferencia') — set pela ConferenciaViatura S6b.
     const todasViaturas = await this.viaturas.list();
-    const viaturasPorPrefixo = new Map<string, Viatura>(
-      todasViaturas.map((v) => [v.prefixo, v]),
-    );
+    const viaturasPorPrefixo = new Map<string, Viatura>(todasViaturas.map((v) => [v.prefixo, v]));
 
     const escalasOperacionais = previa.composicaoMf.map((entry) =>
       mapEscalaOperacional(entry, viaturasPorPrefixo),
@@ -241,7 +239,8 @@ function mapEscalaOperacional(
     const vtr = viaturasPorPrefixo.get(entry.vtrPrefixo);
     if (vtr?.historicoKm && vtr.historicoKm.length > 0) {
       const conferencias = vtr.historicoKm.filter((h) => h.origem === 'conferencia');
-      const ultimo = conferencias[conferencias.length - 1] ?? vtr.historicoKm[vtr.historicoKm.length - 1];
+      const ultimo =
+        conferencias[conferencias.length - 1] ?? vtr.historicoKm[vtr.historicoKm.length - 1];
       if (ultimo) kmInicial = ultimo.kmRegistrado;
     } else if (vtr?.kmAtual !== undefined) {
       kmInicial = vtr.kmAtual;
@@ -478,7 +477,11 @@ function gerarTextoAlteracaoViaturas(
   const linhas: string[] = [];
   for (const c of conferencias) {
     if (c.statusMudanca) {
-      const motivo = c.motivoBaixa ? ` (${c.motivoBaixa})` : c.observacao ? ` (${c.observacao})` : '';
+      const motivo = c.motivoBaixa
+        ? ` (${c.motivoBaixa})`
+        : c.observacao
+          ? ` (${c.observacao})`
+          : '';
       linhas.push(`${c.vtrPrefixo}: status alterado para ${c.statusMudanca}${motivo}.`);
     }
   }

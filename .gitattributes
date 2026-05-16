@@ -1,0 +1,32 @@
+# Normaliza EOL para LF em todo o repo (S2.11).
+# Resolve format:check vermelho no CI desde S2.8.1 — Windows autocrlf
+# estava persistindo CRLF nos blobs git e Prettier (endOfLine: lf) falhava.
+
+* text=auto eol=lf
+
+# Scripts/arquivos que SÓ funcionam em CRLF (PowerShell, Batch)
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binários — git não tenta normalizar
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.pdf binary
+*.xlsx binary
+*.xlsm binary
+*.xls binary
+*.docx binary
+*.doc binary
+*.zip binary
+*.gz binary
+*.tar binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary

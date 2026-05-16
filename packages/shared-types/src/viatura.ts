@@ -130,12 +130,10 @@ export const createViaturaSchema = viaturaSchema
   });
 export type CreateViaturaInput = z.infer<typeof createViaturaSchema>;
 
-export const updateViaturaSchema = createViaturaSchema
-  .partial()
-  .extend({
-    /** Permite edição via PUT (na tela de detalhe). */
-    estadoTanquePercent: z.number().min(0).max(100).optional(),
-  });
+export const updateViaturaSchema = createViaturaSchema.partial().extend({
+  /** Permite edição via PUT (na tela de detalhe). */
+  estadoTanquePercent: z.number().min(0).max(100).optional(),
+});
 export type UpdateViaturaInput = z.infer<typeof updateViaturaSchema>;
 
 export const TIPO_VIATURA_LABEL: Record<TipoViatura, string> = {

@@ -117,13 +117,13 @@ Abra a planilha-DB no navegador — você deve ver as 3 abas com cabeçalhos pre
 
 ## Troubleshooting
 
-| Erro | Causa provável | Solução |
-|------|----------------|---------|
-| `Sheets-DB desabilitado (faltam SHEETS_DB_ID e/ou GOOGLE_SHEETS_SA_KEY_BASE64)` | Env vars não definidas | Confirme que o `.env` foi carregado e contém ambas |
-| `GOOGLE_SHEETS_SA_KEY_BASE64 não é JSON válido` | Base64 truncado ao copiar/colar | Re-gere base64 sem quebras de linha (`-w0` no Linux) |
-| `403 The caller does not have permission` | SA não compartilhada como Editor | Refazer Passo 5; verificar email exato da SA |
-| `404 Requested entity was not found` | `SHEETS_DB_ID` errado | Conferir ID extraído da URL da planilha |
-| `429 Quota exceeded` | Rate limit (60 req/min/SA) | Sheets-DB tem cache 60s; se persistir, reduzir polling |
+| Erro                                                                            | Causa provável                   | Solução                                                |
+| ------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------ |
+| `Sheets-DB desabilitado (faltam SHEETS_DB_ID e/ou GOOGLE_SHEETS_SA_KEY_BASE64)` | Env vars não definidas           | Confirme que o `.env` foi carregado e contém ambas     |
+| `GOOGLE_SHEETS_SA_KEY_BASE64 não é JSON válido`                                 | Base64 truncado ao copiar/colar  | Re-gere base64 sem quebras de linha (`-w0` no Linux)   |
+| `403 The caller does not have permission`                                       | SA não compartilhada como Editor | Refazer Passo 5; verificar email exato da SA           |
+| `404 Requested entity was not found`                                            | `SHEETS_DB_ID` errado            | Conferir ID extraído da URL da planilha                |
+| `429 Quota exceeded`                                                            | Rate limit (60 req/min/SA)       | Sheets-DB tem cache 60s; se persistir, reduzir polling |
 
 ## Próximos passos
 

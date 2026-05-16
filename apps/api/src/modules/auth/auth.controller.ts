@@ -157,10 +157,7 @@ export class AuthController {
 
   @Roles('admin')
   @Put('usuarios/:nf')
-  async updateUsuario(
-    @Param('nf') nf: string,
-    @Body() body: unknown,
-  ): Promise<UserSession> {
+  async updateUsuario(@Param('nf') nf: string, @Body() body: unknown): Promise<UserSession> {
     const parsed = updateUsuarioInputSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));

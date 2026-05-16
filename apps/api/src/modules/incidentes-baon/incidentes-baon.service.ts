@@ -74,9 +74,5 @@ export class IncidentesBaonService implements OnModuleInit {
 }
 
 function normalize(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toUpperCase()
-    .trim();
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim();
 }

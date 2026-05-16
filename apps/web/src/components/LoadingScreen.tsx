@@ -61,25 +61,20 @@ export function LoadingScreen({
     >
       <Spinner />
 
-      <p
-        key={mensagem}
-        className="mt-6 animate-pulse text-base font-medium text-cbmes-blue"
-      >
+      <p key={mensagem} className="mt-6 animate-pulse text-base font-medium text-cbmes-blue">
         {mensagem}
       </p>
 
       {coldStart && !stuck && (
         <p className="mt-3 max-w-xs text-center text-xs text-slate-500">
-          O servidor estava ocioso e está aquecendo. Pode levar até 30 segundos
-          na primeira chamada.
+          O servidor estava ocioso e está aquecendo. Pode levar até 30 segundos na primeira chamada.
         </p>
       )}
 
       {stuck && (
         <div className="mt-4 flex flex-col items-center gap-2">
           <p className="max-w-xs text-center text-xs text-feedback-error">
-            Está demorando mais que o esperado. Verifique sua conexão ou tente
-            recarregar.
+            Está demorando mais que o esperado. Verifique sua conexão ou tente recarregar.
           </p>
           <button
             type="button"

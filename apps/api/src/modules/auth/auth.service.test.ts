@@ -274,9 +274,7 @@ describe('AuthService — Admin CRUD (S2.7)', () => {
   });
 
   it('updateUsuario lança NotFound se NF não existe', async () => {
-    await expect(service.updateUsuario('0000000', { nome: 'X' })).rejects.toThrow(
-      /não encontrado/,
-    );
+    await expect(service.updateUsuario('0000000', { nome: 'X' })).rejects.toThrow(/não encontrado/);
   });
 
   it('removeUsuario remove + bloqueia próxima leitura', async () => {
@@ -288,20 +286,14 @@ describe('AuthService — Admin CRUD (S2.7)', () => {
       papeis: ['militar'],
     });
     service.removeUsuario('9999995', HEITOR!.nf);
-    await expect(
-      service.login({ nf: '9999995', senha: 'batalhao01' }),
-    ).rejects.toThrow();
+    await expect(service.login({ nf: '9999995', senha: 'batalhao01' })).rejects.toThrow();
   });
 
   it('removeUsuario impede auto-deleção', () => {
-    expect(() => service.removeUsuario(HEITOR!.nf, HEITOR!.nf)).toThrow(
-      /sua própria conta/,
-    );
+    expect(() => service.removeUsuario(HEITOR!.nf, HEITOR!.nf)).toThrow(/sua própria conta/);
   });
 
   it('removeUsuario lança NotFound se NF não existe', () => {
-    expect(() => service.removeUsuario('0000000', HEITOR!.nf)).toThrow(
-      /não encontrado/,
-    );
+    expect(() => service.removeUsuario('0000000', HEITOR!.nf)).toThrow(/não encontrado/);
   });
 });

@@ -15,8 +15,11 @@ function makeMilitar(opts: Partial<Militar> & Pick<Militar, 'nf'>): Militar {
 }
 
 describe('MilitarSelect', () => {
+  // Fake timers + waitFor + microtask flush é frágil neste cenário (debounce
+  // do componente + fetch async). Mantemos real timers e esperamos o debounce
+  // de 300ms de verdade — soma de testes < 2s no total.
   beforeEach(() => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -59,7 +62,7 @@ describe('MilitarSelect', () => {
     expect(fetchMock).not.toHaveBeenCalled(); // antes do debounce
 
     await act(async () => {
-      vi.advanceTimersByTime(350);
+      await vi.advanceTimersByTimeAsync(350);
     });
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
@@ -110,7 +113,7 @@ describe('MilitarSelect', () => {
       fireEvent.change(input, { target: { value: 'BARCEL' } });
     });
     await act(async () => {
-      vi.advanceTimersByTime(350);
+      await vi.advanceTimersByTimeAsync(350);
     });
 
     await waitFor(() => expect(screen.getByText(/BARCELLOS/)).toBeInTheDocument());
@@ -157,7 +160,7 @@ describe('MilitarSelect', () => {
       fireEvent.change(input, { target: { value: 'TESTE' } });
     });
     await act(async () => {
-      vi.advanceTimersByTime(350);
+      await vi.advanceTimersByTimeAsync(350);
     });
 
     await waitFor(() => expect(screen.getByText(/OUTRO/)).toBeInTheDocument());

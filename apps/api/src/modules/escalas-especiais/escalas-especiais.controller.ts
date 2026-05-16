@@ -21,10 +21,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { EscalasEspeciaisService } from './escalas-especiais.service';
 import { EscalaEspecialParseError, parseEscalaEspecialXlsm } from './escala-especial-xlsm-parser';
 import { ServicoService } from '../servico/servico.service';
-import {
-  bloqueiosToMessage,
-  computeBloqueios,
-} from '../servico/bloqueio-reimport';
+import { bloqueiosToMessage, computeBloqueios } from '../servico/bloqueio-reimport';
 
 const listQuerySchema = z.object({
   ano: z

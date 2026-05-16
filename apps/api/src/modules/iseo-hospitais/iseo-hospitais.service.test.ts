@@ -11,10 +11,7 @@ const HPM_JANEIRO_CSV =
   'CB,NUBIA,4151194,15/01/2026,Diurno,Operador,,,,\n' +
   '3ºSGT,LIONEL,3033201,15/01/2026,Diurno,Operador,,,,\n';
 
-const HIMABA_JANEIRO_CSV =
-  HEADER +
-  '\n' +
-  '3ºSGT,RAFAELA,2511894,15/01/2026,Diurno,Condutor,,,,\n';
+const HIMABA_JANEIRO_CSV = HEADER + '\n' + '3ºSGT,RAFAELA,2511894,15/01/2026,Diurno,Condutor,,,,\n';
 
 // Estrutura real das abas ABRIL/MAIO 2026 (verificada via WebFetch em S2.8.1):
 // dados compartilhados em B-E (DATA/TURNO/FUNÇÃO/CH), 1º par F-H (HPM:
@@ -33,8 +30,7 @@ const MAIO_REAL_CSV =
 function makeConfig(sheetNames?: string): ConfigService {
   const map: Record<string, string | undefined> = {
     ISEO_HOSPITAIS_SHEET_ID: 'fake-sheet',
-    ISEO_SHEET_NAMES:
-      sheetNames ?? 'HPM JANEIRO 2026,HIMABA JANEIRO 2026,ABRIL 2026,MAIO 2026',
+    ISEO_SHEET_NAMES: sheetNames ?? 'HPM JANEIRO 2026,HIMABA JANEIRO 2026,ABRIL 2026,MAIO 2026',
   };
   return {
     get: (key: string) => map[key],
@@ -136,9 +132,7 @@ describe('IseoHospitaisService', () => {
       }
       return new Response(csvForSheet(url), { status: 200 });
     });
-    const svc = new IseoHospitaisService(
-      makeConfig('HPM JANEIRO 2026,HIMABA JANEIRO 2026'),
-    );
+    const svc = new IseoHospitaisService(makeConfig('HPM JANEIRO 2026,HIMABA JANEIRO 2026'));
     const all = await svc.list();
     expect(all.length).toBeGreaterThan(0);
     expect(all.some((e) => e.unidade === 'HIMABA')).toBe(true);

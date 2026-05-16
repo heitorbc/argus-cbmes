@@ -83,12 +83,7 @@ describe('ConferenciaEquipeService', () => {
 
   it('marcarPresenca granular funciona e mantém outras marcações', async () => {
     await svc.bulkUpdate(dataIso, { entries: [e1, e3] }, chefeAbtsNf, true);
-    await svc.marcarPresenca(
-      dataIso,
-      { ...e3, statusConferencia: 'ausente' },
-      chefeAbtsNf,
-      true,
-    );
+    await svc.marcarPresenca(dataIso, { ...e3, statusConferencia: 'ausente' }, chefeAbtsNf, true);
     const r = svc.getByData(dataIso);
     expect(r).toHaveLength(2);
     expect(r.find((x) => x.funcao === 'Op1')?.statusConferencia).toBe('ausente');
@@ -186,9 +181,9 @@ describe('ConferenciaEquipeService', () => {
   });
 
   it('NF sem comando não pode marcar nada (ForbiddenException)', async () => {
-    await expect(
-      svc.bulkUpdate(dataIso, { entries: [e1] }, '0000000', false),
-    ).rejects.toThrow(ForbiddenException);
+    await expect(svc.bulkUpdate(dataIso, { entries: [e1] }, '0000000', false)).rejects.toThrow(
+      ForbiddenException,
+    );
   });
 
   it('bulkUpdate de Chefe RESGATE preserva entries do ABTS marcadas pelo Chefe ABTS', async () => {

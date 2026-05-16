@@ -11,10 +11,7 @@ import type {
 import { resolveDataDir } from '../../common/dev-fixtures';
 import { parseEscalaXlsx, parseFilename } from './escala-xlsx-parser';
 import { SheetsDbService } from '../sheets-db/sheets-db.service';
-import {
-  escalaMensalToRows,
-  rowsToEscalasMensais,
-} from '../sheets-db/sheets-db-serializers';
+import { escalaMensalToRows, rowsToEscalasMensais } from '../sheets-db/sheets-db-serializers';
 
 interface EscalaKey {
   ano: number;
@@ -166,7 +163,9 @@ export class EscalasService implements OnModuleInit {
   private async bootstrapFromFilesystem(): Promise<void> {
     const dataDir = resolveDataDir('Escala de Serviço');
     if (!dataDir) {
-      this.logger.warn('Bootstrap escalas: pasta "data/Escala de Serviço/" não encontrada — pulando.');
+      this.logger.warn(
+        'Bootstrap escalas: pasta "data/Escala de Serviço/" não encontrada — pulando.',
+      );
       return;
     }
     const xlsxFiles = readdirSync(dataDir)
@@ -191,7 +190,9 @@ export class EscalasService implements OnModuleInit {
       try {
         const escala = await parseEscalaXlsx({ buffer, filename: f });
         this.byMes.set(key(escala), escala);
-        this.logger.log(`Bootstrap escala: ${f} (${String(escala.mes).padStart(2, '0')}/${escala.ano})`);
+        this.logger.log(
+          `Bootstrap escala: ${f} (${String(escala.mes).padStart(2, '0')}/${escala.ano})`,
+        );
       } catch (err) {
         this.logger.error(`Bootstrap escala falhou para "${f}": ${(err as Error).message}`);
       }
@@ -320,9 +321,7 @@ export class EscalasService implements OnModuleInit {
       `${c.equipe}|${c.viatura}|${c.funcao}`;
     const target = matchKey(entry);
     const bucketKey = quinzena === 1 ? 'q1' : 'q2';
-    const filtered = escala.composicaoPorQuinzena[bucketKey].filter(
-      (c) => matchKey(c) !== target,
-    );
+    const filtered = escala.composicaoPorQuinzena[bucketKey].filter((c) => matchKey(c) !== target);
     if (entry.militar !== null) {
       filtered.push(entry as ComposicaoEntry);
     }

@@ -124,8 +124,18 @@ class FakeMateriaisService {
 }
 
 class FakeConferenciaViaturaService {
-  entries: Array<{ vtrPrefixo: string; statusMudanca?: string; motivoBaixa?: string; observacao?: string }> = [];
-  getByData(): Array<{ vtrPrefixo: string; statusMudanca?: string; motivoBaixa?: string; observacao?: string }> {
+  entries: Array<{
+    vtrPrefixo: string;
+    statusMudanca?: string;
+    motivoBaixa?: string;
+    observacao?: string;
+  }> = [];
+  getByData(): Array<{
+    vtrPrefixo: string;
+    statusMudanca?: string;
+    motivoBaixa?: string;
+    observacao?: string;
+  }> {
     return this.entries;
   }
 }

@@ -1,9 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type {
-  EscalaEspecialMensal,
-  EscalaMensal,
-  NotaServico,
-} from '@argus/shared-types';
+import type { EscalaEspecialMensal, EscalaMensal, NotaServico } from '@argus/shared-types';
 import { EscalasService } from '../escalas/escalas.service';
 import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.service';
 import { NotasServicoService } from '../notas-servico/notas-servico.service';
@@ -77,11 +73,7 @@ describe('EscalasService dual-write', () => {
     svc.save(escalaMensalSample);
     // fire-and-forget: aguarda 1 tick
     await new Promise((r) => setImmediate(r));
-    expect(sheetsDb.replaceEscalaMensalMes).toHaveBeenCalledWith(
-      2026,
-      5,
-      expect.any(Array),
-    );
+    expect(sheetsDb.replaceEscalaMensalMes).toHaveBeenCalledWith(2026, 5, expect.any(Array));
   });
 
   it('save() é no-op para Sheets-DB quando desabilitado', async () => {
