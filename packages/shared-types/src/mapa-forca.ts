@@ -158,6 +158,13 @@ export const previaTrocaSchema = z.object({
    * "Autorizada" para distinguir das trocas manuais (`ajustes.trocas`).
    */
   origemAutorizada: z.boolean().optional(),
+  /**
+   * S2.8.3 — Status da troca conforme planilha (col A "STATUS TROCA").
+   * Exibido como badge na Prévia para o Fiscal de Serviço.
+   *  - VERIFICADO: ambos militares preencheram o formulário
+   *  - PENDENTE: só um lado preencheu (atenção do Fiscal)
+   */
+  statusTroca: z.enum(['VERIFICADO', 'PENDENTE']).optional(),
   /** Função (opcional, vem das trocas autorizadas). */
   funcao: z.string().optional(),
   /** Nº E-Docs da autorização (opcional). */

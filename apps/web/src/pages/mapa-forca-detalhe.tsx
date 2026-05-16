@@ -3349,8 +3349,27 @@ function TrocasAutorizadasReadOnly({
                 <strong>{t.substitutoRaw}</strong>
                 {t.substitutoNf && <span className="ml-1 text-slate-500">(NF {t.substitutoNf})</span>}
               </span>
-              <span className="rounded-full bg-cbmes-blue/15 px-2 py-0.5 text-[10px] font-bold uppercase text-cbmes-blue">
-                Autorizada
+              <span className="flex items-center gap-1">
+                {/* S2.8.3 — badge VERIFICADO/PENDENTE para o Fiscal */}
+                {t.statusTroca === 'VERIFICADO' && (
+                  <span
+                    className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800"
+                    title="Ambos militares preencheram o formulário institucional"
+                  >
+                    🟢 VERIFICADO
+                  </span>
+                )}
+                {t.statusTroca === 'PENDENTE' && (
+                  <span
+                    className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800"
+                    title="Apenas um lado preencheu o formulário — confirme com o militar"
+                  >
+                    🟡 PENDENTE
+                  </span>
+                )}
+                <span className="rounded-full bg-cbmes-blue/15 px-2 py-0.5 text-[10px] font-bold uppercase text-cbmes-blue">
+                  Autorizada
+                </span>
               </span>
             </div>
             {(t.funcao || t.numeroEdocs) && (

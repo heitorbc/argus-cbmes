@@ -91,7 +91,7 @@ export class AgendaService {
         this.coletarAtestados(nf, dataInicioIso, dataFimIso),
         this.coletarDispensas(nf, dataInicioIso, dataFimIso),
         this.coletarFerias(nf, dataInicioIso, dataFimIso),
-        this.coletarTrocasAutorizadas(nome, dataInicioIso, dataFimIso),
+        this.coletarTrocasAutorizadas(nf, nome, dataInicioIso, dataFimIso),
       ]);
 
     const itens = [
@@ -385,18 +385,29 @@ export class AgendaService {
    * ausência da escala mensal naquele dia.
    */
   private async coletarTrocasAutorizadas(
+    nf: string,
     nome: string | undefined,
     inicio: string,
     fim: string,
   ): Promise<AgendaItem[]> {
-    if (!nome) return [];
     const out: AgendaItem[] = [];
-    const needle = nome.toUpperCase();
+    const needle = nome?.toUpperCase();
     try {
       const todas = await this.trocasAutorizadas.listAll();
       for (const t of todas) {
-        const matchSubstituto = t.substituto?.toUpperCase().includes(needle);
-        const matchPagamento = t.escaladoPagamento?.toUpperCase().includes(needle);
+        // S2.8.3 — match prioritário por NF (col K do CSV). Fallback nome
+        // mantido para retrocompat com linhas antigas sem NF preenchida.
+        const matchSubstituto =
+          t.substitutoNf === nf ||
+          (!t.substitutoNf && needle ? t.substituto?.toUpperCase().includes(needle) : false);
+        // Para o pagamento, escaladoOriginal vira "substituto do pagamento" —
+        // ou seja, o militar logado paga (assume serviço) na dataPagamento se
+        // ele é o `escaladoOriginal` da troca.
+        const matchPagamento =
+          t.escaladoOriginalNf === nf ||
+          (!t.escaladoOriginalNf && needle
+            ? t.escaladoPagamento?.toUpperCase().includes(needle)
+            : false);
         if (matchSubstituto && t.dataEscala >= inicio && t.dataEscala <= fim) {
           out.push({
             data: t.dataEscala,

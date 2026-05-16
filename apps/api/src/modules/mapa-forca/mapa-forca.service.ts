@@ -863,7 +863,12 @@ function converterTrocaAutorizadaEmPrevia(
     dataEscala: string;
     dataPagamento: string;
     escaladoOriginal: string;
+    /** S2.8.3 — NF direto vindo da planilha (col G). Quando presente,
+     *  elimina ambiguidade do NomeMatcher. */
+    escaladoOriginalNf?: string;
     substituto: string;
+    /** S2.8.3 — NF direto vindo da planilha (col K). */
+    substitutoNf?: string;
     escaladoPagamento: string;
     substitutoPagamento: string;
     funcao: string;
@@ -871,6 +876,8 @@ function converterTrocaAutorizadaEmPrevia(
     horario: string;
     horarioPagamento: string;
     numeroEdocs?: string;
+    /** S2.8.3 — Status verificado pela planilha (VERIFICADO/PENDENTE). */
+    statusTroca?: 'VERIFICADO' | 'PENDENTE';
   },
   dataIso: string,
   matcher: NomeMatcher,
@@ -885,6 +892,7 @@ function converterTrocaAutorizadaEmPrevia(
   funcao?: string;
   numeroEdocs?: string;
   origemAutorizada: boolean;
+  statusTroca?: 'VERIFICADO' | 'PENDENTE';
 } {
   const isLadoEscala = troca.dataEscala === dataIso;
   const escaladoRaw = isLadoEscala ? troca.escaladoOriginal : troca.escaladoPagamento;
@@ -892,13 +900,22 @@ function converterTrocaAutorizadaEmPrevia(
   const funcao = isLadoEscala ? troca.funcao : troca.funcaoPagamento;
   const horario = isLadoEscala ? troca.horario : troca.horarioPagamento;
 
-  const substituidoNf = resolverNfTrocaAutorizada(escaladoRaw, 'escalado', matcher, inconsistencias);
-  const substitutoNf = resolverNfTrocaAutorizada(
-    substitutoRaw,
-    'substituto',
-    matcher,
-    inconsistencias,
-  );
+  // S2.8.3 — usa NF direto da planilha (cols G/K) quando disponível
+  // no lado escala. No lado pagamento, os papéis se invertem (escalado
+  // do pagamento = substituto da troca original, e vice-versa).
+  const escaladoNfDireto = isLadoEscala
+    ? troca.escaladoOriginalNf
+    : troca.substitutoNf;
+  const substitutoNfDireto = isLadoEscala
+    ? troca.substitutoNf
+    : troca.escaladoOriginalNf;
+
+  const substituidoNf =
+    escaladoNfDireto ??
+    resolverNfTrocaAutorizada(escaladoRaw, 'escalado', matcher, inconsistencias);
+  const substitutoNf =
+    substitutoNfDireto ??
+    resolverNfTrocaAutorizada(substitutoRaw, 'substituto', matcher, inconsistencias);
 
   // S0.5/0.1.1.3 — Quando a função da troca envolve Chefe de Operações,
   // validar que o substituto está habilitado (presente na planilha ChOp).
@@ -927,6 +944,7 @@ function converterTrocaAutorizadaEmPrevia(
     funcao: funcao || undefined,
     numeroEdocs: troca.numeroEdocs,
     origemAutorizada: true,
+    statusTroca: troca.statusTroca,
   };
 }
 
