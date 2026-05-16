@@ -36,13 +36,14 @@ import { TrocasPage } from '@/pages/trocas';
 import { NotasServicoPage } from '@/pages/notas-servico';
 import { ParteDiariaPage } from '@/pages/parte-diaria';
 import { ServicoIdeoPage } from '@/pages/servico-ideo';
+import { LoadingScreen } from '@/components/LoadingScreen';
 
+/**
+ * S2.5 — substituído por `LoadingScreen` (animado + escalação por tempo
+ * para cobrir cold start do backend Render free tier).
+ */
 function FullScreenLoader() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-white">
-      <p className="text-sm text-slate-500">Carregando…</p>
-    </div>
-  );
+  return <LoadingScreen />;
 }
 
 function ProtectedRoute() {
