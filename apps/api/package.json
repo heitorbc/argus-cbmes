@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "prisma:generate": "prisma generate",
-    "prisma:migrate:dev": "prisma migrate dev"
+    "prisma:migrate:dev": "dotenv -e ../../.env.local -- prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "prisma:studio": "dotenv -e ../../.env.local -- prisma studio"
   },
   "dependencies": {
     "@argus/shared-types": "workspace:*",
@@ -43,6 +45,7 @@
     "@types/node": "^22.0.0",
     "@types/pdf-parse": "^1.1.5",
     "@types/supertest": "^6.0.2",
+    "dotenv-cli": "^7.4.4",
     "jszip": "^3.10.1",
     "prisma": "^5.22.0",
     "source-map-support": "^0.5.21",

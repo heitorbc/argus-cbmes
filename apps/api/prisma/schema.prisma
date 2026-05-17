@@ -22,8 +22,11 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // Runtime usa o pooler (porta 6543, transaction mode) — serverless friendly.
+  url       = env("DATABASE_URL")
+  // Migrations usam a conexão direta (5432) — pooler não suporta DDL/prepared statements.
+  directUrl = env("DIRECT_URL")
 }
 
 // ────────────────────────────────────────────────────────────────────────
