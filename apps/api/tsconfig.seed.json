@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "experimentalDecorators": false,
+    "emitDecoratorMetadata": false
+  },
+  "include": ["prisma/seed.ts", "src/modules/auth/mock-users.ts"],
+  "exclude": ["node_modules", "dist"]
+}

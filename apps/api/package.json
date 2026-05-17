@@ -13,7 +13,11 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "dotenv -e ../../.env.local -- prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
-    "prisma:studio": "dotenv -e ../../.env.local -- prisma studio"
+    "prisma:studio": "dotenv -e ../../.env.local -- prisma studio",
+    "prisma:seed": "dotenv -e ../../.env.local -- prisma db seed"
+  },
+  "prisma": {
+    "seed": "ts-node --transpile-only -P tsconfig.seed.json prisma/seed.ts"
   },
   "dependencies": {
     "@argus/shared-types": "workspace:*",

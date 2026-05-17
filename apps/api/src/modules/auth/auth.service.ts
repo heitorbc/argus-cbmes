@@ -1,19 +1,26 @@
-import { HttpException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  ConflictException,
+  HttpException,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 
 /** HTTP 423 Locked — não está em HttpStatus do NestJS 10. */
 const HTTP_LOCKED = 423;
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import type { User } from '@prisma/client';
 import type {
   ChangePasswordInput,
   CreateUsuarioInput,
   LoginInput,
+  Papel,
   UpdateUsuarioInput,
   UserSession,
 } from '@argus/shared-types';
-import { MOCK_USERS, type MockUser } from './mock-users';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import { LoginRateLimiter } from './login-rate-limiter';
 
 /** S2.7 — Senha default para usuários criados via admin. */
@@ -24,10 +31,8 @@ export const JWT_TTL_SECONDS = 8 * 60 * 60;
 
 @Injectable()
 export class AuthService {
-  /** Em S1, sobrescreve mock-users em memória; em S5+, persistência via Prisma. */
-  private readonly users: Map<string, MockUser> = new Map(MOCK_USERS.map((u) => [u.nf, { ...u }]));
-
   constructor(
+    private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly rateLimiter: LoginRateLimiter,
@@ -43,7 +48,7 @@ export class AuthService {
       );
     }
 
-    const user = this.users.get(input.nf);
+    const user = await this.findActiveByNf(input.nf);
     if (!user) {
       this.rateLimiter.registerFailure(input.nf);
       throw new UnauthorizedException('NF ou senha inválidos');
@@ -57,13 +62,18 @@ export class AuthService {
 
     this.rateLimiter.reset(input.nf);
 
+    // Marca último login (fire-and-forget — falha aqui não impede o login).
+    void this.prisma.user
+      .update({ where: { nf: input.nf }, data: { ultimoLoginEm: new Date() } })
+      .catch(() => undefined);
+
     const session = this.toSession(user);
     const token = await this.signToken(session);
     return { user: session, token };
   }
 
   async changePassword(nf: string, input: ChangePasswordInput): Promise<UserSession> {
-    const user = this.users.get(nf);
+    const user = await this.findActiveByNf(nf);
     if (!user) {
       throw new UnauthorizedException('Usuário não encontrado');
     }
@@ -73,11 +83,13 @@ export class AuthService {
       throw new UnauthorizedException('Senha atual incorreta');
     }
 
-    const cost = Number(this.config.get<string>('BCRYPT_COST') ?? 12);
-    user.senhaHash = await bcrypt.hash(input.novaSenha, cost);
-    user.primeiroAcesso = false;
-
-    return this.toSession(user);
+    const cost = this.bcryptCost();
+    const senhaHash = await bcrypt.hash(input.novaSenha, cost);
+    const updated = await this.prisma.user.update({
+      where: { nf },
+      data: { senhaHash, primeiroAcesso: false },
+    });
+    return this.toSession(updated);
   }
 
   /**
@@ -88,7 +100,7 @@ export class AuthService {
    * (não há senha pra trocar nesse modo).
    */
   async loginAsPersona(nf: string): Promise<{ user: UserSession; token: string }> {
-    const user = this.users.get(nf);
+    const user = await this.findActiveByNf(nf);
     if (!user) {
       throw new UnauthorizedException('Persona não encontrada');
     }
@@ -99,24 +111,25 @@ export class AuthService {
 
   /**
    * Lista personas disponíveis para o picker (apenas campos públicos —
-   * NUNCA expõe `senhaHash`/`cpfFake`).
+   * NUNCA expõe `senhaHash`).
    */
-  listPersonas(): Array<{
-    nf: string;
-    nome: string;
-    posto: string;
-    papeis: UserSession['papeis'];
-  }> {
-    return Array.from(this.users.values()).map((u) => ({
+  async listPersonas(): Promise<
+    Array<{ nf: string; nome: string; posto: string; papeis: UserSession['papeis'] }>
+  > {
+    const users = await this.prisma.user.findMany({
+      where: { deletedAt: null },
+      select: { nf: true, nome: true, posto: true, papeis: true },
+    });
+    return users.map((u) => ({
       nf: u.nf,
       nome: u.nome,
       posto: u.posto,
-      papeis: u.papeis,
+      papeis: u.papeis as Papel[],
     }));
   }
 
-  getCurrentUser(nf: string): UserSession {
-    const user = this.users.get(nf);
+  async getCurrentUser(nf: string): Promise<UserSession> {
+    const user = await this.findActiveByNf(nf);
     if (!user) {
       throw new UnauthorizedException('Usuário não encontrado');
     }
@@ -128,52 +141,62 @@ export class AuthService {
     return this.jwt.signAsync(session, { secret, expiresIn: JWT_TTL_SECONDS });
   }
 
-  private toSession(user: MockUser): UserSession {
+  private toSession(user: User): UserSession {
     return {
       nf: user.nf,
       nome: user.nome,
       posto: user.posto,
       ant: user.ant,
-      papeis: user.papeis,
+      papeis: user.papeis as Papel[],
       primeiroAcesso: user.primeiroAcesso,
     };
   }
 
+  private async findActiveByNf(nf: string): Promise<User | null> {
+    return this.prisma.user.findFirst({ where: { nf, deletedAt: null } });
+  }
+
+  private bcryptCost(): number {
+    return Number(this.config.get<string>('BCRYPT_COST') ?? 12);
+  }
+
   // ── S2.7 — Admin CRUD de usuários ───────────────────────────────
 
-  /**
-   * Lista todos os usuários cadastrados (sem campos sensíveis). Ordena
-   * por nome para facilitar busca visual.
-   */
-  listUsuarios(): UserSession[] {
-    return Array.from(this.users.values())
-      .map((u) => this.toSession(u))
-      .sort((a, b) => a.nome.localeCompare(b.nome));
+  /** Lista todos os usuários (sem campos sensíveis), ordenados por nome. */
+  async listUsuarios(): Promise<UserSession[]> {
+    const users = await this.prisma.user.findMany({
+      where: { deletedAt: null },
+      orderBy: { nome: 'asc' },
+    });
+    return users.map((u) => this.toSession(u));
   }
 
   /**
-   * Cria novo usuário. NF é a chave única — colisão rejeita com 409.
-   * Senha inicial: parâmetro `senhaInicial` ou DEFAULT_SENHA. `primeiroAcesso`
-   * sempre true (força troca no 1º login).
+   * Cria novo usuário. NF é única — colisão rejeita com 409. Senha inicial:
+   * `senhaInicial` ou DEFAULT_SENHA. `primeiroAcesso` sempre true.
    */
   async createUsuario(input: CreateUsuarioInput): Promise<UserSession> {
-    if (this.users.has(input.nf)) {
+    const existing = await this.prisma.user.findUnique({ where: { nf: input.nf } });
+    if (existing && !existing.deletedAt) {
       throw new ConflictException(`Usuário NF ${input.nf} já existe`);
     }
     const senha = input.senhaInicial ?? DEFAULT_SENHA;
-    const cost = Number(this.config.get<string>('BCRYPT_COST') ?? 12);
-    const novo: MockUser = {
+    const senhaHash = await bcrypt.hash(senha, this.bcryptCost());
+    const data = {
       nf: input.nf,
       nome: input.nome,
       posto: input.posto,
       ant: input.ant,
-      cpfFake: senha,
-      senhaHash: await bcrypt.hash(senha, cost),
       papeis: input.papeis,
+      senhaHash,
       primeiroAcesso: true,
+      deletedAt: null,
     };
-    this.users.set(novo.nf, novo);
-    return this.toSession(novo);
+    // Se existia soft-deleted, ressuscita; caso contrário cria.
+    const user = existing
+      ? await this.prisma.user.update({ where: { nf: input.nf }, data })
+      : await this.prisma.user.create({ data });
+    return this.toSession(user);
   }
 
   /**
@@ -181,31 +204,39 @@ export class AuthService {
    * para DEFAULT_SENHA e marca primeiroAcesso=true.
    */
   async updateUsuario(nf: string, input: UpdateUsuarioInput): Promise<UserSession> {
-    const user = this.users.get(nf);
+    const user = await this.findActiveByNf(nf);
     if (!user) {
       throw new NotFoundException(`Usuário NF ${nf} não encontrado`);
     }
-    if (input.nome !== undefined) user.nome = input.nome;
-    if (input.posto !== undefined) user.posto = input.posto;
-    if (input.ant !== undefined) user.ant = input.ant;
-    if (input.papeis !== undefined) user.papeis = input.papeis;
+    const data: {
+      nome?: string;
+      posto?: string;
+      ant?: number;
+      papeis?: Papel[];
+      senhaHash?: string;
+      primeiroAcesso?: boolean;
+    } = {};
+    if (input.nome !== undefined) data.nome = input.nome;
+    if (input.posto !== undefined) data.posto = input.posto;
+    if (input.ant !== undefined) data.ant = input.ant;
+    if (input.papeis !== undefined) data.papeis = input.papeis;
     if (input.resetSenha) {
-      const cost = Number(this.config.get<string>('BCRYPT_COST') ?? 12);
-      user.cpfFake = DEFAULT_SENHA;
-      user.senhaHash = await bcrypt.hash(DEFAULT_SENHA, cost);
-      user.primeiroAcesso = true;
+      data.senhaHash = await bcrypt.hash(DEFAULT_SENHA, this.bcryptCost());
+      data.primeiroAcesso = true;
     }
-    return this.toSession(user);
+    const updated = await this.prisma.user.update({ where: { nf }, data });
+    return this.toSession(updated);
   }
 
-  /** Remove usuário. Não permite auto-deleção (admin não pode deletar a si mesmo). */
-  removeUsuario(nf: string, currentUserNf: string): void {
+  /** Soft delete. Não permite auto-deleção (admin não pode deletar a si mesmo). */
+  async removeUsuario(nf: string, currentUserNf: string): Promise<void> {
     if (nf === currentUserNf) {
       throw new ConflictException('Você não pode remover sua própria conta');
     }
-    if (!this.users.has(nf)) {
+    const user = await this.findActiveByNf(nf);
+    if (!user) {
       throw new NotFoundException(`Usuário NF ${nf} não encontrado`);
     }
-    this.users.delete(nf);
+    await this.prisma.user.update({ where: { nf }, data: { deletedAt: new Date() } });
   }
 }
