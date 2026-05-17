@@ -99,12 +99,9 @@ export class AuthController {
    */
   @Public()
   @Get('dev/personas')
-  listPersonas(): Array<{
-    nf: string;
-    nome: string;
-    posto: string;
-    papeis: UserSession['papeis'];
-  }> {
+  async listPersonas(): Promise<
+    Array<{ nf: string; nome: string; posto: string; papeis: UserSession['papeis'] }>
+  > {
     this.assertPersonaPickerEnabled();
     return this.authService.listPersonas();
   }
@@ -140,7 +137,7 @@ export class AuthController {
    */
   @Roles('admin')
   @Get('usuarios')
-  listUsuarios(): UserSession[] {
+  async listUsuarios(): Promise<UserSession[]> {
     return this.authService.listUsuarios();
   }
 
@@ -168,8 +165,8 @@ export class AuthController {
   @Roles('admin')
   @Delete('usuarios/:nf')
   @HttpCode(HttpStatus.NO_CONTENT)
-  removeUsuario(@Param('nf') nf: string, @CurrentUser() current: UserSession): void {
-    this.authService.removeUsuario(nf, current.nf);
+  async removeUsuario(@Param('nf') nf: string, @CurrentUser() current: UserSession): Promise<void> {
+    await this.authService.removeUsuario(nf, current.nf);
   }
 
   private setSessionCookie(res: Response, token: string): void {

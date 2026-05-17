@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { PrismaModule } from './common/prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AgendaModule } from './modules/agenda/agenda.module';
 import { ChefesOperacoesModule } from './modules/chefes-operacoes/chefes-operacoes.module';
@@ -42,6 +43,7 @@ import { ViaturasModule } from './modules/viaturas/viaturas.module';
       // não existem e o ConfigModule cai no `process.env`.
       envFilePath: ['.env.local', '../../.env.local', '.env', '../../.env'],
     }),
+    PrismaModule,
     AtestadosModule,
     AuthModule,
     AgendaModule,

@@ -2,11 +2,83 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { UnauthorizedException, HttpException } from '@nestjs/common';
+import bcrypt from 'bcryptjs';
+import type { User } from '@prisma/client';
 import { AuthService } from './auth.service';
 import { LoginRateLimiter } from './login-rate-limiter';
 import { MOCK_USERS } from './mock-users';
+import type { PrismaService } from '../../common/prisma/prisma.service';
 
-function makeService(): AuthService {
+/**
+ * Mock in-memory do `PrismaService` — implementa apenas os métodos de
+ * `user` usados pelo AuthService. Suficiente pra rodar todos os asserts
+ * sem precisar de Postgres real no test runner.
+ */
+function makePrismaMock(seed: User[]): PrismaService {
+  const store = new Map<string, User>(seed.map((u) => [u.nf, { ...u }]));
+  const userModel = {
+    findFirst: async ({ where }: { where: { nf: string; deletedAt: null } }) => {
+      const u = store.get(where.nf);
+      if (!u || u.deletedAt) return null;
+      return u;
+    },
+    findUnique: async ({ where }: { where: { nf: string } }) => {
+      return store.get(where.nf) ?? null;
+    },
+    findMany: async ({
+      where,
+      orderBy,
+    }: {
+      where?: { deletedAt: null };
+      orderBy?: { nome: 'asc' };
+    }) => {
+      let arr = [...store.values()];
+      if (where) arr = arr.filter((u) => !u.deletedAt);
+      if (orderBy?.nome === 'asc') arr.sort((a, b) => a.nome.localeCompare(b.nome));
+      return arr;
+    },
+    update: async ({ where, data }: { where: { nf: string }; data: Partial<User> }) => {
+      const u = store.get(where.nf);
+      if (!u) throw new Error(`No user ${where.nf}`);
+      const next = { ...u, ...data, atualizadoEm: new Date() } as User;
+      store.set(where.nf, next);
+      return next;
+    },
+    create: async ({ data }: { data: Omit<User, 'id' | 'criadoEm' | 'atualizadoEm'> }) => {
+      const now = new Date();
+      const next: User = {
+        id: `cuid-${data.nf}`,
+        ultimoLoginEm: null,
+        criadoEm: now,
+        atualizadoEm: now,
+        ...data,
+      } as User;
+      store.set(next.nf, next);
+      return next;
+    },
+  };
+  return { user: userModel } as unknown as PrismaService;
+}
+
+async function seedUsers(): Promise<User[]> {
+  const hash = await bcrypt.hash('batalhao01', 4);
+  return MOCK_USERS.map((u) => ({
+    id: `cuid-${u.nf}`,
+    nf: u.nf,
+    nome: u.nome,
+    posto: u.posto,
+    ant: u.ant,
+    papeis: u.papeis,
+    senhaHash: hash,
+    primeiroAcesso: true,
+    ultimoLoginEm: null,
+    criadoEm: new Date(),
+    atualizadoEm: new Date(),
+    deletedAt: null,
+  }));
+}
+
+async function makeService(): Promise<AuthService> {
   const config = {
     get: (key: string) => {
       if (key === 'JWT_SECRET') return 'test-secret-with-enough-bytes-for-hs256-please';
@@ -20,28 +92,30 @@ function makeService(): AuthService {
   } as unknown as ConfigService;
 
   const jwt = new JwtService({ secret: 'test-secret-with-enough-bytes-for-hs256-please' });
-  return new AuthService(jwt, config, new LoginRateLimiter());
+  const prisma = makePrismaMock(await seedUsers());
+  return new AuthService(prisma, jwt, config, new LoginRateLimiter());
 }
 
-const HEITOR = MOCK_USERS[0]; // 3037509 / cpfFake = '11122233344'
+const HEITOR = MOCK_USERS[0]!; // 3037509 — admin/fiscal
+const SENHA_DEFAULT = 'batalhao01';
 
 describe('AuthService.login', () => {
   let service: AuthService;
-  beforeEach(() => {
-    service = makeService();
+  beforeEach(async () => {
+    service = await makeService();
   });
 
-  it('autentica com NF e CPF mock corretos', async () => {
-    const result = await service.login({ nf: HEITOR.nf, senha: HEITOR.cpfFake });
+  it('autentica com NF e senha default corretos', async () => {
+    const result = await service.login({ nf: HEITOR.nf, senha: SENHA_DEFAULT });
     expect(result.user.nf).toBe(HEITOR.nf);
     expect(result.user.nome).toBe(HEITOR.nome);
     expect(result.user.papeis).toContain('admin');
     expect(result.token).toBeDefined();
-    expect(result.token.split('.').length).toBe(3); // JWT formato xxx.yyy.zzz
+    expect(result.token.split('.').length).toBe(3);
   });
 
   it('retorna primeiroAcesso=true para usuário recém-cadastrado', async () => {
-    const result = await service.login({ nf: HEITOR.nf, senha: HEITOR.cpfFake });
+    const result = await service.login({ nf: HEITOR.nf, senha: SENHA_DEFAULT });
     expect(result.user.primeiroAcesso).toBe(true);
   });
 
@@ -63,51 +137,45 @@ describe('AuthService.login', () => {
         UnauthorizedException,
       );
     }
-    // 6ª tentativa (mesmo com senha correta) deve dar 423
-    await expect(service.login({ nf: HEITOR.nf, senha: HEITOR.cpfFake })).rejects.toThrow(
+    await expect(service.login({ nf: HEITOR.nf, senha: SENHA_DEFAULT })).rejects.toThrow(
       HttpException,
     );
-  }, 15_000); // bcrypt cost 12 × 6 compares pode ultrapassar 5s em hardware mais lento
+  });
 
   it('reseta contador de falhas após login bem-sucedido', async () => {
-    // 4 falhas (não bloqueia)
     for (let i = 0; i < 4; i++) {
       await expect(service.login({ nf: HEITOR.nf, senha: 'errada' })).rejects.toBeInstanceOf(
         UnauthorizedException,
       );
     }
-    // login certo zera o contador
-    await service.login({ nf: HEITOR.nf, senha: HEITOR.cpfFake });
-    // mais 4 falhas seguidas — não deve bloquear (contador foi zerado)
+    await service.login({ nf: HEITOR.nf, senha: SENHA_DEFAULT });
     for (let i = 0; i < 4; i++) {
       await expect(service.login({ nf: HEITOR.nf, senha: 'errada' })).rejects.toBeInstanceOf(
         UnauthorizedException,
       );
     }
-  }, 15_000); // bcrypt cost 12 × 9 compares pode ultrapassar 5s em hardware mais lento
+  });
 });
 
 describe('AuthService.changePassword', () => {
   let service: AuthService;
-  beforeEach(() => {
-    service = makeService();
+  beforeEach(async () => {
+    service = await makeService();
   });
 
   it('troca senha com sucesso e marca primeiroAcesso=false', async () => {
     const updated = await service.changePassword(HEITOR.nf, {
-      senhaAtual: HEITOR.cpfFake,
+      senhaAtual: SENHA_DEFAULT,
       novaSenha: 'NovaSenhaForte123',
       confirmacao: 'NovaSenhaForte123',
     });
     expect(updated.primeiroAcesso).toBe(false);
 
-    // depois login com nova senha funciona
     const loginNovo = await service.login({ nf: HEITOR.nf, senha: 'NovaSenhaForte123' });
     expect(loginNovo.user.nf).toBe(HEITOR.nf);
     expect(loginNovo.user.primeiroAcesso).toBe(false);
 
-    // login com senha antiga falha
-    await expect(service.login({ nf: HEITOR.nf, senha: HEITOR.cpfFake })).rejects.toBeInstanceOf(
+    await expect(service.login({ nf: HEITOR.nf, senha: SENHA_DEFAULT })).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
   });
@@ -124,49 +192,48 @@ describe('AuthService.changePassword', () => {
 });
 
 describe('AuthService.getCurrentUser', () => {
-  it('retorna o usuário pelo NF', () => {
-    const service = makeService();
-    const user = service.getCurrentUser(HEITOR.nf);
+  it('retorna o usuário pelo NF', async () => {
+    const service = await makeService();
+    const user = await service.getCurrentUser(HEITOR.nf);
     expect(user.nome).toBe(HEITOR.nome);
     expect(user.posto).toBe(HEITOR.posto);
   });
 
-  it('lança 401 para NF inexistente', () => {
-    const service = makeService();
-    expect(() => service.getCurrentUser('9999999')).toThrow(UnauthorizedException);
+  it('lança 401 para NF inexistente', async () => {
+    const service = await makeService();
+    await expect(service.getCurrentUser('9999999')).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });
 
 describe('AuthService.loginAsPersona (persona-picker homologação)', () => {
   it('emite JWT válido + primeiroAcesso=false para persona existente', async () => {
-    const service = makeService();
+    const service = await makeService();
     const result = await service.loginAsPersona(HEITOR.nf);
     expect(result.user.nf).toBe(HEITOR.nf);
     expect(result.user.papeis).toContain('admin');
-    expect(result.user.primeiroAcesso).toBe(false); // bypass sempre força false
+    expect(result.user.primeiroAcesso).toBe(false);
     expect(result.token.split('.').length).toBe(3);
   });
 
   it('lança 401 para persona inexistente', async () => {
-    const service = makeService();
+    const service = await makeService();
     await expect(service.loginAsPersona('9999999')).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });
 
 describe('AuthService.listPersonas (persona-picker homologação)', () => {
-  it('lista todos os mocks sem expor senhaHash', () => {
-    const service = makeService();
-    const list = service.listPersonas();
+  it('lista todos os mocks sem expor senhaHash', async () => {
+    const service = await makeService();
+    const list = await service.listPersonas();
     expect(list.length).toBe(MOCK_USERS.length);
-    expect(list[0]).toEqual({
-      nf: MOCK_USERS[0]!.nf,
-      nome: MOCK_USERS[0]!.nome,
-      posto: MOCK_USERS[0]!.posto,
-      papeis: MOCK_USERS[0]!.papeis,
+    const heitor = list.find((u) => u.nf === HEITOR.nf);
+    expect(heitor).toEqual({
+      nf: HEITOR.nf,
+      nome: HEITOR.nome,
+      posto: HEITOR.posto,
+      papeis: HEITOR.papeis,
     });
-    // Tipagem garante; checagem extra em runtime:
-    expect(list[0]).not.toHaveProperty('senhaHash');
-    expect(list[0]).not.toHaveProperty('cpfFake');
+    expect(heitor).not.toHaveProperty('senhaHash');
   });
 });
 
@@ -174,21 +241,20 @@ describe('AuthService.listPersonas (persona-picker homologação)', () => {
 
 describe('AuthService — Admin CRUD (S2.7)', () => {
   let service: AuthService;
-  beforeEach(() => {
-    service = makeService();
+  beforeEach(async () => {
+    service = await makeService();
   });
 
-  it('listUsuarios retorna todos sem senhaHash/cpfFake', () => {
-    const list = service.listUsuarios();
+  it('listUsuarios retorna todos sem senhaHash', async () => {
+    const list = await service.listUsuarios();
     expect(list.length).toBeGreaterThanOrEqual(MOCK_USERS.length);
     for (const u of list) {
       expect(u).not.toHaveProperty('senhaHash');
-      expect(u).not.toHaveProperty('cpfFake');
     }
   });
 
-  it('listUsuarios ordena por nome', () => {
-    const list = service.listUsuarios();
+  it('listUsuarios ordena por nome', async () => {
+    const list = await service.listUsuarios();
     for (let i = 1; i < list.length; i += 1) {
       expect(list[i - 1]!.nome.localeCompare(list[i]!.nome)).toBeLessThanOrEqual(0);
     }
@@ -204,7 +270,6 @@ describe('AuthService — Admin CRUD (S2.7)', () => {
     });
     expect(novo.nf).toBe('9999999');
     expect(novo.primeiroAcesso).toBe(true);
-    // Login com senha default funciona
     const { user } = await service.login({ nf: '9999999', senha: 'batalhao01' });
     expect(user.nome).toBe('TESTE SILVA');
   });
@@ -225,7 +290,7 @@ describe('AuthService — Admin CRUD (S2.7)', () => {
   it('createUsuario rejeita NF duplicada com ConflictException', async () => {
     await expect(
       service.createUsuario({
-        nf: HEITOR!.nf, // Heitor já existe
+        nf: HEITOR.nf,
         nome: 'OUTRO',
         posto: 'SD',
         ant: 100,
@@ -248,7 +313,7 @@ describe('AuthService — Admin CRUD (S2.7)', () => {
     });
     expect(updated.nome).toBe('ALTERADO');
     expect(updated.papeis).toEqual(['militar', 'fiscal']);
-    expect(updated.posto).toBe('SD'); // não foi alterado
+    expect(updated.posto).toBe('SD');
   });
 
   it('updateUsuario com resetSenha=true volta para batalhao01 + primeiroAcesso=true', async () => {
@@ -260,7 +325,6 @@ describe('AuthService — Admin CRUD (S2.7)', () => {
       papeis: ['militar'],
       senhaInicial: 'outrasenha',
     });
-    // Marca como já logou (simula troca de senha completada)
     await service.changePassword('9999996', {
       senhaAtual: 'outrasenha',
       novaSenha: 'novaSenha123!',
@@ -268,7 +332,6 @@ describe('AuthService — Admin CRUD (S2.7)', () => {
     });
     const updated = await service.updateUsuario('9999996', { resetSenha: true });
     expect(updated.primeiroAcesso).toBe(true);
-    // Login com senha default funciona de novo
     const { user } = await service.login({ nf: '9999996', senha: 'batalhao01' });
     expect(user.primeiroAcesso).toBe(true);
   });
@@ -277,7 +340,7 @@ describe('AuthService — Admin CRUD (S2.7)', () => {
     await expect(service.updateUsuario('0000000', { nome: 'X' })).rejects.toThrow(/não encontrado/);
   });
 
-  it('removeUsuario remove + bloqueia próxima leitura', async () => {
+  it('removeUsuario (soft delete) bloqueia próxima leitura', async () => {
     await service.createUsuario({
       nf: '9999995',
       nome: 'TEMP',
@@ -285,15 +348,15 @@ describe('AuthService — Admin CRUD (S2.7)', () => {
       ant: 100,
       papeis: ['militar'],
     });
-    service.removeUsuario('9999995', HEITOR!.nf);
+    await service.removeUsuario('9999995', HEITOR.nf);
     await expect(service.login({ nf: '9999995', senha: 'batalhao01' })).rejects.toThrow();
   });
 
-  it('removeUsuario impede auto-deleção', () => {
-    expect(() => service.removeUsuario(HEITOR!.nf, HEITOR!.nf)).toThrow(/sua própria conta/);
+  it('removeUsuario impede auto-deleção', async () => {
+    await expect(service.removeUsuario(HEITOR.nf, HEITOR.nf)).rejects.toThrow(/sua própria conta/);
   });
 
-  it('removeUsuario lança NotFound se NF não existe', () => {
-    expect(() => service.removeUsuario('0000000', HEITOR!.nf)).toThrow(/não encontrado/);
+  it('removeUsuario lança NotFound se NF não existe', async () => {
+    await expect(service.removeUsuario('0000000', HEITOR.nf)).rejects.toThrow(/não encontrado/);
   });
 });
