@@ -5,18 +5,20 @@ import {
   NotFoundException,
   type OnModuleInit,
 } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
 import type {
   CreateLocalFaxinaInput,
   LocalFaxina,
   UpdateLocalFaxinaInput,
 } from '@argus/shared-types';
+import type { LocalFaxina as PrismaLocalFaxina } from '@prisma/client';
+import { PrismaService } from '../../common/prisma/prisma.service';
 
 /**
- * Cadastro mestre de Locais de Faxina (in-memory, padrão Fase 1).
+ * Cadastro mestre de Locais de Faxina — persistência em Postgres (S2.10.3).
  *
- * Bootstrap dev cria 9 locais default informados pelo Tech Lead. Em prod,
- * o admin gerencia via `/cadastros/locais-faxina`.
+ * Bootstrap dev (NODE_ENV !== production && !== test) garante 9 defaults
+ * idempotentemente via `upsert` por nome — útil para dev local sem precisar
+ * popular manualmente. Prod e test não tocam o seed (admin cuida via CRUD).
  */
 const DEFAULT_LOCAIS = [
   'RECOLHIMENTO DO LIXO',
@@ -33,86 +35,85 @@ const DEFAULT_LOCAIS = [
 @Injectable()
 export class LocaisFaxinaService implements OnModuleInit {
   private readonly logger = new Logger(LocaisFaxinaService.name);
-  private readonly byId: Map<string, LocalFaxina> = new Map();
 
-  onModuleInit(): void {
-    if (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test') return;
-    if (this.byId.size > 0) return;
-    const now = new Date().toISOString();
-    for (const [i, nome] of DEFAULT_LOCAIS.entries()) {
-      const id = randomUUID();
-      this.byId.set(id, {
-        id,
-        nome,
-        ordem: i + 1,
-        ativo: true,
-        criadoEm: now,
-        atualizadoEm: now,
-      });
+  constructor(private readonly prisma: PrismaService) {}
+
+  async onModuleInit(): Promise<void> {
+    const env = process.env.NODE_ENV;
+    if (env === 'production' || env === 'test') return;
+    try {
+      const existing = await this.prisma.localFaxina.count();
+      if (existing > 0) return;
+      for (const [i, nome] of DEFAULT_LOCAIS.entries()) {
+        await this.prisma.localFaxina.create({
+          data: { nome, ordem: i + 1, ativo: true },
+        });
+      }
+      this.logger.log(`Locais Faxina: ${DEFAULT_LOCAIS.length} defaults dev carregados.`);
+    } catch {
+      // Banco indisponível no boot — boot prossegue; admin pode re-rodar em CRUD.
     }
-    this.logger.log(`Locais Faxina: ${DEFAULT_LOCAIS.length} defaults dev carregados.`);
   }
 
-  list(opts: { ativosOnly?: boolean } = {}): LocalFaxina[] {
-    const all = Array.from(this.byId.values()).sort((a, b) => a.ordem - b.ordem);
-    return opts.ativosOnly ? all.filter((l) => l.ativo) : all;
+  async list(opts: { ativosOnly?: boolean } = {}): Promise<LocalFaxina[]> {
+    const rows = await this.prisma.localFaxina.findMany({ orderBy: { ordem: 'asc' } });
+    const filtered = opts.ativosOnly ? rows.filter((r) => r.ativo) : rows;
+    return filtered.map(toLocalFaxina);
   }
 
-  findById(id: string): LocalFaxina {
-    const found = this.byId.get(id);
-    if (!found) throw new NotFoundException(`Local de faxina ${id} não encontrado`);
-    return found;
+  async findById(id: string): Promise<LocalFaxina> {
+    const row = await this.prisma.localFaxina.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException(`Local de faxina ${id} não encontrado`);
+    return toLocalFaxina(row);
   }
 
-  create(input: CreateLocalFaxinaInput): LocalFaxina {
+  async create(input: CreateLocalFaxinaInput): Promise<LocalFaxina> {
     const nomeNorm = input.nome.trim();
-    if (
-      Array.from(this.byId.values()).some((l) => l.nome.toLowerCase() === nomeNorm.toLowerCase())
-    ) {
+    const all = await this.prisma.localFaxina.findMany();
+    if (all.some((l) => l.nome.toLowerCase() === nomeNorm.toLowerCase())) {
       throw new ConflictException(`Local "${nomeNorm}" já existe`);
     }
-    const id = randomUUID();
-    const now = new Date().toISOString();
-    const ordem =
-      input.ordem ?? Math.max(0, ...Array.from(this.byId.values()).map((l) => l.ordem)) + 1;
-    const local: LocalFaxina = {
-      id,
-      nome: nomeNorm,
-      ordem,
-      ativo: true,
-      criadoEm: now,
-      atualizadoEm: now,
-    };
-    this.byId.set(id, local);
-    return local;
+    const ordem = input.ordem ?? Math.max(0, ...all.map((l) => l.ordem)) + 1;
+    const row = await this.prisma.localFaxina.create({
+      data: { nome: nomeNorm, ordem, ativo: true },
+    });
+    return toLocalFaxina(row);
   }
 
-  update(id: string, input: UpdateLocalFaxinaInput): LocalFaxina {
-    const current = this.findById(id);
+  async update(id: string, input: UpdateLocalFaxinaInput): Promise<LocalFaxina> {
+    const current = await this.prisma.localFaxina.findUnique({ where: { id } });
+    if (!current) throw new NotFoundException(`Local de faxina ${id} não encontrado`);
     if (input.nome !== undefined) {
       const nomeNorm = input.nome.trim();
-      const conflict = Array.from(this.byId.values()).some(
+      const all = await this.prisma.localFaxina.findMany();
+      const conflict = all.some(
         (l) => l.id !== id && l.nome.toLowerCase() === nomeNorm.toLowerCase(),
       );
       if (conflict) throw new ConflictException(`Local "${nomeNorm}" já existe`);
     }
-    const updated: LocalFaxina = {
-      ...current,
-      nome: input.nome?.trim() ?? current.nome,
-      ordem: input.ordem ?? current.ordem,
-      ativo: input.ativo ?? current.ativo,
-      atualizadoEm: new Date().toISOString(),
-    };
-    this.byId.set(id, updated);
-    return updated;
+    const row = await this.prisma.localFaxina.update({
+      where: { id },
+      data: {
+        nome: input.nome !== undefined ? input.nome.trim() : current.nome,
+        ordem: input.ordem ?? current.ordem,
+        ativo: input.ativo ?? current.ativo,
+      },
+    });
+    return toLocalFaxina(row);
   }
 
-  softDelete(id: string): LocalFaxina {
+  async softDelete(id: string): Promise<LocalFaxina> {
     return this.update(id, { ativo: false });
   }
+}
 
-  /** Para tests. */
-  reset(): void {
-    this.byId.clear();
-  }
+function toLocalFaxina(r: PrismaLocalFaxina): LocalFaxina {
+  return {
+    id: r.id,
+    nome: r.nome,
+    ordem: r.ordem,
+    ativo: r.ativo,
+    criadoEm: r.criadoEm.toISOString(),
+    atualizadoEm: r.atualizadoEm.toISOString(),
+  };
 }

@@ -75,8 +75,8 @@ export class RecursosService implements OnModuleInit {
    *
    * `ativo` default true. Geração de id usa slug do nome (igual ao seed).
    */
-  create(input: CreateRecursoInput): Recurso {
-    this.unidades.findById(input.unidadeId); // 404 se inexistente
+  async create(input: CreateRecursoInput): Promise<Recurso> {
+    await this.unidades.findById(input.unidadeId); // 404 se inexistente
     const existing = this.findByNome(input.unidadeId, input.nome);
     if (existing) {
       throw new ConflictException(

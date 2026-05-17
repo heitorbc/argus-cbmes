@@ -125,7 +125,7 @@ model Viatura {
   placa             String?
   tipo              String? // ABTS | ABT | AR | AM | AC | TE | AU | etc
   funcaoOperacional String?
-  anoModelo         Int?
+  anoModelo         String?
   status            String?
   origem            String? // "mapa_forca" | "override_admin"
   composicaoFuncoes String[] @default([])

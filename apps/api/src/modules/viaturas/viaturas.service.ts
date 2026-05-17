@@ -4,9 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
 import type {
   CreateViaturaInput,
+  HistoricoKmEntry,
   RecursoMapaForca,
   StatusVtr,
   StatusViatura,
@@ -15,7 +15,9 @@ import type {
   UpsertConferenciaViaturaInput,
   Viatura,
 } from '@argus/shared-types';
+import type { Viatura as PrismaViatura } from '@prisma/client';
 import { MapaForcaCiodesService } from '../mapa-forca-ciodes/mapa-forca-ciodes.service';
+import { PrismaService } from '../../common/prisma/prisma.service';
 
 /** Mapeia o prefixo da viatura (ABTS_011, AR_044) para o tipo institucional. */
 function tipoFromPrefixo(prefixo: string): TipoViatura {
@@ -30,10 +32,6 @@ function tipoFromPrefixo(prefixo: string): TipoViatura {
   return 'AU';
 }
 
-/**
- * S6a/ADR-009: nomenclatura interna agora espelha o MF (DISPONIVEL/BAIXADA/EMPRESTADA).
- * NAO_POSSUI vira `null` (recurso sem viatura).
- */
 function statusFromMapaForca(mf: StatusVtr | null): StatusViatura | null {
   if (mf === null) return null;
   if (mf === 'DISPONIVEL') return 'DISPONIVEL';
@@ -63,21 +61,21 @@ function viaturaFromRecurso(r: RecursoMapaForca): Viatura | null {
 }
 
 /**
- * Source of truth: aba "1º BBM" do Mapa Força (via `MapaForcaCiodesService`).
- * Overrides locais ficam em memória (Fase 1) e sobrepõem por `prefixo`.
+ * S2.10.3 — híbrido Prisma + Mapa Força:
+ * - **Lista de viaturas e status** continuam vindo do Mapa Força CIODES (planilha
+ *   institucional). É a fonte de verdade pra "quais viaturas existem hoje".
+ * - **Overrides do admin, historicoKm e observacoesDataDas** ficam em Postgres
+ *   (tabela `viaturas`). Antes ficavam em Map in-memory e perdiam no restart.
  *
- * S6a/ADR-009 — nova regra:
- * - Viaturas com `origem === 'mapa_forca'`: status só pode mudar via Conferência
- *   da Viatura (S6b). Tentativas via PUT comum retornam 400 com instrução clara.
- * - Campos novos (kmAtual, tipoCombustivel, ARLA32, dimensões, militar responsável)
- *   ficam em override local mesmo para viaturas do MF — esses dados não vêm da planilha.
+ * Regra ADR-009 preservada: viaturas com `origem === 'mapa_forca'` só podem ter
+ * status mudado via Conferência da Viatura (S6b).
  */
 @Injectable()
 export class ViaturasService {
-  /** Storage in-memory de overrides (admin criou/editou). Key = prefixo. */
-  private readonly overrides: Map<string, Viatura> = new Map();
-
-  constructor(private readonly mapaForca: MapaForcaCiodesService) {}
+  constructor(
+    private readonly mapaForca: MapaForcaCiodesService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async list(): Promise<Viatura[]> {
     const recursos = await this.mapaForca.getRecursos().catch(() => []);
@@ -85,17 +83,15 @@ export class ViaturasService {
       .map((r) => viaturaFromRecurso(r))
       .filter((v): v is Viatura => v !== null);
 
-    // Aplica overrides por prefixo (admin venceu MF — mas para origem=mapa_forca
-    // só substituímos campos auxiliares, mantendo `status` e `origem` do MF).
+    const overrides = await this.loadOverrides();
+
     const merged = new Map<string, Viatura>();
     for (const v of fromMf) merged.set(v.prefixo, v);
-    for (const v of this.overrides.values()) {
+    for (const v of overrides.values()) {
       const baseDoMf = merged.get(v.prefixo);
       if (baseDoMf) {
-        // É override sobre viatura do MF — preserva status/origem do MF, sobrescreve auxiliares
         merged.set(v.prefixo, {
           ...baseDoMf,
-          // Auxiliares: kmAtual, tipoCombustivel, etc. vêm do override
           placa: v.placa ?? baseDoMf.placa,
           anoModelo: v.anoModelo ?? baseDoMf.anoModelo,
           composicaoFuncoes: v.composicaoFuncoes,
@@ -139,30 +135,19 @@ export class ViaturasService {
     if (existing) {
       throw new ConflictException(`Viatura com prefixo "${input.prefixo}" já existe`);
     }
-    const now = new Date().toISOString();
-    const viatura: Viatura = {
-      ...input,
-      id: randomUUID(),
-      origem: 'override_admin',
-      composicaoFuncoes: input.composicaoFuncoes ?? [],
-      observacoesDataDas: [],
-      historicoKm: [],
-      criadoEm: now,
-      atualizadoEm: now,
-    };
-    this.overrides.set(viatura.prefixo, viatura);
-    return viatura;
+    const row = await this.prisma.viatura.create({
+      data: viaturaCreateData(input),
+    });
+    return toViatura(row, 'override_admin');
   }
 
   /**
    * `registradoPorNf` é usado quando o admin edita `kmAtual` na tela de
    * detalhe — gera entrada em `historicoKm` (origem=`manual_admin`).
-   * Opcional para chamadas internas legadas que não tocam KM.
    */
   async update(id: string, input: UpdateViaturaInput, registradoPorNf?: string): Promise<Viatura> {
     const current = await this.findById(id);
 
-    // S6a/ADR-009 — viaturas do MF: bloqueia edição de status e prefixo
     if (current.origem === 'mapa_forca') {
       if (input.status !== undefined && input.status !== current.status) {
         throw new BadRequestException(
@@ -184,14 +169,11 @@ export class ViaturasService {
     }
     const now = new Date().toISOString();
 
-    // S0.x — histórico de KM: cresce quando kmAtual muda. Requer registradoPorNf;
-    // sem ele a entrada não é criada (chamadas legadas continuam funcionando, mas
-    // o admin sempre passa o NF via controller).
     const kmMudou =
       input.kmAtual !== undefined &&
       input.kmAtual !== current.kmAtual &&
       registradoPorNf !== undefined;
-    const historicoKm = kmMudou
+    const historicoKm: HistoricoKmEntry[] = kmMudou
       ? [
           ...(current.historicoKm ?? []),
           {
@@ -201,30 +183,25 @@ export class ViaturasService {
             origem: 'manual_admin' as const,
           },
         ]
-      : current.historicoKm;
+      : (current.historicoKm ?? []);
 
-    const updated: Viatura = {
+    const merged: Viatura = {
       ...current,
       ...input,
       composicaoFuncoes: input.composicaoFuncoes ?? current.composicaoFuncoes,
       historicoKm,
       id: current.id,
-      origem: current.origem, // não muda via update
+      origem: current.origem,
       criadoEm: current.criadoEm,
       atualizadoEm: now,
     };
-    // Override sempre por prefixo (mesmo para mapa_forca, guarda os campos extras)
-    this.overrides.delete(current.prefixo);
-    this.overrides.set(updated.prefixo, updated);
-    return updated;
+    await this.persistOverride(current.prefixo, merged);
+    return merged;
   }
 
   /**
    * S0.x — Upsert por prefixo: usado pela tela de detalhe QDV quando a
-   * viatura listada (QDV) ainda não tem override interno. Cria override
-   * inicial com defaults derivados (tipo a partir do prefixo, status
-   * DISPONIVEL) ou atualiza o existente. Gera `historicoKm` na criação
-   * se `kmAtual` for informado.
+   * viatura listada (QDV) ainda não tem override interno.
    */
   async upsertByPrefixo(
     prefixo: string,
@@ -235,7 +212,7 @@ export class ViaturasService {
     if (existing) return this.update(existing.id, input, registradoPorNf);
 
     const now = new Date().toISOString();
-    const historicoKm =
+    const historicoKm: HistoricoKmEntry[] =
       input.kmAtual !== undefined && registradoPorNf !== undefined
         ? [
             {
@@ -246,33 +223,31 @@ export class ViaturasService {
             },
           ]
         : [];
-    const created: Viatura = {
-      id: randomUUID(),
-      prefixo,
-      tipo: input.tipo ?? tipoFromPrefixo(prefixo),
-      status: input.status ?? 'DISPONIVEL',
-      origem: 'override_admin',
-      composicaoFuncoes: input.composicaoFuncoes ?? [],
-      observacoesDataDas: [],
-      historicoKm,
-      placa: input.placa,
-      anoModelo: input.anoModelo,
-      funcaoOperacional: input.funcaoOperacional,
-      observacoes: input.observacoes,
-      kmAtual: input.kmAtual,
-      tipoCombustivel: input.tipoCombustivel,
-      usaArla32: input.usaArla32,
-      capacidadeTanqueLitros: input.capacidadeTanqueLitros,
-      capacidadeTanqueArlaLitros: input.capacidadeTanqueArlaLitros,
-      estadoTanquePercent: input.estadoTanquePercent,
-      alturaMetros: input.alturaMetros,
-      larguraMetros: input.larguraMetros,
-      militarResponsavelNf: input.militarResponsavelNf,
-      criadoEm: now,
-      atualizadoEm: now,
-    };
-    this.overrides.set(prefixo, created);
-    return created;
+    const row = await this.prisma.viatura.create({
+      data: {
+        prefixo,
+        tipo: input.tipo ?? tipoFromPrefixo(prefixo),
+        status: input.status ?? 'DISPONIVEL',
+        origem: 'override_admin',
+        composicaoFuncoes: input.composicaoFuncoes ?? [],
+        placa: input.placa,
+        anoModelo: input.anoModelo,
+        funcaoOperacional: input.funcaoOperacional,
+        observacoes: input.observacoes,
+        kmAtual: input.kmAtual,
+        tipoCombustivel: input.tipoCombustivel,
+        usaArla32: input.usaArla32,
+        capacidadeTanqueLitros: input.capacidadeTanqueLitros,
+        capacidadeTanqueArlaLitros: input.capacidadeTanqueArlaLitros,
+        estadoTanquePercent: input.estadoTanquePercent,
+        alturaMetros: input.alturaMetros,
+        larguraMetros: input.larguraMetros,
+        militarResponsavelNf: input.militarResponsavelNf,
+        historicoKm: historicoKm as unknown as object,
+        observacoesDataDas: [] as unknown as object,
+      },
+    });
+    return toViatura(row, 'override_admin');
   }
 
   /** Soft delete: muda status para BAIXADA. Bloqueado para origem=mapa_forca. */
@@ -288,17 +263,6 @@ export class ViaturasService {
 
   /**
    * S6b/F4 + S0.x/fixes-3 — "porta autorizada" da Conferência da Viatura.
-   *
-   * Bypassa o bloqueio do ADR-009 (status de viatura MF) — registrar mudanças
-   * via Conferência é o caminho institucional correto. Adiciona observação
-   * datada ao histórico e atualiza KM, tanque, e opcionalmente status.
-   *
-   * - Se `statusMudanca='BAIXADA'`, exige `motivoBaixa`.
-   * - KM novo deve ser ≥ último registrado em `historicoKm[]` (ou
-   *   `kmAtual` atual). Decremento permitido apenas para admin com
-   *   `observacao` obrigatória — gera entrada `origem='manual_admin'`.
-   * - Conferência normal sempre gera entrada em `historicoKm` com
-   *   `origem='conferencia'` quando o KM muda.
    */
   async aplicarConferencia(
     prefixo: string,
@@ -314,7 +278,6 @@ export class ViaturasService {
       throw new BadRequestException('motivoBaixa é obrigatório quando statusMudanca=BAIXADA.');
     }
 
-    // S0.x/fixes-3 — Validação de KM crescente + admin override.
     const ultimoKm = (current.historicoKm ?? []).reduce(
       (acc, h) => Math.max(acc, h.kmRegistrado),
       current.kmAtual ?? 0,
@@ -342,11 +305,10 @@ export class ViaturasService {
           ...(current.observacoesDataDas ?? []),
           { texto: input.observacao, data: now, registradoPorNf },
         ]
-      : current.observacoesDataDas;
+      : (current.observacoesDataDas ?? []);
 
-    // S0.x/fixes-3 — Append em historicoKm quando KM mudou.
     const kmMudou = novoKm !== undefined && novoKm !== current.kmAtual;
-    const historicoKm = kmMudou
+    const historicoKm: HistoricoKmEntry[] = kmMudou
       ? [
           ...(current.historicoKm ?? []),
           {
@@ -356,7 +318,7 @@ export class ViaturasService {
             origem: origemKm,
           },
         ]
-      : current.historicoKm;
+      : (current.historicoKm ?? []);
 
     const updated: Viatura = {
       ...current,
@@ -367,7 +329,127 @@ export class ViaturasService {
       historicoKm,
       atualizadoEm: now,
     };
-    this.overrides.set(updated.prefixo, updated);
+    await this.persistOverride(updated.prefixo, updated);
     return updated;
   }
+
+  // ── helpers privados ──────────────────────────────────────────────
+
+  private async loadOverrides(): Promise<Map<string, Viatura>> {
+    try {
+      const rows = await this.prisma.viatura.findMany({ where: { deletedAt: null } });
+      return new Map(rows.map((r) => [r.prefixo, toViatura(r, r.origem as Viatura['origem'])]));
+    } catch {
+      // Banco indisponível — sem overrides, lista do MF segue. Falhamos open
+      // para não derrubar a tela em queda transiente do Postgres.
+      return new Map();
+    }
+  }
+
+  /** Persiste o override completo via upsert por prefixo. */
+  private async persistOverride(prefixoAnterior: string, v: Viatura): Promise<void> {
+    // Se o prefixo mudou (raro, só admin pode em override_admin), apaga o antigo.
+    if (prefixoAnterior !== v.prefixo) {
+      await this.prisma.viatura
+        .delete({ where: { prefixo: prefixoAnterior } })
+        .catch(() => undefined);
+    }
+    await this.prisma.viatura.upsert({
+      where: { prefixo: v.prefixo },
+      create: {
+        prefixo: v.prefixo,
+        placa: v.placa,
+        tipo: v.tipo,
+        funcaoOperacional: v.funcaoOperacional,
+        anoModelo: v.anoModelo,
+        status: v.status,
+        origem: v.origem,
+        composicaoFuncoes: v.composicaoFuncoes,
+        observacoes: v.observacoes,
+        kmAtual: v.kmAtual,
+        tipoCombustivel: v.tipoCombustivel,
+        usaArla32: v.usaArla32,
+        capacidadeTanqueLitros: v.capacidadeTanqueLitros,
+        capacidadeTanqueArlaLitros: v.capacidadeTanqueArlaLitros,
+        estadoTanquePercent: v.estadoTanquePercent,
+        alturaMetros: v.alturaMetros,
+        larguraMetros: v.larguraMetros,
+        militarResponsavelNf: v.militarResponsavelNf,
+        historicoKm: (v.historicoKm ?? []) as unknown as object,
+        observacoesDataDas: (v.observacoesDataDas ?? []) as unknown as object,
+      },
+      update: {
+        placa: v.placa,
+        tipo: v.tipo,
+        funcaoOperacional: v.funcaoOperacional,
+        anoModelo: v.anoModelo,
+        status: v.status,
+        composicaoFuncoes: v.composicaoFuncoes,
+        observacoes: v.observacoes,
+        kmAtual: v.kmAtual,
+        tipoCombustivel: v.tipoCombustivel,
+        usaArla32: v.usaArla32,
+        capacidadeTanqueLitros: v.capacidadeTanqueLitros,
+        capacidadeTanqueArlaLitros: v.capacidadeTanqueArlaLitros,
+        estadoTanquePercent: v.estadoTanquePercent,
+        alturaMetros: v.alturaMetros,
+        larguraMetros: v.larguraMetros,
+        militarResponsavelNf: v.militarResponsavelNf,
+        historicoKm: (v.historicoKm ?? []) as unknown as object,
+        observacoesDataDas: (v.observacoesDataDas ?? []) as unknown as object,
+      },
+    });
+  }
+}
+
+function viaturaCreateData(input: CreateViaturaInput) {
+  return {
+    prefixo: input.prefixo,
+    placa: input.placa,
+    tipo: input.tipo,
+    funcaoOperacional: input.funcaoOperacional,
+    anoModelo: input.anoModelo,
+    status: input.status,
+    origem: 'override_admin',
+    composicaoFuncoes: input.composicaoFuncoes ?? [],
+    observacoes: input.observacoes,
+    kmAtual: input.kmAtual,
+    tipoCombustivel: input.tipoCombustivel,
+    usaArla32: input.usaArla32,
+    capacidadeTanqueLitros: input.capacidadeTanqueLitros,
+    capacidadeTanqueArlaLitros: input.capacidadeTanqueArlaLitros,
+    alturaMetros: input.alturaMetros,
+    larguraMetros: input.larguraMetros,
+    militarResponsavelNf: input.militarResponsavelNf,
+    historicoKm: [] as unknown as object,
+    observacoesDataDas: [] as unknown as object,
+  };
+}
+
+function toViatura(r: PrismaViatura, origem: Viatura['origem']): Viatura {
+  return {
+    id: r.id,
+    prefixo: r.prefixo,
+    placa: r.placa ?? undefined,
+    tipo: (r.tipo as TipoViatura) ?? 'AU',
+    funcaoOperacional: r.funcaoOperacional ?? undefined,
+    anoModelo: r.anoModelo ?? undefined,
+    status: (r.status as StatusViatura) ?? 'DISPONIVEL',
+    origem,
+    composicaoFuncoes: (r.composicaoFuncoes ?? []) as Viatura['composicaoFuncoes'],
+    observacoes: r.observacoes ?? undefined,
+    kmAtual: r.kmAtual ?? undefined,
+    tipoCombustivel: (r.tipoCombustivel as Viatura['tipoCombustivel']) ?? undefined,
+    usaArla32: r.usaArla32 ?? undefined,
+    capacidadeTanqueLitros: r.capacidadeTanqueLitros ?? undefined,
+    capacidadeTanqueArlaLitros: r.capacidadeTanqueArlaLitros ?? undefined,
+    estadoTanquePercent: r.estadoTanquePercent ?? undefined,
+    alturaMetros: r.alturaMetros ?? undefined,
+    larguraMetros: r.larguraMetros ?? undefined,
+    militarResponsavelNf: r.militarResponsavelNf ?? undefined,
+    historicoKm: (r.historicoKm as unknown as HistoricoKmEntry[]) ?? [],
+    observacoesDataDas: (r.observacoesDataDas as unknown as Viatura['observacoesDataDas']) ?? [],
+    criadoEm: r.criadoEm.toISOString(),
+    atualizadoEm: r.atualizadoEm.toISOString(),
+  };
 }
