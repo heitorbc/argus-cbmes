@@ -1,13 +1,73 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { UnidadesService, UNIDADE_1CIA_1BBM_ID } from '../unidades/unidades.service';
+import type { Unidade as PrismaUnidade } from '@prisma/client';
+import {
+  UnidadesService,
+  UNIDADE_1CIA_1BBM_CODIGO,
+  UNIDADE_1CIA_1BBM_ID,
+} from '../unidades/unidades.service';
+import type { PrismaService } from '../../common/prisma/prisma.service';
 import { RecursosService } from './recursos.service';
+
+/**
+ * Mock minimal do PrismaService — só precisa do método `unidade.upsert`
+ * (chamado em `ensure1aCia()`) e `findUnique` (chamado em `findById`).
+ */
+function makePrismaStub(): PrismaService {
+  const store = new Map<string, PrismaUnidade>();
+  const now = new Date();
+  const seed1aCia: PrismaUnidade = {
+    id: UNIDADE_1CIA_1BBM_ID,
+    codigo: UNIDADE_1CIA_1BBM_CODIGO,
+    nome: '1ª Cia / 1º BBM',
+    ativo: true,
+    criadoEm: now,
+    atualizadoEm: now,
+  };
+  store.set(seed1aCia.id, seed1aCia);
+  return {
+    unidade: {
+      findMany: async () => [...store.values()],
+      findUnique: async ({ where }: { where: { id?: string; codigo?: string } }) => {
+        if (where.id) return store.get(where.id) ?? null;
+        if (where.codigo) {
+          for (const u of store.values()) if (u.codigo === where.codigo) return u;
+        }
+        return null;
+      },
+      upsert: async ({
+        where,
+        create,
+      }: {
+        where: { codigo: string };
+        create: { id?: string; codigo: string; nome: string };
+      }) => {
+        for (const u of store.values()) if (u.codigo === where.codigo) return u;
+        const u: PrismaUnidade = {
+          id: create.id ?? `unid:${create.codigo}`,
+          codigo: create.codigo,
+          nome: create.nome,
+          ativo: true,
+          criadoEm: new Date(),
+          atualizadoEm: new Date(),
+        };
+        store.set(u.id, u);
+        return u;
+      },
+    },
+  } as unknown as PrismaService;
+}
+
+async function makeUnidadesSvc(): Promise<UnidadesService> {
+  const svc = new UnidadesService(makePrismaStub());
+  await svc.onModuleInit();
+  return svc;
+}
 
 describe('RecursosService — seed 1ª1º', () => {
   let svc: RecursosService;
 
-  beforeEach(() => {
-    const unidades = new UnidadesService();
-    unidades.onModuleInit();
+  beforeEach(async () => {
+    const unidades = await makeUnidadesSvc();
     svc = new RecursosService(unidades);
     svc.onModuleInit();
   });
@@ -97,15 +157,14 @@ describe('RecursosService — CRUD admin (S6e)', () => {
   let svc: RecursosService;
   let unidades: UnidadesService;
 
-  beforeEach(() => {
-    unidades = new UnidadesService();
-    unidades.onModuleInit();
+  beforeEach(async () => {
+    unidades = await makeUnidadesSvc();
     svc = new RecursosService(unidades);
     svc.onModuleInit();
   });
 
-  it('create adiciona novo recurso com id slug e ativo=true por padrão', () => {
-    const r = svc.create({
+  it('create adiciona novo recurso com id slug e ativo=true por padrão', async () => {
+    const r = await svc.create({
       unidadeId: UNIDADE_1CIA_1BBM_ID,
       nome: 'NOVO RECURSO',
       categoria: 'OPERACIONAL',
@@ -119,8 +178,8 @@ describe('RecursosService — CRUD admin (S6e)', () => {
     expect(svc.list({ unidadeId: UNIDADE_1CIA_1BBM_ID })).toHaveLength(20);
   });
 
-  it('create rejeita unidadeId inexistente com NotFound', () => {
-    expect(() =>
+  it('create rejeita unidadeId inexistente com NotFound', async () => {
+    await expect(
       svc.create({
         unidadeId: 'unid:fake',
         nome: 'X',
@@ -129,11 +188,11 @@ describe('RecursosService — CRUD admin (S6e)', () => {
         comportaEfetivo: false,
         ordem: 0,
       }),
-    ).toThrow();
+    ).rejects.toThrow();
   });
 
-  it('create rejeita nome duplicado na mesma unidade', () => {
-    expect(() =>
+  it('create rejeita nome duplicado na mesma unidade', async () => {
+    await expect(
       svc.create({
         unidadeId: UNIDADE_1CIA_1BBM_ID,
         nome: 'ABTS_01', // já existe no seed
@@ -142,7 +201,7 @@ describe('RecursosService — CRUD admin (S6e)', () => {
         comportaEfetivo: true,
         ordem: 100,
       }),
-    ).toThrow();
+    ).rejects.toThrow();
   });
 
   it('update muda categoria sem alterar id ou unidadeId', () => {

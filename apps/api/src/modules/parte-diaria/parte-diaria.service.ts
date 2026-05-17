@@ -145,7 +145,7 @@ export class ParteDiariaService {
     const elegiveisRonda = extrairElegiveisRonda(previa);
     const rondaNoturna = gerarTurnosRonda(elegiveisRonda);
 
-    const locais = this.locaisFaxina.list({ ativosOnly: true });
+    const locais = await this.locaisFaxina.list({ ativosOnly: true });
 
     return {
       data: dataIso,

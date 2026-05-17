@@ -24,13 +24,13 @@ export class LocaisFaxinaController {
   constructor(private readonly service: LocaisFaxinaService) {}
 
   @Get()
-  list(@Query('ativosOnly') ativosOnly?: string): LocalFaxina[] {
+  async list(@Query('ativosOnly') ativosOnly?: string): Promise<LocalFaxina[]> {
     return this.service.list({ ativosOnly: ativosOnly === 'true' });
   }
 
   @Roles('admin')
   @Post()
-  create(@Body() body: unknown): LocalFaxina {
+  async create(@Body() body: unknown): Promise<LocalFaxina> {
     const parsed = createLocalFaxinaSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     return this.service.create(parsed.data);
@@ -38,7 +38,7 @@ export class LocaisFaxinaController {
 
   @Roles('admin')
   @Put(':id')
-  update(@Param('id') id: string, @Body() body: unknown): LocalFaxina {
+  async update(@Param('id') id: string, @Body() body: unknown): Promise<LocalFaxina> {
     const parsed = updateLocalFaxinaSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     return this.service.update(id, parsed.data);
@@ -47,7 +47,7 @@ export class LocaisFaxinaController {
   @Roles('admin')
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  softDelete(@Param('id') id: string): LocalFaxina {
+  async softDelete(@Param('id') id: string): Promise<LocalFaxina> {
     return this.service.softDelete(id);
   }
 }

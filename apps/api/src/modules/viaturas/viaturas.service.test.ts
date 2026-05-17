@@ -1,13 +1,114 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import type { RecursoMapaForca } from '@argus/shared-types';
+import type { Viatura as PrismaViatura } from '@prisma/client';
 import { ViaturasService } from './viaturas.service';
+import type { PrismaService } from '../../common/prisma/prisma.service';
 
 class FakeMapaForcaService {
   constructor(private readonly recursos: RecursoMapaForca[]) {}
   async getRecursos(): Promise<readonly RecursoMapaForca[]> {
     return this.recursos;
   }
+}
+
+/**
+ * Mock in-memory de `prisma.viatura.*` — simula o subset de queries usadas
+ * pelo `ViaturasService` (findMany/upsert/create/delete por prefixo).
+ */
+function makePrismaMock(): PrismaService {
+  const store = new Map<string, PrismaViatura>();
+  let counter = 1;
+  const viatura = {
+    findMany: async ({ where }: { where?: { deletedAt: null } } = {}) => {
+      const arr = [...store.values()];
+      return where?.deletedAt === null ? arr.filter((v) => !v.deletedAt) : arr;
+    },
+    create: async ({ data }: { data: Record<string, unknown> }) => {
+      const now = new Date();
+      const row: PrismaViatura = {
+        id: `vt-${counter++}`,
+        prefixo: data.prefixo as string,
+        placa: (data.placa as string | undefined) ?? null,
+        tipo: (data.tipo as string | undefined) ?? null,
+        funcaoOperacional: (data.funcaoOperacional as string | undefined) ?? null,
+        anoModelo: (data.anoModelo as string | undefined) ?? null,
+        status: (data.status as string | undefined) ?? null,
+        origem: (data.origem as string | undefined) ?? null,
+        composicaoFuncoes: (data.composicaoFuncoes as string[] | undefined) ?? [],
+        observacoes: (data.observacoes as string | undefined) ?? null,
+        kmAtual: (data.kmAtual as number | undefined) ?? null,
+        tipoCombustivel: (data.tipoCombustivel as string | undefined) ?? null,
+        usaArla32: (data.usaArla32 as boolean | undefined) ?? null,
+        capacidadeTanqueLitros: (data.capacidadeTanqueLitros as number | undefined) ?? null,
+        capacidadeTanqueArlaLitros: (data.capacidadeTanqueArlaLitros as number | undefined) ?? null,
+        estadoTanquePercent: (data.estadoTanquePercent as number | undefined) ?? null,
+        alturaMetros: (data.alturaMetros as number | undefined) ?? null,
+        larguraMetros: (data.larguraMetros as number | undefined) ?? null,
+        militarResponsavelNf: (data.militarResponsavelNf as string | undefined) ?? null,
+        historicoKm: (data.historicoKm as object | undefined) ?? null,
+        observacoesDataDas: (data.observacoesDataDas as object | undefined) ?? null,
+        criadoEm: now,
+        atualizadoEm: now,
+        deletedAt: null,
+      };
+      store.set(row.prefixo, row);
+      return row;
+    },
+    upsert: async ({
+      where,
+      create,
+      update,
+    }: {
+      where: { prefixo: string };
+      create: Record<string, unknown>;
+      update: Record<string, unknown>;
+    }) => {
+      const existing = store.get(where.prefixo);
+      if (existing) {
+        const next = { ...existing, ...update, atualizadoEm: new Date() } as PrismaViatura;
+        store.set(where.prefixo, next);
+        return next;
+      }
+      const now = new Date();
+      const row: PrismaViatura = {
+        id: `vt-${counter++}`,
+        prefixo: create.prefixo as string,
+        placa: null,
+        tipo: null,
+        funcaoOperacional: null,
+        anoModelo: null,
+        status: null,
+        origem: null,
+        composicaoFuncoes: [],
+        observacoes: null,
+        kmAtual: null,
+        tipoCombustivel: null,
+        usaArla32: null,
+        capacidadeTanqueLitros: null,
+        capacidadeTanqueArlaLitros: null,
+        estadoTanquePercent: null,
+        alturaMetros: null,
+        larguraMetros: null,
+        militarResponsavelNf: null,
+        historicoKm: null,
+        observacoesDataDas: null,
+        criadoEm: now,
+        atualizadoEm: now,
+        deletedAt: null,
+        ...(create as object),
+      } as PrismaViatura;
+      store.set(row.prefixo, row);
+      return row;
+    },
+    delete: async ({ where }: { where: { prefixo: string } }) => {
+      const cur = store.get(where.prefixo);
+      if (!cur) throw new Error(`No vt ${where.prefixo}`);
+      store.delete(where.prefixo);
+      return cur;
+    },
+  };
+  return { viatura } as unknown as PrismaService;
 }
 
 const RECURSOS_BASE: RecursoMapaForca[] = [
@@ -56,7 +157,7 @@ const RECURSOS_BASE: RecursoMapaForca[] = [
 ];
 
 function makeService(recursos: RecursoMapaForca[] = RECURSOS_BASE): ViaturasService {
-  return new ViaturasService(new FakeMapaForcaService(recursos) as never);
+  return new ViaturasService(new FakeMapaForcaService(recursos) as never, makePrismaMock());
 }
 
 describe('ViaturasService (S6a — nomenclatura MF + bloqueio + novos campos)', () => {
