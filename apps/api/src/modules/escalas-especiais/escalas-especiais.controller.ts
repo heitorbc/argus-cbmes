@@ -65,14 +65,14 @@ export class EscalasEspeciaisController {
   ) {}
 
   @Get()
-  list(@Query() query: unknown) {
+  async list(@Query() query: unknown) {
     const parsed = listQuerySchema.safeParse(query);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     }
     const { ano, mes } = parsed.data;
     if (ano && mes) {
-      const escala = this.escalas.get(Number.parseInt(ano, 10), Number.parseInt(mes, 10));
+      const escala = await this.escalas.get(Number.parseInt(ano, 10), Number.parseInt(mes, 10));
       return { escala };
     }
     return this.escalas.list();
@@ -109,7 +109,7 @@ export class EscalasEspeciaisController {
   @Roles('admin', 'sargenteante')
   @Post('confirm')
   @HttpCode(HttpStatus.OK)
-  confirm(@Body() body: unknown) {
+  async confirm(@Body() body: unknown) {
     const schema = z.object({
       mes: z.number().int().min(1).max(12),
       ano: z.number().int(),
@@ -146,14 +146,14 @@ export class EscalasEspeciaisController {
   @Roles('admin')
   @Delete(':ano/:mes')
   @HttpCode(HttpStatus.NO_CONTENT)
-  remove(@Param('ano') ano: string, @Param('mes') mes: string) {
+  async remove(@Param('ano') ano: string, @Param('mes') mes: string) {
     const a = Number.parseInt(ano, 10);
     const m = Number.parseInt(mes, 10);
     if (!Number.isFinite(a) || !Number.isFinite(m)) {
       throw new BadRequestException('ano/mês inválidos');
     }
     // S2.3 — bloqueia delete se algum dia em uso.
-    const escala = this.escalas.get(a, m);
+    const escala = await this.escalas.get(a, m);
     if (escala) {
       const datas = [...new Set(escala.atos.map((at) => at.data))];
       const bloqueios = computeBloqueios(this.servico, datas);
@@ -164,6 +164,6 @@ export class EscalasEspeciaisController {
         });
       }
     }
-    this.escalas.delete(a, m);
+    await this.escalas.delete(a, m);
   }
 }

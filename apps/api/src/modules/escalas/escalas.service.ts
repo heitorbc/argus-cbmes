@@ -8,19 +8,16 @@ import type {
   LetraEquipe,
   LetraEquipeRotativa,
 } from '@argus/shared-types';
+import type {
+  ComposicaoEntry as PrismaComposicaoEntry,
+  EscalaMensal as PrismaEscalaMensal,
+} from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { resolveDataDir } from '../../common/dev-fixtures';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import { parseEscalaXlsx, parseFilename } from './escala-xlsx-parser';
 import { SheetsDbService } from '../sheets-db/sheets-db.service';
 import { escalaMensalToRows, rowsToEscalasMensais } from '../sheets-db/sheets-db-serializers';
-
-interface EscalaKey {
-  ano: number;
-  mes: number;
-}
-
-function key(k: EscalaKey): string {
-  return `${k.ano}-${String(k.mes).padStart(2, '0')}`;
-}
 
 /**
  * Resolve a quinzena (1 ou 2) de um dia ISO usando a fronteira gravada na
@@ -56,12 +53,7 @@ function diffComposicao(
 /**
  * S2.8.2 — Merge "preservando dias": para cada `dataIso` em
  * `diasDescartados`, mantém a equipe que estava na escala VIGENTE (atual)
- * em vez da equipe que veio na NOVA. Composição da quinzena segue a
- * NOVA escala (não há granularidade por dia na composição — todos os
- * dias de uma quinzena compartilham a mesma composição por equipe).
- *
- * Se `diasDescartados` está vazio, retorna `depois` inalterado (comportamento
- * padrão pré-S2.8.2).
+ * em vez da equipe que veio na NOVA.
  */
 export function mergeEscalaPreservandoDias(
   antes: EscalaMensal,
@@ -75,7 +67,6 @@ export function mergeEscalaPreservandoDias(
     if (equipeAntiga) {
       novoDiaEquipe[data] = equipeAntiga;
     } else {
-      // Antes não tinha equipe naquele dia; manter atual = remover do dia.
       delete novoDiaEquipe[data];
     }
   }
@@ -83,9 +74,7 @@ export function mergeEscalaPreservandoDias(
 }
 
 /**
- * Computa o diff entre duas escalas do mesmo mês/ano. Útil para reupload — antes de
- * sobrescrever uma escala vigente, mostra o que vai mudar. Composição é comparada
- * separadamente por quinzena.
+ * Computa o diff entre duas escalas do mesmo mês/ano.
  */
 export function computeDiff(antes: EscalaMensal, depois: EscalaMensal): EscalaDiff {
   const dias = new Set<string>([...Object.keys(antes.diaEquipe), ...Object.keys(depois.diaEquipe)]);
@@ -106,66 +95,63 @@ export function computeDiff(antes: EscalaMensal, depois: EscalaMensal): EscalaDi
 }
 
 /**
- * Mock service in-memory. Em S5 esse storage migra para Prisma+Supabase.
+ * S2.10.5 — Persistência em Postgres via Prisma. Sheets-DB continua como
+ * espelho institucional (dual-write fire-and-forget). XLSX bootstrap dev
+ * só roda se Postgres E Sheets-DB estiverem vazios.
  */
 @Injectable()
 export class EscalasService implements OnModuleInit {
   private readonly logger = new Logger(EscalasService.name);
-  private readonly byMes = new Map<string, EscalaMensal>();
 
-  // S2.2 — SheetsDbService é injetado opcionalmente para permitir tests
-  // que não precisam mockar Sheets-DB. Em runtime, sempre presente.
-  constructor(@Optional() private readonly sheetsDb?: SheetsDbService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly sheetsDb?: SheetsDbService,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     if (process.env.NODE_ENV === 'test') return;
-    if (this.byMes.size > 0) return;
-    // S2.8.2 — Sheets-DB é fonte primária. Roda em qualquer ambiente
-    // (inclusive produção). Em dev, se Sheets-DB vier vazio/desabilitado,
-    // o XLSX local cobre como fallback.
-    await this.bootstrapFromSheetsDb();
-    if (this.byMes.size === 0 && process.env.NODE_ENV !== 'production') {
-      await this.bootstrapFromFilesystem();
+    await this.bootstrapFromSheetsDbIfEmpty();
+    if (process.env.NODE_ENV !== 'production') {
+      const total = await this.countMeses();
+      if (total === 0) await this.bootstrapFromFilesystem();
     }
   }
 
   /**
-   * S2.8.2 — Lê todas as escalas mensais do Sheets-DB e popula o cache
-   * in-memory. Idempotente. Sheets-DB desabilitado (sem credenciais) =
-   * no-op silencioso, o caller cai no XLSX fallback.
+   * Bootstrap one-shot: importa Sheets-DB → Postgres se Postgres está
+   * vazio. Idempotente.
    */
-  private async bootstrapFromSheetsDb(): Promise<void> {
-    if (!this.sheetsDb?.isEnabled()) {
-      this.logger.log('Bootstrap escalas: Sheets-DB desabilitado, tentando XLSX local.');
-      return;
-    }
+  private async bootstrapFromSheetsDbIfEmpty(): Promise<void> {
     try {
+      const count = await this.countMeses();
+      if (count > 0) return;
+      if (!this.sheetsDb?.isEnabled()) {
+        this.logger.log('Bootstrap escalas: Postgres vazio + Sheets-DB desabilitado.');
+        return;
+      }
       const rows = await this.sheetsDb.readEscalaMensal();
       const escalas = rowsToEscalasMensais(rows);
-      for (const [k, escala] of escalas.entries()) {
-        this.byMes.set(k, escala);
+      let imported = 0;
+      for (const escala of escalas.values()) {
+        await this.upsertNoPostgres(escala);
+        imported += 1;
       }
-      this.logger.log(
-        `Bootstrap escalas: ${escalas.size} meses carregados do Sheets-DB (${rows.length} linhas).`,
-      );
+      if (imported > 0) {
+        this.logger.log(`Bootstrap escalas: ${imported} meses importados do Sheets-DB → Postgres.`);
+      }
     } catch (err) {
-      this.logger.warn(
-        `Bootstrap escalas Sheets-DB falhou: ${(err as Error).message}. Tentando XLSX local.`,
-      );
+      this.logger.warn(`Bootstrap escalas falhou: ${(err as Error).message}.`);
     }
   }
 
   /**
-   * Dev-only — ao iniciar, se o cache está vazio, lê os 2 arquivos XLSX mais
-   * recentes em `data/Escala de Serviço/` e popula. Idempotente: roda uma
-   * única vez no startup. Não dispara em produção.
+   * Dev-only — fallback XLSX em `data/Escala de Serviço/`. Roda só se
+   * Postgres E Sheets-DB estiverem vazios.
    */
   private async bootstrapFromFilesystem(): Promise<void> {
     const dataDir = resolveDataDir('Escala de Serviço');
     if (!dataDir) {
-      this.logger.warn(
-        'Bootstrap escalas: pasta "data/Escala de Serviço/" não encontrada — pulando.',
-      );
+      this.logger.warn('Bootstrap escalas: pasta "data/Escala de Serviço/" não encontrada.');
       return;
     }
     const xlsxFiles = readdirSync(dataDir)
@@ -189,7 +175,7 @@ export class EscalasService implements OnModuleInit {
       const buffer = readFileSync(join(dataDir, f));
       try {
         const escala = await parseEscalaXlsx({ buffer, filename: f });
-        this.byMes.set(key(escala), escala);
+        await this.upsertNoPostgres(escala);
         this.logger.log(
           `Bootstrap escala: ${f} (${String(escala.mes).padStart(2, '0')}/${escala.ano})`,
         );
@@ -199,73 +185,54 @@ export class EscalasService implements OnModuleInit {
     }
   }
 
-  list(): { escalas: { ano: number; mes: number; origemArquivo: string; importadoEm: string }[] } {
-    const escalas = [...this.byMes.values()]
-      .map((e) => ({
-        ano: e.ano,
-        mes: e.mes,
-        origemArquivo: e.origemArquivo,
-        importadoEm: e.importadoEm,
-      }))
-      .sort((a, b) => b.ano - a.ano || b.mes - a.mes);
-    return { escalas };
+  async list(): Promise<{
+    escalas: { ano: number; mes: number; origemArquivo: string; importadoEm: string }[];
+  }> {
+    const rows = await this.prisma.escalaMensal.findMany({
+      orderBy: [{ ano: 'desc' }, { mes: 'desc' }],
+      select: { ano: true, mes: true, origemArquivo: true, importadoEm: true },
+    });
+    return {
+      escalas: rows.map((r) => ({
+        ano: r.ano,
+        mes: r.mes,
+        origemArquivo: r.origemArquivo,
+        importadoEm: r.importadoEm.toISOString(),
+      })),
+    };
   }
 
-  get(ano: number, mes: number): EscalaMensal | null {
-    return this.byMes.get(key({ ano, mes })) ?? null;
+  async get(ano: number, mes: number): Promise<EscalaMensal | null> {
+    const row = await this.prisma.escalaMensal.findUnique({
+      where: { ano_mes: { ano, mes } },
+      include: { composicaoEntries: true },
+    });
+    if (!row) return null;
+    return toEscalaMensal(row);
   }
 
-  /**
-   * Upserta a escala do mês. Se já existir, sobrescreve completamente — o caller é
-   * responsável por confirmar o diff antes (via preview/confirm).
-   *
-   * S2.2 — dual-write: persiste in-memory (síncrono) e dispara replace
-   * para o Sheets-DB em background (fire-and-forget). Falhas de Sheets
-   * não derrubam a operação principal.
-   */
-  save(escala: EscalaMensal): EscalaMensal {
-    this.byMes.set(key(escala), escala);
+  async save(escala: EscalaMensal): Promise<EscalaMensal> {
+    await this.upsertNoPostgres(escala);
     this.syncToSheetsDb(escala);
-    return escala;
+    return (await this.get(escala.ano, escala.mes)) ?? escala;
   }
 
-  delete(ano: number, mes: number): boolean {
-    const removed = this.byMes.delete(key({ ano, mes }));
-    if (removed) this.deleteFromSheetsDb(ano, mes);
-    return removed;
-  }
-
-  private syncToSheetsDb(escala: EscalaMensal): void {
-    if (!this.sheetsDb?.isEnabled()) return;
-    const rows = escalaMensalToRows(escala);
-    void this.sheetsDb.replaceEscalaMensalMes(escala.ano, escala.mes, rows).catch((err) => {
-      this.logger.warn(
-        `Sheets-DB write falhou para escala ${escala.mes}/${escala.ano}: ${(err as Error).message}. In-memory OK.`,
-      );
+  async delete(ano: number, mes: number): Promise<boolean> {
+    const existing = await this.prisma.escalaMensal.findUnique({
+      where: { ano_mes: { ano, mes } },
     });
+    if (!existing) return false;
+    await this.prisma.escalaMensal.delete({ where: { ano_mes: { ano, mes } } });
+    this.deleteFromSheetsDb(ano, mes);
+    return true;
   }
 
-  private deleteFromSheetsDb(ano: number, mes: number): void {
-    if (!this.sheetsDb?.isEnabled()) return;
-    void this.sheetsDb.replaceEscalaMensalMes(ano, mes, []).catch((err) => {
-      this.logger.warn(
-        `Sheets-DB delete falhou para escala ${mes}/${ano}: ${(err as Error).message}.`,
-      );
-    });
-  }
-
-  /**
-   * Lista os escalados de uma equipe num dia específico (composição da equipe que
-   * está escalada nesse dia). Resolve a quinzena pelo dia consultado — toda a
-   * tradução dia→quinzena fica encapsulada aqui, downstream (Prévia/Fiscais) não
-   * precisa conhecer o conceito de quinzena.
-   */
-  getEscaladosDoDia(
+  async getEscaladosDoDia(
     ano: number,
     mes: number,
     diaIso: string,
-  ): { equipe: LetraEquipeRotativa | null; entries: ComposicaoEntry[] } {
-    const escala = this.get(ano, mes);
+  ): Promise<{ equipe: LetraEquipeRotativa | null; entries: ComposicaoEntry[] }> {
+    const escala = await this.get(ano, mes);
     if (!escala) return { equipe: null, entries: [] };
     const equipe = escala.diaEquipe[diaIso] ?? null;
     if (!equipe) return { equipe: null, entries: [] };
@@ -275,69 +242,213 @@ export class EscalasService implements OnModuleInit {
     return { equipe, entries };
   }
 
-  /**
-   * F4 — Atualiza a equipe escalada para um dia específico (ou remove se equipe=null).
-   * Retorna a escala atualizada. Lança Error se mês/ano não foi importado.
-   */
-  updateDiaEquipe(
+  async updateDiaEquipe(
     ano: number,
     mes: number,
     data: string,
     equipe: LetraEquipeRotativa | null,
-  ): EscalaMensal {
-    const escala = this.get(ano, mes);
+  ): Promise<EscalaMensal> {
+    const escala = await this.get(ano, mes);
     if (!escala) {
       throw new Error(`Escala ${String(mes).padStart(2, '0')}/${ano} não importada`);
     }
-    const novoMapa = { ...escala.diaEquipe };
+    const novoMapa: Record<string, LetraEquipeRotativa> = { ...escala.diaEquipe };
     if (equipe === null) {
       delete novoMapa[data];
     } else {
       novoMapa[data] = equipe;
     }
-    const atualizada: EscalaMensal = { ...escala, diaEquipe: novoMapa };
-    this.byMes.set(key(escala), atualizada);
-    return atualizada;
+    await this.prisma.escalaMensal.update({
+      where: { ano_mes: { ano, mes } },
+      data: { diaEquipe: novoMapa as unknown as object },
+    });
+    return { ...escala, diaEquipe: novoMapa };
   }
 
-  /**
-   * F4 — Upsert/delete de uma posição da composição em uma quinzena específica.
-   * Quando `militar=null`, remove. Quando preenchido, sobrescreve por chave
-   * (equipe, viatura, funcao). A outra quinzena não é afetada.
-   */
-  upsertComposicao(
+  async upsertComposicao(
     ano: number,
     mes: number,
     quinzena: 1 | 2,
     entry:
       | ComposicaoEntry
       | { equipe: LetraEquipe; viatura: string; funcao: string; militar: null },
-  ): EscalaMensal {
-    const escala = this.get(ano, mes);
+  ): Promise<EscalaMensal> {
+    const escala = await this.get(ano, mes);
     if (!escala) {
       throw new Error(`Escala ${String(mes).padStart(2, '0')}/${ano} não importada`);
     }
-    const matchKey = (c: { equipe: string; viatura: string; funcao: string }) =>
-      `${c.equipe}|${c.viatura}|${c.funcao}`;
-    const target = matchKey(entry);
-    const bucketKey = quinzena === 1 ? 'q1' : 'q2';
-    const filtered = escala.composicaoPorQuinzena[bucketKey].filter((c) => matchKey(c) !== target);
-    if (entry.militar !== null) {
-      filtered.push(entry as ComposicaoEntry);
+    const escalaRow = await this.prisma.escalaMensal.findUnique({
+      where: { ano_mes: { ano, mes } },
+      select: { id: true },
+    });
+    if (!escalaRow) {
+      throw new Error(`Escala ${String(mes).padStart(2, '0')}/${ano} não importada`);
     }
-    const atualizada: EscalaMensal = {
-      ...escala,
-      composicaoPorQuinzena: {
-        ...escala.composicaoPorQuinzena,
-        [bucketKey]: filtered,
+
+    // Remove entry existente com mesma chave (equipe, viatura, funcao) na quinzena.
+    await this.prisma.composicaoEntry.deleteMany({
+      where: {
+        escalaMensalId: escalaRow.id,
+        quinzena,
+        equipe: entry.equipe,
+        viatura: entry.viatura,
+        funcao: entry.funcao,
       },
-    };
-    this.byMes.set(key(escala), atualizada);
-    return atualizada;
+    });
+
+    if (entry.militar !== null) {
+      const e = entry as ComposicaoEntry;
+      await this.prisma.composicaoEntry.create({
+        data: {
+          escalaMensalId: escalaRow.id,
+          quinzena,
+          equipe: e.equipe,
+          viatura: e.viatura,
+          funcao: e.funcao,
+          militarRaw: e.militar.raw,
+          militarNf: e.militar.nf ?? null,
+          militarPosto: e.militar.postoAbreviado || null,
+          militarNomeGuerra: e.militar.nomeGuerra || null,
+        },
+      });
+    }
+
+    return (await this.get(ano, mes)) ?? escala;
   }
 
-  /** Reset usado nos testes. */
-  reset(): void {
-    this.byMes.clear();
+  // ── helpers privados ──────────────────────────────────────────────
+
+  private async countMeses(): Promise<number> {
+    try {
+      return await this.prisma.escalaMensal.count();
+    } catch {
+      return 0;
+    }
   }
+
+  /**
+   * Upsert por (ano, mes) com cascata de composicaoEntries: deleta entries
+   * antigas e recria. Re-import substitui mês inteiro (ADR-014 D4).
+   */
+  private async upsertNoPostgres(escala: EscalaMensal): Promise<void> {
+    const composicaoCreate = [
+      ...escala.composicaoPorQuinzena.q1.map((e) => composicaoToCreate(e, 1)),
+      ...escala.composicaoPorQuinzena.q2.map((e) => composicaoToCreate(e, 2)),
+    ];
+
+    await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.escalaMensal.findUnique({
+        where: { ano_mes: { ano: escala.ano, mes: escala.mes } },
+      });
+      // Prisma exige Prisma.JsonNull (não JS null) para limpar campos Json?.
+      const mergulhoJson = escala.mergulho
+        ? (escala.mergulho as unknown as Prisma.InputJsonValue)
+        : Prisma.JsonNull;
+      const salvamarJson = escala.salvamar
+        ? (escala.salvamar as unknown as Prisma.InputJsonValue)
+        : Prisma.JsonNull;
+
+      if (existing) {
+        await tx.composicaoEntry.deleteMany({ where: { escalaMensalId: existing.id } });
+        await tx.escalaMensal.update({
+          where: { id: existing.id },
+          data: {
+            origemArquivo: escala.origemArquivo,
+            importadoEm: new Date(escala.importadoEm),
+            importadoPorNf: escala.importadoPorNf ?? null,
+            diaEquipe: escala.diaEquipe as unknown as Prisma.InputJsonValue,
+            avisos: escala.avisos as unknown as Prisma.InputJsonValue,
+            mergulho: mergulhoJson,
+            salvamar: salvamarJson,
+            ultimoDiaQ1: escala.composicaoPorQuinzena.ultimoDiaQ1,
+            composicaoEntries: { create: composicaoCreate },
+          },
+        });
+      } else {
+        await tx.escalaMensal.create({
+          data: {
+            ano: escala.ano,
+            mes: escala.mes,
+            origemArquivo: escala.origemArquivo,
+            importadoEm: new Date(escala.importadoEm),
+            importadoPorNf: escala.importadoPorNf ?? null,
+            diaEquipe: escala.diaEquipe as unknown as Prisma.InputJsonValue,
+            avisos: escala.avisos as unknown as Prisma.InputJsonValue,
+            mergulho: mergulhoJson,
+            salvamar: salvamarJson,
+            ultimoDiaQ1: escala.composicaoPorQuinzena.ultimoDiaQ1,
+            composicaoEntries: { create: composicaoCreate },
+          },
+        });
+      }
+    });
+  }
+
+  private syncToSheetsDb(escala: EscalaMensal): void {
+    if (!this.sheetsDb?.isEnabled()) return;
+    const rows = escalaMensalToRows(escala);
+    void this.sheetsDb.replaceEscalaMensalMes(escala.ano, escala.mes, rows).catch((err: Error) => {
+      this.logger.warn(
+        `Sheets-DB write falhou para escala ${escala.mes}/${escala.ano}: ${err.message}. Postgres OK.`,
+      );
+    });
+  }
+
+  private deleteFromSheetsDb(ano: number, mes: number): void {
+    if (!this.sheetsDb?.isEnabled()) return;
+    void this.sheetsDb.replaceEscalaMensalMes(ano, mes, []).catch((err: Error) => {
+      this.logger.warn(`Sheets-DB delete falhou para escala ${mes}/${ano}: ${err.message}.`);
+    });
+  }
+}
+
+function composicaoToCreate(e: ComposicaoEntry, quinzena: 1 | 2) {
+  return {
+    quinzena,
+    equipe: e.equipe,
+    viatura: e.viatura,
+    funcao: e.funcao,
+    militarRaw: e.militar.raw,
+    militarNf: e.militar.nf ?? null,
+    militarPosto: e.militar.postoAbreviado || null,
+    militarNomeGuerra: e.militar.nomeGuerra || null,
+  };
+}
+
+function toEscalaMensal(
+  row: PrismaEscalaMensal & { composicaoEntries: PrismaComposicaoEntry[] },
+): EscalaMensal {
+  const q1: ComposicaoEntry[] = [];
+  const q2: ComposicaoEntry[] = [];
+  for (const e of row.composicaoEntries) {
+    const entry: ComposicaoEntry = {
+      equipe: e.equipe as LetraEquipe,
+      viatura: e.viatura,
+      funcao: e.funcao,
+      militar: {
+        raw: e.militarRaw,
+        postoAbreviado: e.militarPosto ?? '',
+        nomeGuerra: e.militarNomeGuerra ?? '',
+        nf: e.militarNf ?? undefined,
+      },
+    };
+    if (e.quinzena === 1) q1.push(entry);
+    else q2.push(entry);
+  }
+  return {
+    ano: row.ano,
+    mes: row.mes,
+    origemArquivo: row.origemArquivo,
+    importadoEm: row.importadoEm.toISOString(),
+    importadoPorNf: row.importadoPorNf ?? undefined,
+    diaEquipe: (row.diaEquipe as unknown as Record<string, LetraEquipeRotativa>) ?? {},
+    composicaoPorQuinzena: {
+      q1,
+      q2,
+      ultimoDiaQ1: row.ultimoDiaQ1,
+    },
+    mergulho: (row.mergulho as unknown as EscalaMensal['mergulho']) ?? undefined,
+    salvamar: (row.salvamar as unknown as EscalaMensal['salvamar']) ?? undefined,
+    avisos: (row.avisos as unknown as string[]) ?? [],
+  };
 }

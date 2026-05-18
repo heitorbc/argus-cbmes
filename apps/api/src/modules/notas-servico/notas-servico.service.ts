@@ -6,151 +6,198 @@ import {
   Optional,
   type OnModuleInit,
 } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
 import type {
   CreateNotaServicoInput,
   NotaServico,
   UpdateNotaServicoInput,
 } from '@argus/shared-types';
+import type { NotaServico as PrismaNS } from '@prisma/client';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import { SheetsDbService } from '../sheets-db/sheets-db.service';
 import { notaServicoToRow, rowToNotaServico } from '../sheets-db/sheets-db-serializers';
 
 /**
  * S6l — CRUD de Notas de Serviço.
  *
- * S2.2 — Sheets-DB integration:
- * - `onModuleInit` carrega NS existentes da aba `bd_notas_servico`
- *   (sobrevive a restart do backend, ao contrário de Escalas que
- *   recarregam do XLSX).
- * - `create/update/remove` fazem dual-write para Sheets-DB.
+ * S2.10.5 — Prisma é fonte primária. Sheets-DB continua como espelho
+ * institucional (dual-write fire-and-forget). Bootstrap one-shot lê
+ * Sheets-DB e popula Postgres se a tabela estiver vazia (transição).
  *
- * Persistência in-memory (Fase 1) keyed por `id`. Em S5b vira tabela
- * com índice por `data` e `codigo`.
+ * Soft delete via `deletedAt` (ADR-014 D4): preserva auditoria histórica
+ * de quem criou/removeu uma NS.
  */
 @Injectable()
 export class NotasServicoService implements OnModuleInit {
   private readonly logger = new Logger(NotasServicoService.name);
-  private readonly byId: Map<string, NotaServico> = new Map();
 
-  constructor(@Optional() private readonly sheetsDb?: SheetsDbService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly sheetsDb?: SheetsDbService,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     if (process.env.NODE_ENV === 'test') return;
-    if (!this.sheetsDb?.isEnabled()) return;
+    await this.bootstrapFromSheetsDbIfEmpty();
+  }
+
+  /**
+   * Bootstrap one-shot: se a tabela Postgres está vazia E o Sheets-DB tem
+   * dados, importa. Idempotente — só roda na 1ª execução após a migração.
+   * Após isso, Postgres é fonte e Sheets-DB recebe write-only.
+   */
+  private async bootstrapFromSheetsDbIfEmpty(): Promise<void> {
     try {
+      const count = await this.prisma.notaServico.count({ where: { deletedAt: null } });
+      if (count > 0) return;
+      if (!this.sheetsDb?.isEnabled()) return;
       const rows = await this.sheetsDb.readNotasServico();
-      let count = 0;
+      let imported = 0;
       for (const row of rows) {
         const ns = rowToNotaServico(row);
-        if (ns) {
-          this.byId.set(ns.id, ns);
-          count++;
-        }
+        if (!ns) continue;
+        await this.prisma.notaServico
+          .create({
+            data: {
+              id: ns.id,
+              codigo: ns.codigo,
+              descricao: ns.descricao,
+              data: ns.data,
+              horaInicio: ns.horaInicio,
+              horaFim: ns.horaFim,
+              viaturaPrefixo: ns.viaturaPrefixo,
+              militaresNfs: ns.militaresNfs,
+              observacoes: ns.observacoes,
+              criadoEm: new Date(ns.criadoEm),
+              criadoPorNf: ns.criadoPorNf,
+            },
+          })
+          .then(() => {
+            imported++;
+          })
+          .catch((err: Error) => {
+            this.logger.warn(`Bootstrap NS skip ${ns.id}: ${err.message}`);
+          });
       }
-      this.logger.log(`Bootstrap NS: ${count} entradas carregadas do Sheets-DB.`);
+      if (imported > 0) {
+        this.logger.log(`Bootstrap NS: ${imported} entradas importadas do Sheets-DB → Postgres.`);
+      }
     } catch (err) {
-      this.logger.warn(
-        `Bootstrap NS falhou (Sheets-DB): ${(err as Error).message}. Iniciando vazio.`,
-      );
+      this.logger.warn(`Bootstrap NS falhou: ${(err as Error).message}.`);
     }
   }
 
-  list(filter: { data?: string; militarNf?: string } = {}): NotaServico[] {
-    let result = Array.from(this.byId.values());
-    if (filter.data) {
-      result = result.filter((n) => n.data === filter.data);
-    }
-    if (filter.militarNf) {
-      result = result.filter((n) => n.militaresNfs.includes(filter.militarNf!));
-    }
-    return result.sort((a, b) => {
-      // mais recentes primeiro, depois por hora início
-      const c = b.data.localeCompare(a.data);
-      return c !== 0 ? c : a.horaInicio.localeCompare(b.horaInicio);
+  async list(filter: { data?: string; militarNf?: string } = {}): Promise<NotaServico[]> {
+    const rows = await this.prisma.notaServico.findMany({
+      where: {
+        deletedAt: null,
+        ...(filter.data ? { data: filter.data } : {}),
+        ...(filter.militarNf ? { militaresNfs: { has: filter.militarNf } } : {}),
+      },
+      orderBy: [{ data: 'desc' }, { horaInicio: 'asc' }],
     });
+    return rows.map(toNotaServico);
   }
 
-  findById(id: string): NotaServico {
-    const n = this.byId.get(id);
-    if (!n) throw new NotFoundException(`Nota de Serviço ${id} não encontrada`);
-    return n;
+  async findById(id: string): Promise<NotaServico> {
+    const row = await this.prisma.notaServico.findFirst({
+      where: { id, deletedAt: null },
+    });
+    if (!row) throw new NotFoundException(`Nota de Serviço ${id} não encontrada`);
+    return toNotaServico(row);
   }
 
-  /** Atalho para integração Prévia: NS aplicáveis a uma data. */
-  listDoDia(dataIso: string): NotaServico[] {
+  async listDoDia(dataIso: string): Promise<NotaServico[]> {
     return this.list({ data: dataIso });
   }
 
-  create(input: CreateNotaServicoInput, criadoPorNf: string): NotaServico {
-    const now = new Date().toISOString();
-    const ns: NotaServico = {
-      id: `ns:${randomUUID()}`,
-      codigo: input.codigo.trim(),
-      descricao: input.descricao.trim(),
-      data: input.data,
-      horaInicio: input.horaInicio,
-      horaFim: input.horaFim,
-      viaturaPrefixo: input.viaturaPrefixo?.trim() || undefined,
-      militaresNfs: input.militaresNfs,
-      observacoes: input.observacoes?.trim() || undefined,
-      criadoEm: now,
-      criadoPorNf,
-    };
-    this.byId.set(ns.id, ns);
+  async create(input: CreateNotaServicoInput, criadoPorNf: string): Promise<NotaServico> {
+    const row = await this.prisma.notaServico.create({
+      data: {
+        codigo: input.codigo.trim(),
+        descricao: input.descricao.trim(),
+        data: input.data,
+        horaInicio: input.horaInicio,
+        horaFim: input.horaFim,
+        viaturaPrefixo: input.viaturaPrefixo?.trim() || null,
+        militaresNfs: input.militaresNfs,
+        observacoes: input.observacoes?.trim() || null,
+        criadoPorNf,
+      },
+    });
+    const ns = toNotaServico(row);
     this.syncToSheetsDb(ns);
     return ns;
   }
 
   /** Rejeita duplicata exata `(codigo, data)`. */
-  createOrConflict(input: CreateNotaServicoInput, criadoPorNf: string): NotaServico {
-    const existing = this.list({ data: input.data }).find((n) => n.codigo === input.codigo.trim());
+  async createOrConflict(input: CreateNotaServicoInput, criadoPorNf: string): Promise<NotaServico> {
+    const existing = await this.prisma.notaServico.findFirst({
+      where: { data: input.data, codigo: input.codigo.trim(), deletedAt: null },
+    });
     if (existing) {
       throw new ConflictException(`Já existe NS "${input.codigo}" para a data ${input.data}`);
     }
     return this.create(input, criadoPorNf);
   }
 
-  update(id: string, input: UpdateNotaServicoInput): NotaServico {
-    const current = this.findById(id);
-    const updated: NotaServico = {
-      ...current,
-      codigo: input.codigo?.trim() ?? current.codigo,
-      descricao: input.descricao?.trim() ?? current.descricao,
-      data: input.data ?? current.data,
-      horaInicio: input.horaInicio ?? current.horaInicio,
-      horaFim: input.horaFim ?? current.horaFim,
-      viaturaPrefixo: input.viaturaPrefixo?.trim() ?? current.viaturaPrefixo,
-      militaresNfs: input.militaresNfs ?? current.militaresNfs,
-      observacoes: input.observacoes?.trim() ?? current.observacoes,
-    };
-    this.byId.set(id, updated);
-    this.syncToSheetsDb(updated);
-    return updated;
+  async update(id: string, input: UpdateNotaServicoInput): Promise<NotaServico> {
+    // Garante que existe + não está soft-deleted.
+    await this.findById(id);
+    const data: Partial<PrismaNS> = {};
+    if (input.codigo !== undefined) data.codigo = input.codigo.trim();
+    if (input.descricao !== undefined) data.descricao = input.descricao.trim();
+    if (input.data !== undefined) data.data = input.data;
+    if (input.horaInicio !== undefined) data.horaInicio = input.horaInicio;
+    if (input.horaFim !== undefined) data.horaFim = input.horaFim;
+    if (input.viaturaPrefixo !== undefined)
+      data.viaturaPrefixo = input.viaturaPrefixo.trim() || null;
+    if (input.militaresNfs !== undefined) data.militaresNfs = input.militaresNfs;
+    if (input.observacoes !== undefined) data.observacoes = input.observacoes.trim() || null;
+    const row = await this.prisma.notaServico.update({ where: { id }, data });
+    const ns = toNotaServico(row);
+    this.syncToSheetsDb(ns);
+    return ns;
   }
 
-  remove(id: string): void {
-    if (!this.byId.has(id)) {
-      throw new NotFoundException(`Nota de Serviço ${id} não encontrada`);
-    }
-    this.byId.delete(id);
+  async remove(id: string): Promise<void> {
+    const row = await this.prisma.notaServico.findFirst({
+      where: { id, deletedAt: null },
+    });
+    if (!row) throw new NotFoundException(`Nota de Serviço ${id} não encontrada`);
+    await this.prisma.notaServico.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
     this.deleteFromSheetsDb(id);
-  }
-
-  reset(): void {
-    this.byId.clear();
   }
 
   private syncToSheetsDb(ns: NotaServico): void {
     if (!this.sheetsDb?.isEnabled()) return;
-    void this.sheetsDb.upsertNotaServico(notaServicoToRow(ns)).catch((err) => {
-      this.logger.warn(`Sheets-DB upsert NS ${ns.id} falhou: ${(err as Error).message}.`);
+    void this.sheetsDb.upsertNotaServico(notaServicoToRow(ns)).catch((err: Error) => {
+      this.logger.warn(`Sheets-DB upsert NS ${ns.id} falhou: ${err.message}.`);
     });
   }
 
   private deleteFromSheetsDb(id: string): void {
     if (!this.sheetsDb?.isEnabled()) return;
-    void this.sheetsDb.deleteNotaServico(id).catch((err) => {
-      this.logger.warn(`Sheets-DB delete NS ${id} falhou: ${(err as Error).message}.`);
+    void this.sheetsDb.deleteNotaServico(id).catch((err: Error) => {
+      this.logger.warn(`Sheets-DB delete NS ${id} falhou: ${err.message}.`);
     });
   }
+}
+
+function toNotaServico(r: PrismaNS): NotaServico {
+  return {
+    id: r.id,
+    codigo: r.codigo,
+    descricao: r.descricao,
+    data: r.data,
+    horaInicio: r.horaInicio,
+    horaFim: r.horaFim,
+    viaturaPrefixo: r.viaturaPrefixo ?? undefined,
+    militaresNfs: r.militaresNfs,
+    observacoes: r.observacoes ?? undefined,
+    criadoEm: r.criadoEm.toISOString(),
+    criadoPorNf: r.criadoPorNf,
+  };
 }

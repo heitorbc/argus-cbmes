@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { ComposicaoEntry, EscalaMensal } from '@argus/shared-types';
+import type { ComposicaoEntry as PrismaCE, EscalaMensal as PrismaEM } from '@prisma/client';
 import { EscalasService, computeDiff, quinzenaDoDia } from './escalas.service';
+import type { PrismaService } from '../../common/prisma/prisma.service';
 
 const composicaoBase: ComposicaoEntry[] = [
   {
@@ -46,56 +48,237 @@ function fakeEscala(overrides: Partial<EscalaMensal> = {}): EscalaMensal {
   };
 }
 
+/**
+ * Mock in-memory de `prisma.escalaMensal.*` e `prisma.composicaoEntry.*`
+ * com suporte a $transaction (callback recebe o próprio mock).
+ */
+function makePrismaMock(): PrismaService {
+  const mesesById = new Map<string, PrismaEM>();
+  const entriesByMesId = new Map<string, PrismaCE[]>();
+  let counter = 1;
+  let entryCounter = 1;
+
+  const escalaMensal = {
+    count: async () => mesesById.size,
+    findUnique: async ({
+      where,
+      include,
+      select: _select,
+    }: {
+      where: { ano_mes: { ano: number; mes: number } };
+      include?: { composicaoEntries?: boolean };
+      select?: unknown;
+    }) => {
+      for (const m of mesesById.values()) {
+        if (m.ano === where.ano_mes.ano && m.mes === where.ano_mes.mes) {
+          return include?.composicaoEntries
+            ? ({ ...m, composicaoEntries: entriesByMesId.get(m.id) ?? [] } as PrismaEM & {
+                composicaoEntries: PrismaCE[];
+              })
+            : m;
+        }
+      }
+      return null;
+    },
+    findMany: async ({
+      orderBy: _orderBy,
+      select: _select,
+    }: { orderBy?: unknown; select?: unknown } = {}) => {
+      const arr = [...mesesById.values()].sort((a, b) => b.ano - a.ano || b.mes - a.mes);
+      return arr;
+    },
+    create: async ({
+      data,
+    }: {
+      data: {
+        ano: number;
+        mes: number;
+        origemArquivo: string;
+        importadoEm: Date;
+        importadoPorNf?: string | null;
+        diaEquipe: unknown;
+        avisos?: unknown;
+        mergulho?: unknown;
+        salvamar?: unknown;
+        ultimoDiaQ1: number;
+        composicaoEntries?: { create: Array<Omit<PrismaCE, 'id' | 'escalaMensalId'>> };
+      };
+    }) => {
+      const id = `em-${counter++}`;
+      const m: PrismaEM = {
+        id,
+        ano: data.ano,
+        mes: data.mes,
+        origemArquivo: data.origemArquivo,
+        importadoEm: data.importadoEm,
+        importadoPorNf: data.importadoPorNf ?? null,
+        diaEquipe: data.diaEquipe as PrismaEM['diaEquipe'],
+        avisos: (data.avisos ?? null) as PrismaEM['avisos'],
+        mergulho: (data.mergulho ?? null) as PrismaEM['mergulho'],
+        salvamar: (data.salvamar ?? null) as PrismaEM['salvamar'],
+        ultimoDiaQ1: data.ultimoDiaQ1,
+      };
+      mesesById.set(id, m);
+      const entries: PrismaCE[] = (data.composicaoEntries?.create ?? []).map((c) => ({
+        ...c,
+        id: `ce-${entryCounter++}`,
+        escalaMensalId: id,
+      }));
+      entriesByMesId.set(id, entries);
+      return m;
+    },
+    update: async ({
+      where,
+      data,
+    }: {
+      where: { id?: string; ano_mes?: { ano: number; mes: number } };
+      data: Partial<PrismaEM> & {
+        composicaoEntries?: { create: Array<Omit<PrismaCE, 'id' | 'escalaMensalId'>> };
+      };
+    }) => {
+      let id: string | undefined = where.id;
+      if (!id && where.ano_mes) {
+        for (const [k, m] of mesesById.entries()) {
+          if (m.ano === where.ano_mes.ano && m.mes === where.ano_mes.mes) {
+            id = k;
+            break;
+          }
+        }
+      }
+      if (!id) throw new Error('Not found');
+      const m = mesesById.get(id);
+      if (!m) throw new Error(`No em ${id}`);
+      const next: PrismaEM = { ...m, ...data } as PrismaEM;
+      mesesById.set(id, next);
+      if (data.composicaoEntries?.create) {
+        const entries: PrismaCE[] = data.composicaoEntries.create.map((c) => ({
+          ...c,
+          id: `ce-${entryCounter++}`,
+          escalaMensalId: id!,
+        }));
+        entriesByMesId.set(id, entries);
+      }
+      return next;
+    },
+    delete: async ({ where }: { where: { ano_mes: { ano: number; mes: number } } }) => {
+      for (const [id, m] of mesesById.entries()) {
+        if (m.ano === where.ano_mes.ano && m.mes === where.ano_mes.mes) {
+          mesesById.delete(id);
+          entriesByMesId.delete(id);
+          return m;
+        }
+      }
+      throw new Error('Not found');
+    },
+  };
+
+  const composicaoEntry = {
+    deleteMany: async ({
+      where,
+    }: {
+      where: {
+        escalaMensalId: string;
+        quinzena?: number;
+        equipe?: string;
+        viatura?: string;
+        funcao?: string;
+      };
+    }) => {
+      const cur = entriesByMesId.get(where.escalaMensalId) ?? [];
+      const next = cur.filter(
+        (e) =>
+          (where.quinzena !== undefined && e.quinzena !== where.quinzena) ||
+          (where.equipe !== undefined && e.equipe !== where.equipe) ||
+          (where.viatura !== undefined && e.viatura !== where.viatura) ||
+          (where.funcao !== undefined && e.funcao !== where.funcao),
+      );
+      if (
+        where.quinzena === undefined &&
+        where.equipe === undefined &&
+        where.viatura === undefined &&
+        where.funcao === undefined
+      ) {
+        entriesByMesId.set(where.escalaMensalId, []);
+        return { count: cur.length };
+      }
+      entriesByMesId.set(where.escalaMensalId, next);
+      return { count: cur.length - next.length };
+    },
+    create: async ({ data }: { data: Omit<PrismaCE, 'id'> }) => {
+      const cur = entriesByMesId.get(data.escalaMensalId) ?? [];
+      const entry: PrismaCE = { ...data, id: `ce-${entryCounter++}` };
+      cur.push(entry);
+      entriesByMesId.set(data.escalaMensalId, cur);
+      return entry;
+    },
+  };
+
+  const prismaLike = {
+    escalaMensal,
+    composicaoEntry,
+    $transaction: async (cb: (tx: unknown) => Promise<unknown>) => cb(prismaLike),
+  };
+  return prismaLike as unknown as PrismaService;
+}
+
+function makeSvc(): EscalasService {
+  return new EscalasService(makePrismaMock());
+}
+
 describe('EscalasService', () => {
   let service: EscalasService;
 
   beforeEach(() => {
-    service = new EscalasService();
+    service = makeSvc();
   });
 
-  it('save + get pelo mês', () => {
+  it('save + get pelo mês', async () => {
     const escala = fakeEscala();
-    service.save(escala);
-    expect(service.get(2026, 5)).toEqual(escala);
-    expect(service.get(2026, 4)).toBeNull();
+    await service.save(escala);
+    const got = await service.get(2026, 5);
+    expect(got?.ano).toBe(2026);
+    expect(got?.mes).toBe(5);
+    expect(got?.composicaoPorQuinzena.q1).toHaveLength(3);
+    expect(got?.diaEquipe['2026-05-01']).toBe('C');
+    expect(await service.get(2026, 4)).toBeNull();
   });
 
-  it('list ordena por ano/mês decrescente', () => {
-    service.save(fakeEscala({ mes: 5, ano: 2026 }));
-    service.save(fakeEscala({ mes: 4, ano: 2026 }));
-    service.save(fakeEscala({ mes: 6, ano: 2026 }));
-    const list = service.list().escalas;
+  it('list ordena por ano/mês decrescente', async () => {
+    await service.save(fakeEscala({ mes: 5, ano: 2026 }));
+    await service.save(fakeEscala({ mes: 4, ano: 2026 }));
+    await service.save(fakeEscala({ mes: 6, ano: 2026 }));
+    const list = (await service.list()).escalas;
     expect(list.map((e) => e.mes)).toEqual([6, 5, 4]);
   });
 
-  it('save sobrescreve escala existente do mesmo mês', () => {
-    service.save(fakeEscala({ origemArquivo: 'v1.xlsx' }));
-    service.save(fakeEscala({ origemArquivo: 'v2.xlsx' }));
-    expect(service.get(2026, 5)?.origemArquivo).toBe('v2.xlsx');
+  it('save sobrescreve escala existente do mesmo mês', async () => {
+    await service.save(fakeEscala({ origemArquivo: 'v1.xlsx' }));
+    await service.save(fakeEscala({ origemArquivo: 'v2.xlsx' }));
+    expect((await service.get(2026, 5))?.origemArquivo).toBe('v2.xlsx');
   });
 
-  it('delete remove escala', () => {
-    service.save(fakeEscala());
-    expect(service.delete(2026, 5)).toBe(true);
-    expect(service.get(2026, 5)).toBeNull();
+  it('delete remove escala', async () => {
+    await service.save(fakeEscala());
+    expect(await service.delete(2026, 5)).toBe(true);
+    expect(await service.get(2026, 5)).toBeNull();
   });
 
-  it('getEscaladosDoDia retorna equipe escalada e composição', () => {
-    service.save(fakeEscala());
-    const r = service.getEscaladosDoDia(2026, 5, '2026-05-01');
+  it('getEscaladosDoDia retorna equipe escalada e composição', async () => {
+    await service.save(fakeEscala());
+    const r = await service.getEscaladosDoDia(2026, 5, '2026-05-01');
     expect(r.equipe).toBe('C');
     expect(r.entries).toHaveLength(2);
     expect(r.entries.every((e) => e.equipe === 'C')).toBe(true);
   });
 
-  it('getEscaladosDoDia retorna vazio quando dia não tem equipe', () => {
-    service.save(fakeEscala());
-    const r = service.getEscaladosDoDia(2026, 5, '2026-05-10');
+  it('getEscaladosDoDia retorna vazio quando dia não tem equipe', async () => {
+    await service.save(fakeEscala());
+    const r = await service.getEscaladosDoDia(2026, 5, '2026-05-10');
     expect(r.equipe).toBeNull();
     expect(r.entries).toEqual([]);
   });
 
-  it('getEscaladosDoDia usa composição da 2ª quinzena para dias após ultimoDiaQ1', () => {
+  it('getEscaladosDoDia usa composição da 2ª quinzena para dias após ultimoDiaQ1', async () => {
     const composicaoQ2: ComposicaoEntry[] = [
       {
         equipe: 'C',
@@ -104,7 +287,7 @@ describe('EscalasService', () => {
         militar: { raw: 'CB SUBSTITUTO', postoAbreviado: 'CB', nomeGuerra: 'SUBSTITUTO' },
       },
     ];
-    service.save(
+    await service.save(
       fakeEscala({
         composicaoPorQuinzena: {
           q1: composicaoBase,
@@ -113,10 +296,10 @@ describe('EscalasService', () => {
         },
       }),
     );
-    const dia20 = service.getEscaladosDoDia(2026, 5, '2026-05-20');
+    const dia20 = await service.getEscaladosDoDia(2026, 5, '2026-05-20');
     expect(dia20.entries).toHaveLength(1);
-    expect(dia20.entries[0].militar.nomeGuerra).toBe('SUBSTITUTO');
-    const dia01 = service.getEscaladosDoDia(2026, 5, '2026-05-01');
+    expect(dia20.entries[0]?.militar.nomeGuerra).toBe('SUBSTITUTO');
+    const dia01 = await service.getEscaladosDoDia(2026, 5, '2026-05-01');
     expect(dia01.entries.find((e) => e.funcao === 'Ch')?.militar.nomeGuerra).toBe('BARCELLOS');
   });
 });
@@ -241,35 +424,37 @@ describe('computeDiff', () => {
 
 describe('EscalasService.updateDiaEquipe (F4)', () => {
   let service: EscalasService;
-  beforeEach(() => {
-    service = new EscalasService();
-    service.save(fakeEscala());
+  beforeEach(async () => {
+    service = makeSvc();
+    await service.save(fakeEscala());
   });
 
-  it('atualiza equipe escalada de um dia', () => {
-    const r = service.updateDiaEquipe(2026, 5, '2026-05-01', 'D');
+  it('atualiza equipe escalada de um dia', async () => {
+    const r = await service.updateDiaEquipe(2026, 5, '2026-05-01', 'D');
     expect(r.diaEquipe['2026-05-01']).toBe('D');
   });
 
-  it('remove dia quando equipe=null', () => {
-    const r = service.updateDiaEquipe(2026, 5, '2026-05-01', null);
+  it('remove dia quando equipe=null', async () => {
+    const r = await service.updateDiaEquipe(2026, 5, '2026-05-01', null);
     expect(r.diaEquipe['2026-05-01']).toBeUndefined();
   });
 
-  it('lança erro se mês não importado', () => {
-    expect(() => service.updateDiaEquipe(2026, 11, '2026-11-01', 'A')).toThrow(/não importada/);
+  it('lança erro se mês não importado', async () => {
+    await expect(service.updateDiaEquipe(2026, 11, '2026-11-01', 'A')).rejects.toThrow(
+      /não importada/,
+    );
   });
 });
 
 describe('EscalasService.upsertComposicao (F4)', () => {
   let service: EscalasService;
-  beforeEach(() => {
-    service = new EscalasService();
-    service.save(fakeEscala());
+  beforeEach(async () => {
+    service = makeSvc();
+    await service.save(fakeEscala());
   });
 
-  it('insere nova posição na 1ª quinzena', () => {
-    const r = service.upsertComposicao(2026, 5, 1, {
+  it('insere nova posição na 1ª quinzena', async () => {
+    const r = await service.upsertComposicao(2026, 5, 1, {
       equipe: 'C',
       viatura: 'GUARDA',
       funcao: 'Sent. 1',
@@ -281,8 +466,8 @@ describe('EscalasService.upsertComposicao (F4)', () => {
     expect(novo?.militar.nomeGuerra).toBe('NOVO');
   });
 
-  it('atualiza posição existente (mesma chave) na 1ª quinzena', () => {
-    const r = service.upsertComposicao(2026, 5, 1, {
+  it('atualiza posição existente (mesma chave) na 1ª quinzena', async () => {
+    const r = await service.upsertComposicao(2026, 5, 1, {
       equipe: 'C',
       viatura: 'ABTS 01',
       funcao: 'Ch',
@@ -295,8 +480,8 @@ describe('EscalasService.upsertComposicao (F4)', () => {
     ).toHaveLength(1);
   });
 
-  it('remove posição quando militar=null', () => {
-    const r = service.upsertComposicao(2026, 5, 1, {
+  it('remove posição quando militar=null', async () => {
+    const r = await service.upsertComposicao(2026, 5, 1, {
       equipe: 'C',
       viatura: 'ABTS 01',
       funcao: 'Ch',
@@ -307,9 +492,9 @@ describe('EscalasService.upsertComposicao (F4)', () => {
     ).toBeUndefined();
   });
 
-  it('upsert na 2ª quinzena não toca a 1ª', () => {
-    const antes = service.get(2026, 5)!;
-    const r = service.upsertComposicao(2026, 5, 2, {
+  it('upsert na 2ª quinzena não toca a 1ª', async () => {
+    const antes = (await service.get(2026, 5))!;
+    const r = await service.upsertComposicao(2026, 5, 2, {
       equipe: 'C',
       viatura: 'ABTS 01',
       funcao: 'Ch',

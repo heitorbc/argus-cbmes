@@ -173,12 +173,13 @@ export class AgendaService {
       const [ano, mes] = parseDataIso(data);
       mesesNoRange.add(`${ano}-${mes}`);
     }
-    const escalas = [...mesesNoRange]
-      .map((k) => {
+    const escalasRaw = await Promise.all(
+      [...mesesNoRange].map((k) => {
         const [ano, mes] = k.split('-').map((s) => Number.parseInt(s, 10)) as [number, number];
         return this.escalasEspeciais.get(ano, mes);
-      })
-      .filter((e): e is NonNullable<typeof e> => e !== null);
+      }),
+    );
+    const escalas = escalasRaw.filter((e): e is NonNullable<typeof e> => e !== null);
     if (escalas.length === 0) return [];
 
     let matcher: NomeMatcher | null = null;
@@ -231,7 +232,7 @@ export class AgendaService {
     inicio: string,
     fim: string,
   ): Promise<AgendaItem[]> {
-    const lista = this.notasServico.list({ militarNf: nf });
+    const lista = await this.notasServico.list({ militarNf: nf });
     return lista
       .filter((ns) => ns.data >= inicio && ns.data <= fim)
       .map((ns) => ({

@@ -70,7 +70,7 @@ export class NotasServicoController {
   }
 
   @Get()
-  list(@Query() query: unknown): NotaServico[] {
+  async list(@Query() query: unknown): Promise<NotaServico[]> {
     const parsed = listQuerySchema.safeParse(query);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
@@ -79,7 +79,7 @@ export class NotasServicoController {
   }
 
   @Get(':id')
-  findById(@Param('id') id: string): NotaServico {
+  async findById(@Param('id') id: string): Promise<NotaServico> {
     return this.notas.findById(id);
   }
 
@@ -90,7 +90,7 @@ export class NotasServicoController {
   @Roles('admin', 'sargenteante', 'fiscal')
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  create(@Body() body: unknown, @CurrentUser() user: UserSession): NotaServico {
+  async create(@Body() body: unknown, @CurrentUser() user: UserSession): Promise<NotaServico> {
     const parsed = createNotaServicoInputSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
@@ -101,12 +101,12 @@ export class NotasServicoController {
 
   @Roles('admin', 'sargenteante')
   @Put(':id')
-  update(@Param('id') id: string, @Body() body: unknown): NotaServico {
+  async update(@Param('id') id: string, @Body() body: unknown): Promise<NotaServico> {
     const parsed = updateNotaServicoInputSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     }
-    const atual = this.notas.findById(id);
+    const atual = await this.notas.findById(id);
     this.assertDataLivre(atual.data, parsed.data.data);
     return this.notas.update(id, parsed.data);
   }
@@ -114,10 +114,10 @@ export class NotasServicoController {
   @Roles('admin', 'sargenteante')
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  remove(@Param('id') id: string): void {
-    const atual = this.notas.findById(id);
+  async remove(@Param('id') id: string): Promise<void> {
+    const atual = await this.notas.findById(id);
     this.assertDataLivre(atual.data);
-    this.notas.remove(id);
+    await this.notas.remove(id);
   }
 
   /**

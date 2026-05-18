@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import type { EscalaMensal, ServicoEstado } from '@argus/shared-types';
 import { EscalasController } from './escalas.controller';
 import { EscalasService } from './escalas.service';
+import { makeEscalasPrismaMock } from '../../common/prisma/prisma-test-mock';
 import type { ServicoService } from '../servico/servico.service';
 
 /**
@@ -29,7 +30,7 @@ describe('EscalasController.confirm (homologação fix)', () => {
   let service: EscalasService;
 
   beforeEach(() => {
-    service = new EscalasService();
+    service = new EscalasService(makeEscalasPrismaMock());
     controller = new EscalasController(service, makeServicoMockSemBloqueio());
   });
 
@@ -103,10 +104,10 @@ describe('EscalasController.confirm (homologação fix)', () => {
     };
   }
 
-  it('persiste mergulho e salvamar (não strippa pelo Zod)', () => {
+  it('persiste mergulho e salvamar (não strippa pelo Zod)', async () => {
     const body = fakeEscala();
-    controller.confirm(body);
-    const got = service.get(2026, 5);
+    await controller.confirm(body);
+    const got = await service.get(2026, 5);
     expect(got).toBeDefined();
     expect(got!.mergulho).toBeDefined();
     expect(got!.mergulho!.equipesPorQuinzena.q1.A?.chefe?.nomeGuerra).toBe('ALEXANDRE');
@@ -117,12 +118,12 @@ describe('EscalasController.confirm (homologação fix)', () => {
     expect(got!.salvamar!.porDia['2026-05-01']).toBe('E');
   });
 
-  it('persiste escala sem mergulho/salvamar (campos opcionais)', () => {
+  it('persiste escala sem mergulho/salvamar (campos opcionais)', async () => {
     const body = fakeEscala();
     delete body.mergulho;
     delete body.salvamar;
-    controller.confirm(body);
-    const got = service.get(2026, 5);
+    await controller.confirm(body);
+    const got = await service.get(2026, 5);
     expect(got).toBeDefined();
     expect(got!.mergulho).toBeUndefined();
     expect(got!.salvamar).toBeUndefined();
