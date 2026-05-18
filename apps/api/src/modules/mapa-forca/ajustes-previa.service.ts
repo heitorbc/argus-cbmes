@@ -15,6 +15,7 @@ import type {
   TrocaEscalaEspecial,
   UpsertAjustesPreviaInput,
 } from '@argus/shared-types';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import { ServicoService } from '../servico/servico.service';
 
 /**
@@ -61,26 +62,31 @@ const VAZIO: AjustesPrevia = {
 @Injectable()
 export class AjustesPreviaService {
   private readonly byData: Map<string, AjustesPrevia> = new Map();
-  /**
-   * S2.10.7b — Decisões de aprovação individual armazenadas separadamente
-   * dos ajustes pré-turno. Permite aprovar/rejeitar itens derivados (trocas
-   * autorizadas, dispensas, atestados) sem mexer no contrato `AjustesPrevia`.
-   * Chave externa: data ISO; chave interna: `${tipo}:${id}`.
-   */
-  private readonly aprovacoesByData: Map<string, Map<string, StatusAprovacao>> = new Map();
 
   constructor(
     @Inject(forwardRef(() => ServicoService))
     private readonly servico: ServicoService,
+    private readonly prisma: PrismaService,
   ) {}
 
   get(dataIso: string): AjustesPrevia {
     return this.byData.get(dataIso) ?? VAZIO;
   }
 
-  /** S2.10.7b — Lê todas as decisões de aprovação para o dia. */
-  getAprovacoes(dataIso: string): ReadonlyMap<string, StatusAprovacao> {
-    return this.aprovacoesByData.get(dataIso) ?? new Map();
+  /**
+   * S2.10.7c — Lê todas as decisões de aprovação do dia direto do Prisma.
+   * Antes (S2.10.7b) era um Map in-memory; agora persiste em
+   * `AprovacaoPreviaItem` para sobreviver a restart do Render.
+   */
+  async getAprovacoes(dataIso: string): Promise<ReadonlyMap<string, StatusAprovacao>> {
+    const rows = await this.prisma.aprovacaoPreviaItem.findMany({
+      where: { data: dataIso },
+    });
+    const map = new Map<string, StatusAprovacao>();
+    for (const r of rows) {
+      map.set(aprovacaoKey(r.tipo as TipoItemAprovavel, r.itemId), r.status as StatusAprovacao);
+    }
+    return map;
   }
 
   /**
@@ -204,24 +210,38 @@ export class AjustesPreviaService {
   }
 
   /**
-   * S2.10.7b — Aprovação individual de um item da Prévia (troca, dispensa
-   * ou atestado). Idempotente: re-emitir a mesma decisão é no-op. Aplica o
-   * mesmo gate de edição da Prévia (PREVIA_INICIADA + Fiscal escalado, ou
-   * admin).
+   * S2.10.7b/c — Aprovação individual de um item da Prévia (troca, dispensa
+   * ou atestado). Idempotente: re-emitir a mesma decisão atualiza apenas o
+   * timestamp. Aplica o gate de edição da Prévia (PREVIA_INICIADA + Fiscal
+   * escalado, ou admin).
+   *
+   * S2.10.7c — persistência em Prisma (antes Map in-memory).
    */
-  setAprovacaoItem(
+  async setAprovacaoItem(
     dataIso: string,
     tipo: TipoItemAprovavel,
     id: string,
     decisao: 'aprovar' | 'rejeitar',
     nf: string,
     isAdmin = false,
-  ): StatusAprovacao {
+  ): Promise<StatusAprovacao> {
     this.ensureEditable(dataIso, nf, isAdmin);
     const status: StatusAprovacao = decisao === 'aprovar' ? 'aprovada' : 'rejeitada';
-    const map = this.aprovacoesByData.get(dataIso) ?? new Map<string, StatusAprovacao>();
-    map.set(aprovacaoKey(tipo, id), status);
-    this.aprovacoesByData.set(dataIso, map);
+    await this.prisma.aprovacaoPreviaItem.upsert({
+      where: { data_tipo_itemId: { data: dataIso, tipo, itemId: id } },
+      create: {
+        data: dataIso,
+        tipo,
+        itemId: id,
+        status,
+        decididoPorNf: nf,
+      },
+      update: {
+        status,
+        decididoPorNf: nf,
+        decididoEm: new Date(),
+      },
+    });
     return status;
   }
 
@@ -291,9 +311,12 @@ export class AjustesPreviaService {
     return true;
   }
 
-  reset(dataIso: string): void {
+  /**
+   * S2.10.7c — reset agora limpa aprovações persistidas no Prisma também.
+   */
+  async reset(dataIso: string): Promise<void> {
     this.byData.delete(dataIso);
-    this.aprovacoesByData.delete(dataIso);
+    await this.prisma.aprovacaoPreviaItem.deleteMany({ where: { data: dataIso } });
   }
 }
 

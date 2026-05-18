@@ -8,7 +8,10 @@ import type {
 } from '@argus/shared-types';
 import { EscalasService } from '../escalas/escalas.service';
 import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.service';
-import { makeEscalasPrismaMock } from '../../common/prisma/prisma-test-mock';
+import {
+  makeAprovacoesPrismaMock,
+  makeEscalasPrismaMock,
+} from '../../common/prisma/prisma-test-mock';
 import { FiscaisService } from '../fiscais/fiscais.service';
 import { AtestadosService } from '../atestados/atestados.service';
 import { FeriasService } from '../ferias/ferias.service';
@@ -211,7 +214,7 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
       fiscais,
       ideo,
       viaturas as unknown as never,
-      new AjustesPreviaService(new ServicoService()),
+      new AjustesPreviaService(new ServicoService(), makeAprovacoesPrismaMock()),
       new EscalasEspeciaisService(prismaMock),
       new FakeChefesOperacoesService() as unknown as never,
       new ServicoService(),
@@ -793,7 +796,7 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
       fiscais,
       ideo,
       viaturas as unknown as never,
-      new AjustesPreviaService(new ServicoService()),
+      new AjustesPreviaService(new ServicoService(), makeAprovacoesPrismaMock()),
       new EscalasEspeciaisService(prismaMockLocal),
       new FakeChefesOperacoesService() as unknown as never,
       new ServicoService(),
@@ -828,6 +831,128 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
   });
 });
 
+describe('MapaForcaService — aprovação de troca aplica swap (S2.10.7c)', () => {
+  let escalas: EscalasService;
+  let fiscais: FiscaisService;
+  let ideo: IdeoService;
+  let efetivo: FakeEfetivoService;
+  let viaturas: FakeViaturasService;
+  let previa: MapaForcaService;
+  let ajustesSvc: AjustesPreviaService;
+  let servico: ServicoService;
+  const DATA = '2026-04-23';
+  const FISCAL_NF = '3037509'; // BARCELLOS
+
+  beforeEach(async () => {
+    const prismaMock = makeEscalasPrismaMock();
+    escalas = new EscalasService(prismaMock);
+    fiscais = new FiscaisService();
+    ideo = new IdeoService();
+    efetivo = new FakeEfetivoService(EFETIVO_CHARLIE);
+    viaturas = new FakeViaturasService([
+      fakeViatura('ABTS 01'),
+      fakeViatura('RESGATE'),
+      fakeViatura('GUARDA'),
+    ]);
+    servico = new ServicoService();
+    ajustesSvc = new AjustesPreviaService(servico, makeAprovacoesPrismaMock());
+    previa = new MapaForcaService(
+      escalas,
+      efetivo as unknown as never,
+      fiscais,
+      ideo,
+      viaturas as unknown as never,
+      ajustesSvc,
+      new EscalasEspeciaisService(prismaMock),
+      new FakeChefesOperacoesService() as unknown as never,
+      servico,
+      new IdeoStatusService(),
+      new DispensasService(),
+      new AtestadosService(),
+      new NotasServicoService(prismaMock),
+      new FakeTrocasAutorizadasService() as unknown as never,
+      new FeriasService(),
+      new FakeMapaForcaService() as unknown as never,
+    );
+    await escalas.save(escalaAbril2026);
+    // Permite edição de aprovações: PREVIA_INICIADA pelo FISCAL_NF.
+    servico.iniciarPrevia(DATA, FISCAL_NF, FISCAL_NF, true);
+    // Insere uma troca autorizada SD MARTINELLI → CB VICENTE (mesma equipe C).
+    // Não é uma troca real do dia 23/04 — é só uma fixture pra validar swap.
+    const trocasFake = previa as unknown as { trocasAutorizadas: FakeTrocasAutorizadasService };
+    trocasFake.trocasAutorizadas.trocas = [
+      {
+        dataEscala: DATA,
+        dataPagamento: '2026-04-30',
+        escaladoOriginal: 'SD MARTINELLI',
+        substituto: 'CB VICENTE',
+        escaladoPagamento: 'CB VICENTE',
+        substitutoPagamento: 'SD MARTINELLI',
+        funcao: 'Op 1',
+        funcaoPagamento: 'Op 1',
+        horario: '7h às 19h',
+        horarioPagamento: '7h às 19h',
+      },
+    ];
+  });
+
+  it('pendente: composicaoMf mantém escalado original (MARTINELLI)', async () => {
+    const r = await previa.getMapaForcaDoDia(DATA);
+    const op = r.tripulacao.find(
+      (t) => t.viatura === 'ABTS 01' && t.funcao === 'Op 1' && t.equipe === 'C',
+    );
+    expect(op?.militarResolvido?.nf).toBe('4750241'); // MARTINELLI
+    const abts = r.composicaoMf.find((c) => c.recurso === 'ABTS 01');
+    expect(abts?.operadores.some((o) => o.raw.includes('MARTINELLI'))).toBe(true);
+    // Badge da troca = pendente
+    const troca = r.trocas.find((t) => t.origemAutorizada);
+    expect(troca?.statusAprovacao).toBe('pendente');
+  });
+
+  it('aprovada: composicaoMf reflete substituto (VICENTE) na posição Op 1', async () => {
+    // Resolve trocaId da troca autorizada (substitutoNf|periodo).
+    const r0 = await previa.getMapaForcaDoDia(DATA);
+    const troca = r0.trocas.find((t) => t.origemAutorizada)!;
+    await ajustesSvc.setAprovacaoItem(DATA, 'troca', troca.trocaId!, 'aprovar', FISCAL_NF);
+
+    const r = await previa.getMapaForcaDoDia(DATA);
+    const op = r.tripulacao.find(
+      (t) => t.viatura === 'ABTS 01' && t.funcao === 'Op 1' && t.equipe === 'C',
+    );
+    expect(op?.militarResolvido?.nf).toBe('3670180'); // VICENTE
+    const abts = r.composicaoMf.find((c) => c.recurso === 'ABTS 01');
+    expect(abts?.operadores.some((o) => o.raw.includes('VICENTE'))).toBe(true);
+    expect(abts?.operadores.some((o) => o.raw.includes('MARTINELLI'))).toBe(false);
+  });
+
+  it('rejeitada: composicaoMf mantém escalado original (MARTINELLI)', async () => {
+    const r0 = await previa.getMapaForcaDoDia(DATA);
+    const troca = r0.trocas.find((t) => t.origemAutorizada)!;
+    await ajustesSvc.setAprovacaoItem(DATA, 'troca', troca.trocaId!, 'rejeitar', FISCAL_NF);
+
+    const r = await previa.getMapaForcaDoDia(DATA);
+    const op = r.tripulacao.find(
+      (t) => t.viatura === 'ABTS 01' && t.funcao === 'Op 1' && t.equipe === 'C',
+    );
+    expect(op?.militarResolvido?.nf).toBe('4750241'); // MARTINELLI
+  });
+
+  it('idempotente: aprovar 2× não muta além da primeira', async () => {
+    const r0 = await previa.getMapaForcaDoDia(DATA);
+    const troca = r0.trocas.find((t) => t.origemAutorizada)!;
+    await ajustesSvc.setAprovacaoItem(DATA, 'troca', troca.trocaId!, 'aprovar', FISCAL_NF);
+    await ajustesSvc.setAprovacaoItem(DATA, 'troca', troca.trocaId!, 'aprovar', FISCAL_NF);
+
+    const r = await previa.getMapaForcaDoDia(DATA);
+    // Apenas 1 VICENTE em Op 1 — não duplica.
+    const ops = r.tripulacao.filter(
+      (t) => t.viatura === 'ABTS 01' && t.funcao === 'Op 1' && t.equipe === 'C',
+    );
+    expect(ops).toHaveLength(1);
+    expect(ops[0]!.militarResolvido?.nf).toBe('3670180');
+  });
+});
+
 describe('MapaForcaService — inconsistências', () => {
   let escalas: EscalasService;
   let fiscais: FiscaisService;
@@ -849,7 +974,7 @@ describe('MapaForcaService — inconsistências', () => {
       fiscais,
       ideo,
       viaturas as unknown as never,
-      new AjustesPreviaService(new ServicoService()),
+      new AjustesPreviaService(new ServicoService(), makeAprovacoesPrismaMock()),
       new EscalasEspeciaisService(prismaMockLocal),
       new FakeChefesOperacoesService() as unknown as never,
       new ServicoService(),

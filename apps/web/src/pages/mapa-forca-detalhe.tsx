@@ -35,19 +35,12 @@ import {
 import { STATUS_VIATURA_BADGE, STATUS_VIATURA_CARD } from '@/lib/status-viatura-style';
 
 /**
- * S2.10.7 Parte D — Viaturas órfãs (reservas) que NÃO devem ser exibidas
- * standalone na UI. Continuam no MF CIODES backend; aparecem apenas
- * dentro de um recurso quando ativadas via "Ativar recurso adicional".
- *
- * Decisão D3 do plano S2.10.7: some da UI mas continua no backend.
- * Comparação normaliza espaços/underscores (ABTS 011 == ABTS_011).
+ * S2.10.7c — Normaliza códigos de viatura para comparação (espaços vs
+ * underscores). Usado no filtro dinâmico do bloco standalone "Viaturas".
  */
-const VIATURAS_ORFAS_OCULTAS = new Set(['ABTS_011', 'AR_031', 'ATB_001', 'AU_154', 'TE_110']);
-
-function isViaturaOrfaOculta(codigoOuPrefixo: string | null | undefined): boolean {
-  if (!codigoOuPrefixo) return false;
-  const normalized = codigoOuPrefixo.replace(/\s+/g, '_').toUpperCase();
-  return VIATURAS_ORFAS_OCULTAS.has(normalized);
+function normalizaCodigoVtr(codigoOuPrefixo: string | null | undefined): string {
+  if (!codigoOuPrefixo) return '';
+  return codigoOuPrefixo.replace(/\s+/g, '_').toUpperCase();
 }
 
 const EQUIPE_COLOR: Record<LetraEquipe, string> = {
@@ -656,21 +649,47 @@ export function MapaForcaDetalhePage() {
                         )
                       : null;
                     const showSwapPar = !!parInfo && podeSwap;
+                    // S2.10.7c — Recurso unificado com Viatura: header do card
+                    // mostra recurso + vtrPrefixo + status badge. Caso 1
+                    // (ABTS_01 + ABTS_011 DISPONIVEL + efetivo) e caso 2
+                    // (PLATAFORMA + TE_110 BAIXADA + sem efetivo) ficam unificados.
+                    const mfEntry = previa.composicaoMf.find((c) => c.recurso === viatura);
+                    const vtrPrefixo = mfEntry?.vtrPrefixo;
+                    const vtrStatus = mfEntry?.vtrStatus;
+                    const showVtrBadge = vtrStatus && vtrStatus !== 'DISPONIVEL';
                     return (
                       <article
                         key={viatura}
                         className="rounded border border-slate-200 bg-white p-3"
                       >
                         <div className="flex items-baseline justify-between gap-2">
-                          <p className="text-sm font-bold text-cbmes-blue">
-                            {viatura}
+                          <p className="flex flex-wrap items-baseline gap-2 text-sm font-bold text-cbmes-blue">
+                            <span>{viatura}</span>
+                            {vtrPrefixo && (
+                              <span className="font-mono text-xs font-medium text-slate-600">
+                                {vtrPrefixo}
+                              </span>
+                            )}
+                            {showVtrBadge && vtrStatus && (
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                                  vtrStatus in STATUS_VIATURA_BADGE
+                                    ? STATUS_VIATURA_BADGE[
+                                        vtrStatus as keyof typeof STATUS_VIATURA_BADGE
+                                      ]
+                                    : 'bg-slate-200 text-slate-700'
+                                }`}
+                              >
+                                {vtrStatus}
+                              </span>
+                            )}
                             {swapAtivo && isMergulho && (
-                              <span className="ml-2 rounded-full bg-cbmes-blue/10 px-2 py-0.5 text-[10px] font-medium text-cbmes-blue">
+                              <span className="rounded-full bg-cbmes-blue/10 px-2 py-0.5 text-[10px] font-medium text-cbmes-blue">
                                 ⇄ M01↔M02 trocados
                               </span>
                             )}
                             {overridePar && parInfo && (
-                              <span className="ml-2 rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-medium text-amber-900">
+                              <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-medium text-amber-900">
                                 ⇄ {parInfo.par} 01↔02 trocados
                               </span>
                             )}
@@ -864,16 +883,31 @@ export function MapaForcaDetalhePage() {
               </section>
             )}
 
-            {previa.viaturasOperacionais.filter((v) => !isViaturaOrfaOculta(v.codigo)).length >
-              0 && (
-              <section className="mt-4">
-                <h3 className="mb-2 text-sm font-semibold text-slate-700">
-                  Viaturas (status do Mapa Força)
-                </h3>
-                <ul className="grid grid-cols-2 gap-2 text-xs md:grid-cols-3">
-                  {previa.viaturasOperacionais
-                    .filter((v) => !isViaturaOrfaOculta(v.codigo))
-                    .map((v) => {
+            {(() => {
+              // S2.10.7c — Filtro dinâmico: o bloco standalone "Viaturas" só
+              // mostra viaturas que NÃO estão atribuídas a nenhum recurso no
+              // MF CIODES do dia (ou seja, não aparecem em composicaoMf.vtrPrefixo).
+              // Antes (S2.10.7a) usava lista hardcoded VIATURAS_ORFAS_OCULTAS.
+              const vtrPrefixosNoMf = new Set(
+                previa.composicaoMf
+                  .map((c) => c.vtrPrefixo)
+                  .filter((p): p is string => !!p)
+                  .map(normalizaCodigoVtr),
+              );
+              const viaturasNaoAtribuidas = previa.viaturasOperacionais.filter(
+                (v) => !vtrPrefixosNoMf.has(normalizaCodigoVtr(v.codigo)),
+              );
+              if (viaturasNaoAtribuidas.length === 0) return null;
+              return (
+                <section className="mt-4">
+                  <h3 className="mb-2 text-sm font-semibold text-slate-700">
+                    Viaturas (status do Mapa Força)
+                  </h3>
+                  <p className="mb-2 text-[11px] italic text-slate-500">
+                    Viaturas NÃO atribuídas a nenhum recurso no MF CIODES do dia.
+                  </p>
+                  <ul className="grid grid-cols-2 gap-2 text-xs md:grid-cols-3">
+                    {viaturasNaoAtribuidas.map((v) => {
                       // S6c/F3 — paleta única; status são DISPONIVEL/BAIXADA/EMPRESTADA (ADR-009)
                       const statusClass =
                         v.vtrStatus && v.vtrStatus in STATUS_VIATURA_CARD
@@ -900,9 +934,10 @@ export function MapaForcaDetalhePage() {
                         </li>
                       );
                     })}
-                </ul>
-              </section>
-            )}
+                  </ul>
+                </section>
+              );
+            })()}
 
             <TrocasAutorizadasReadOnly
               data={data}

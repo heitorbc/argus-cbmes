@@ -559,3 +559,21 @@ model ConferenciaMaterial {
   @@index([data])
   @@map("conferencias_materiais")
 }
+
+/// S2.10.7c — Decisão de aprovação individual do Fiscal por item da Prévia
+/// (troca autorizada, dispensa, atestado). Ausência de registro = pendente.
+/// Persistência aqui sobrevive a restart do Render (antes era Map in-memory
+/// no AjustesPreviaService).
+model AprovacaoPreviaItem {
+  id            String   @id @default(cuid())
+  data          String // YYYY-MM-DD da Prévia
+  tipo          String // 'troca' | 'dispensa' | 'atestado'
+  itemId        String // trocaApprovalId (troca) ou UUID (dispensa/atestado)
+  status        String // 'aprovada' | 'rejeitada'
+  decididoPorNf String
+  decididoEm    DateTime @default(now())
+
+  @@unique([data, tipo, itemId])
+  @@index([data])
+  @@map("aprovacoes_previa_itens")
+}

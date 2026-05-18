@@ -117,6 +117,9 @@ export class MapaForcaService {
       incluirEfetivoOrfao: true,
     });
     const matcher = new NomeMatcher(efetivoTotal);
+    // S2.10.7c — efetivoByNf usado tanto para enriquecer dispensas/atestados
+    // quanto para aplicar trocas aprovadas em tripulação antes do build.
+    const efetivoByNf = new Map(efetivoTotal.map((m) => [m.nf, m]));
 
     // S6g (2026-05-10) — Tripulação vem 100% da Escala XLSX da SOS. O complemento
     // via MF (`buildComplementosFromMapaForca`) foi removido: militares do MF
@@ -190,8 +193,9 @@ export class MapaForcaService {
 
     // F7a — Ajustes pré-turno (trocas/escala especial/NS/dispensas) persistidos por data.
     const ajustes = this.ajustes.get(dataIso);
-    // S2.10.7b — Decisões de aprovação individual do Fiscal por item.
-    const aprovacoes = this.ajustes.getAprovacoes(dataIso);
+    // S2.10.7b/c — Decisões de aprovação individual do Fiscal por item.
+    // Persistido em Prisma desde S2.10.7c.
+    const aprovacoes = await this.ajustes.getAprovacoes(dataIso);
     const statusAprovacaoDispensa = (id: string): StatusAprovacao =>
       aprovacoes.get(`dispensa:${id}`) ?? 'pendente';
     const statusAprovacaoAtestado = (id: string): StatusAprovacao =>
@@ -331,6 +335,57 @@ export class MapaForcaService {
       aplicarOverrideParRecurso(o.par, tripulacao);
     }
 
+    // S0.5/PR1 — Trocas Autorizadas (planilha externa) entram automaticamente
+    // em `previa.trocas`. As trocas manuais (`ajustes.trocas`) vêm depois,
+    // permitindo override pelo Fiscal.
+    // S2.10.7c — movido para ANTES de buildComposicaoMf: as trocas APROVADAS
+    // são aplicadas em tripulação primeiro, para que composicaoMf reflita o
+    // efetivo real (swap pós-aprovação).
+    const trocasAutorizadasDoDia = await this.trocasAutorizadas.listByData(dataIso).catch((err) => {
+      inconsistencias.push({
+        tipo: 'TROCAS_AUTORIZADAS_INDISPONIVEIS',
+        mensagem: `Não foi possível consultar a planilha de Trocas Autorizadas: ${(err as Error).message}`,
+      });
+      return [];
+    });
+    // S0.5/0.1.1.3 — para validar substituto de ChOp contra a planilha
+    // específica, carregamos a lista de NFs habilitados (1 vez por
+    // request). Vazio se a planilha não está sincronizada.
+    const chopHabilitados = await this.chefesOperacoes.getHabilitadosNfs();
+    const trocasAutComoPrevia = dedupTrocasAutorizadas(
+      trocasAutorizadasDoDia.map((t) =>
+        converterTrocaAutorizadaEmPrevia(t, dataIso, matcher, inconsistencias, chopHabilitados),
+      ),
+    ).map((t) => {
+      // S2.10.7b — Identificador estável + status de aprovação por troca.
+      const id = trocaApprovalId(t);
+      return {
+        ...t,
+        trocaId: id,
+        statusAprovacao: statusAprovacaoTroca(id),
+      };
+    });
+    // Trocas manuais do Fiscal entram já como aprovadas (foi o próprio Fiscal).
+    const trocasManuaisAprovadas = ajustes.trocas.map((t) => ({
+      ...t,
+      statusAprovacao: t.statusAprovacao ?? ('aprovada' as StatusAprovacao),
+    }));
+    const trocasFinalDoDia = [...trocasAutComoPrevia, ...trocasManuaisAprovadas];
+
+    // S2.10.7c — Aplica trocas APROVADAS em tripulação para que composicaoMf
+    // reflita o efetivo real do recurso. Trocas pendentes/rejeitadas não
+    // alteram a composição.
+    let tripulacaoComTrocas = tripulacao;
+    for (const troca of trocasFinalDoDia) {
+      if (troca.statusAprovacao !== 'aprovada') continue;
+      tripulacaoComTrocas = aplicarTrocaAprovadaEmTripulacao(
+        tripulacaoComTrocas,
+        troca,
+        efetivoByNf,
+        inconsistencias,
+      );
+    }
+
     // S6b/F2 — composicaoMf espelhando o MF (1 entry por recurso).
     // Já inclui MERGULHO 01/02 e SALVAMAR 01 porque foram empurrados em
     // tripulacao acima.
@@ -339,7 +394,7 @@ export class MapaForcaService {
     // recursos como RESGATE 02 (AR_044 BAIXADA) e PLATAFORMA (TE_110
     // BAIXADA) constem na Prévia, no preenchimento do MF e na Parte
     // Diária mesmo sem militares no XLSX.
-    const composicaoMf = buildComposicaoMf(tripulacao, allViaturas, mfRecursos);
+    const composicaoMf = buildComposicaoMf(tripulacaoComTrocas, allViaturas, mfRecursos);
 
     // S6b/F1 — Estado do Servico do dia
     const estadoServico = this.servico.get(dataIso);
@@ -348,7 +403,6 @@ export class MapaForcaService {
     // S6j — Dispensas: deriva de DispensasService.listAtivasNoDia (entidade
     // canônica) + enriquece com nome do militar quando NF resolve no efetivo.
     const dispensasAtivas = this.dispensasSvc.listAtivasNoDia(dataIso);
-    const efetivoByNf = new Map(efetivoTotal.map((m) => [m.nf, m]));
     const dispensasPrevia: PreviaDispensa[] = dispensasAtivas.map((d) => {
       const m = efetivoByNf.get(d.militarNf);
       return {
@@ -427,40 +481,6 @@ export class MapaForcaService {
       : null;
     const textoAtestadoIdeoFiscal = gerarTextoFiscalAtestadoIdeo(ideoStatus, fiscalParaTexto);
 
-    // S0.5/PR1 — Trocas Autorizadas (planilha externa) entram automaticamente
-    // em `previa.trocas`. As trocas manuais (`ajustes.trocas`) vêm depois,
-    // permitindo override pelo Fiscal.
-    const trocasAutorizadasDoDia = await this.trocasAutorizadas.listByData(dataIso).catch((err) => {
-      inconsistencias.push({
-        tipo: 'TROCAS_AUTORIZADAS_INDISPONIVEIS',
-        mensagem: `Não foi possível consultar a planilha de Trocas Autorizadas: ${(err as Error).message}`,
-      });
-      return [];
-    });
-    // S0.5/0.1.1.3 — para validar substituto de ChOp contra a planilha
-    // específica, carregamos a lista de NFs habilitados (1 vez por
-    // request). Vazio se a planilha não está sincronizada.
-    const chopHabilitados = await this.chefesOperacoes.getHabilitadosNfs();
-    const trocasAutComoPrevia = dedupTrocasAutorizadas(
-      trocasAutorizadasDoDia.map((t) =>
-        converterTrocaAutorizadaEmPrevia(t, dataIso, matcher, inconsistencias, chopHabilitados),
-      ),
-    ).map((t) => {
-      // S2.10.7b — Identificador estável + status de aprovação por troca.
-      const id = trocaApprovalId(t);
-      return {
-        ...t,
-        trocaId: id,
-        statusAprovacao: statusAprovacaoTroca(id),
-      };
-    });
-    // Trocas manuais do Fiscal entram já como aprovadas (foi o próprio Fiscal).
-    const trocasManuaisAprovadas = ajustes.trocas.map((t) => ({
-      ...t,
-      statusAprovacao: t.statusAprovacao ?? ('aprovada' as StatusAprovacao),
-    }));
-    const trocasFinalDoDia = [...trocasAutComoPrevia, ...trocasManuaisAprovadas];
-
     return {
       data: dataIso,
       ano,
@@ -470,7 +490,8 @@ export class MapaForcaService {
       equipeNome: equipe ? LETRA_EQUIPE_LABEL[equipe] : null,
       fiscal,
       composicaoMf,
-      tripulacao,
+      // S2.10.7c — tripulação refletindo as trocas aprovadas (swap pós-aprovação).
+      tripulacao: tripulacaoComTrocas,
       ideo: ideoEntries,
       ideoStatus,
       textoAtestadoIdeoFiscal,
@@ -723,27 +744,11 @@ function buildComposicaoMf(
     });
   }
 
-  // Viaturas órfãs ainda não vinculadas a nenhum recurso (ex.: viatura
-  // existe no override admin mas não está em nenhum recurso do MF CIODES).
-  for (const v of viaturas) {
-    const alreadyBound = Array.from(byRecurso.values()).some(
-      (e) => e.vtrPrefixo && normalizeViaturaCode(e.vtrPrefixo) === normalizeViaturaCode(v.prefixo),
-    );
-    if (alreadyBound) continue;
-    if (byRecurso.has(v.prefixo)) continue;
-    byRecurso.set(v.prefixo, {
-      recurso: v.prefixo,
-      vtrPrefixo: v.prefixo,
-      vtrStatus: v.status,
-      semEquipe: true,
-      equipe: null,
-      chefe: undefined,
-      motorista: undefined,
-      operadores: [],
-      efetivoPrevistoNaoPreenchido: [],
-    });
-  }
-
+  // S2.10.7c — Viaturas SEM vinculação a nenhum recurso do MF CIODES NÃO
+  // entram mais em composicaoMf. Elas aparecem apenas no bloco standalone
+  // "Viaturas (status do MF)" no frontend, via filtro dinâmico baseado em
+  // composicaoMf.vtrPrefixo. Isso elimina os cards "soltos" (ABTS_011,
+  // AC_001, …) que apareciam na Tripulação depois do último recurso real.
   return Array.from(byRecurso.values());
 }
 
@@ -1086,6 +1091,62 @@ function aplicarSwapMilitar(
       t.militarResolvido = resolvidoA;
     }
   }
+}
+
+/**
+ * S2.10.7c — Aplica uma troca APROVADA à tripulação. Localiza o militar com
+ * `nf == substituidoNf` (em qualquer recurso/função/equipe) e o substitui
+ * pelos dados do militar com `nf == substitutoNf` resolvido pelo efetivo.
+ *
+ * - Skip silencioso quando `substituidoNf` ou `substitutoNf` ausentes.
+ *   (Trocas autorizadas sem NF não dá pra aplicar com segurança.)
+ * - Skip + inconsistência quando o substituto não está no efetivo consolidado.
+ * - Idempotente: se já foi aplicada (militar atual já é o substituto),
+ *   o `find` por substituidoNf não encontra ninguém e retorna a tripulação
+ *   inalterada.
+ *
+ * Diferente de `aplicarSwapMilitar`, aqui é uma SUBSTITUIÇÃO (não swap A↔B):
+ * o substituído sai e o substituto entra na mesma posição.
+ */
+function aplicarTrocaAprovadaEmTripulacao(
+  tripulacao: TripulacaoEntry[],
+  troca: {
+    substituidoNf?: string;
+    substitutoNf?: string;
+    substituidoRaw: string;
+    substitutoRaw: string;
+  },
+  efetivoByNf: Map<string, Militar>,
+  inconsistencias: MapaForcaInconsistencia[],
+): TripulacaoEntry[] {
+  if (!troca.substituidoNf || !troca.substitutoNf) return tripulacao;
+  const substituto = efetivoByNf.get(troca.substitutoNf);
+  if (!substituto) {
+    inconsistencias.push({
+      tipo: 'NF_NAO_RESOLVIDO',
+      mensagem: `Troca aprovada: substituto NF ${troca.substitutoNf} (${troca.substitutoRaw}) não está no efetivo consolidado.`,
+      detalhe: {
+        origem: 'troca-aprovada',
+        substituidoNf: troca.substituidoNf,
+        substitutoNf: troca.substitutoNf,
+      },
+    });
+    return tripulacao;
+  }
+  return tripulacao.map((t) => {
+    if (t.militarResolvido?.nf !== troca.substituidoNf) return t;
+    const nomeGuerra = substituto.nomeGuerra ?? substituto.nome.split(' ')[0] ?? substituto.nome;
+    return {
+      ...t,
+      militarRef: {
+        raw: `${substituto.posto} ${nomeGuerra}`,
+        postoAbreviado: substituto.posto,
+        nomeGuerra,
+        nf: substituto.nf,
+      },
+      militarResolvido: substituto,
+    };
+  });
 }
 
 /**

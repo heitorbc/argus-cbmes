@@ -382,3 +382,89 @@ export function makeEscalasPrismaMock(): PrismaService {
   };
   return prismaLike as unknown as PrismaService;
 }
+
+/**
+ * S2.10.7c — Mock in-memory mínimo de `PrismaService` cobrindo apenas
+ * `aprovacaoPreviaItem` (decisões individuais do Fiscal sobre trocas,
+ * dispensas e atestados). Usado nos tests de `AjustesPreviaService` que não
+ * precisam das tabelas pesadas de escalas.
+ *
+ * Suporta: findMany({ where: { data } }), upsert({ where: { data_tipo_itemId } }),
+ * deleteMany({ where: { data } }). Não suporta queries arbitrárias.
+ */
+export function makeAprovacoesPrismaMock(): PrismaService {
+  type Row = {
+    id: string;
+    data: string;
+    tipo: string;
+    itemId: string;
+    status: string;
+    decididoPorNf: string;
+    decididoEm: Date;
+  };
+  const rows = new Map<string, Row>();
+  let counter = 1;
+  const compositeKey = (data: string, tipo: string, itemId: string) => `${data}|${tipo}|${itemId}`;
+
+  const aprovacaoPreviaItem = {
+    findMany: async ({ where }: { where: { data: string } }) => {
+      const out: Row[] = [];
+      for (const r of rows.values()) {
+        if (r.data === where.data) out.push(r);
+      }
+      return out;
+    },
+    upsert: async ({
+      where,
+      create,
+      update,
+    }: {
+      where: { data_tipo_itemId: { data: string; tipo: string; itemId: string } };
+      create: Omit<Row, 'id' | 'decididoEm'>;
+      update: Partial<Pick<Row, 'status' | 'decididoPorNf' | 'decididoEm'>>;
+    }) => {
+      const k = compositeKey(
+        where.data_tipo_itemId.data,
+        where.data_tipo_itemId.tipo,
+        where.data_tipo_itemId.itemId,
+      );
+      const existing = rows.get(k);
+      if (existing) {
+        const next: Row = {
+          ...existing,
+          status: update.status ?? existing.status,
+          decididoPorNf: update.decididoPorNf ?? existing.decididoPorNf,
+          decididoEm: update.decididoEm ?? new Date(),
+        };
+        rows.set(k, next);
+        return next;
+      }
+      const next: Row = {
+        id: `apv-${counter++}`,
+        data: create.data,
+        tipo: create.tipo,
+        itemId: create.itemId,
+        status: create.status,
+        decididoPorNf: create.decididoPorNf,
+        decididoEm: new Date(),
+      };
+      rows.set(k, next);
+      return next;
+    },
+    deleteMany: async ({ where }: { where: { data: string } }) => {
+      let count = 0;
+      for (const [k, r] of rows.entries()) {
+        if (r.data === where.data) {
+          rows.delete(k);
+          count++;
+        }
+      }
+      return { count };
+    },
+  };
+
+  const prismaLike = {
+    aprovacaoPreviaItem,
+  };
+  return prismaLike as unknown as PrismaService;
+}
