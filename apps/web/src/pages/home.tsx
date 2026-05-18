@@ -52,7 +52,10 @@ export function HomePage() {
             Você está autenticado como
           </p>
           <p className="mt-1 text-lg font-semibold text-cbmes-blue">{formatDisplayName(user)}</p>
-          <p className="text-sm text-slate-600">
+          {user.nome && user.nome !== formatDisplayName(user) && (
+            <p className="text-xs italic text-slate-500">{user.nome}</p>
+          )}
+          <p className="mt-1 text-sm text-slate-600">
             NF: {user.nf} · ANT: {user.ant}
           </p>
 

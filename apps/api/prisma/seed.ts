@@ -29,16 +29,12 @@ async function seedUsers(): Promise<void> {
   let updated = 0;
 
   for (const u of MOCK_USERS) {
-    // S2.10.4 — nomeGuerra: heurística baseada no nome (último token significativo);
-    // refinada no auto-provision pelo EfetivoService que tem o valor canônico do QDI.
-    const nomeGuerra = u.nome.trim().split(/\s+/).pop() ?? null;
-
     const result = await prisma.user.upsert({
       where: { nf: u.nf },
       create: {
         nf: u.nf,
         nome: u.nome,
-        nomeGuerra,
+        nomeGuerra: u.nomeGuerra,
         posto: u.posto,
         ant: u.ant,
         papeis: u.papeis,
@@ -48,9 +44,11 @@ async function seedUsers(): Promise<void> {
         primeiroAcesso: true,
       },
       update: {
-        // Atualiza apenas dados não-sensíveis para não sobrescrever senhas
-        // já trocadas pelos usuários reais. nomeGuerra atualiza só se vazio.
+        // Atualiza dados que vêm canonicamente do QDI/EFETIVO. Mantém
+        // senhaHash e email já cadastrados (não sobrescreve). nomeGuerra
+        // entra sempre — é a fonte institucional canônica.
         nome: u.nome,
+        nomeGuerra: u.nomeGuerra,
         posto: u.posto,
         ant: u.ant,
         papeis: u.papeis,

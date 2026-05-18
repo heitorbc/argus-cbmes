@@ -82,9 +82,9 @@ export function UsuariosPage() {
 
       <section className="mx-auto max-w-3xl p-4">
         <div className="rounded border border-slate-200 bg-white p-3 text-xs text-slate-600">
-          <strong>Storage:</strong> in-memory (Fase 1). Usuários criados aqui se perdem ao restart
-          do backend até a migração Supabase (S2.9). Para deploy permanente enquanto isso, ainda é
-          necessário PR de código.
+          <strong>Posto, Nome e ANT</strong> vêm do QDI/EFETIVO e não são editáveis aqui. Admin
+          edita apenas papéis, e-mail e reset de senha. Usuários ausentes da lista são criados
+          automaticamente no primeiro login (com NF do EFETIVO).
         </div>
 
         {error && (
@@ -134,14 +134,28 @@ export function UsuariosPage() {
               <li key={u.nf} className="p-3">
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                   <strong className="text-slate-900">
-                    {u.posto} {u.nome}
+                    {u.posto} {u.nomeGuerra ?? u.nome.split(' ')[0]}
                   </strong>
-                  <span className="text-xs text-slate-500">
-                    NF {u.nf} · ANT {u.ant}
-                  </span>
+                  <span className="text-xs italic text-slate-500">{u.nome}</span>
+                </div>
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
+                  <span>NF {u.nf}</span>
+                  <span>·</span>
+                  <span>ANT {u.ant}</span>
+                  {u.email && (
+                    <>
+                      <span>·</span>
+                      <span>✉ {u.email}</span>
+                    </>
+                  )}
+                  {!u.email && (
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
+                      sem e-mail
+                    </span>
+                  )}
                   {u.primeiroAcesso && (
                     <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
-                      PRIMEIRO ACESSO PENDENTE
+                      1º ACESSO PENDENTE
                     </span>
                   )}
                 </div>
@@ -223,6 +237,7 @@ function UsuarioForm({
   const [nome, setNome] = useState(usuario?.nome ?? '');
   const [posto, setPosto] = useState(usuario?.posto ?? 'SD');
   const [ant, setAnt] = useState(usuario?.ant ?? 1000);
+  const [email, setEmail] = useState(usuario?.email ?? '');
   const [papeis, setPapeis] = useState<Papel[]>(usuario?.papeis ?? ['militar']);
   const [resetSenha, setResetSenha] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -241,7 +256,9 @@ function UsuarioForm({
         const input: CreateUsuarioInput = { nf, nome, posto, ant, papeis };
         await api.usuarioCreate(input);
       } else if (usuario) {
-        await api.usuarioUpdate(usuario.nf, { nome, posto, ant, papeis, resetSenha });
+        // S2.10.4b — campos QDI (nome/posto/ant) NÃO vão no payload em edit:
+        // são read-only na UI e vêm da fonte canônica (QDI/EFETIVO).
+        await api.usuarioUpdate(usuario.nf, { email, papeis, resetSenha });
       }
       await onSaved();
     } catch (err) {
@@ -251,11 +268,23 @@ function UsuarioForm({
     }
   };
 
+  // S2.10.4b — em modo edit, posto/nome/ant vêm do QDI/EFETIVO e ficam
+  // bloqueados (apenas visualização). Admin não pode sobrescrever a
+  // fonte institucional pela UI.
+  const camposQdiReadOnly = modo === 'edit';
+
   return (
     <form
       onSubmit={handleSubmit}
       className="mt-3 rounded border-2 border-cbmes-blue/40 bg-cbmes-blue/5 p-3 text-sm"
     >
+      {camposQdiReadOnly && (
+        <div className="mb-3 rounded border border-slate-200 bg-white p-2 text-[11px] text-slate-600">
+          📌 <strong>Posto, Nome e ANT</strong> são importados do QDI/EFETIVO e não podem ser
+          editados aqui. Edite na planilha-fonte se necessário.
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <label>
           <span className="text-xs font-medium text-slate-700">NF</span>
@@ -266,40 +295,67 @@ function UsuarioForm({
             disabled={modo === 'edit'}
             required
             inputMode="numeric"
-            className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 disabled:bg-slate-100"
+            className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 disabled:bg-slate-100 disabled:text-slate-500"
           />
         </label>
         <label>
-          <span className="text-xs font-medium text-slate-700">Posto</span>
+          <span className="text-xs font-medium text-slate-700">
+            Posto {camposQdiReadOnly && <span className="text-slate-400">(QDI)</span>}
+          </span>
           <input
             type="text"
             value={posto}
             onChange={(e) => setPosto(e.target.value.toUpperCase())}
+            disabled={camposQdiReadOnly}
             required
-            className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
+            className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 disabled:bg-slate-100 disabled:text-slate-500"
           />
         </label>
         <label className="sm:col-span-2">
-          <span className="text-xs font-medium text-slate-700">Nome completo</span>
+          <span className="text-xs font-medium text-slate-700">
+            Nome completo {camposQdiReadOnly && <span className="text-slate-400">(QDI)</span>}
+          </span>
           <input
             type="text"
             value={nome}
             onChange={(e) => setNome(e.target.value.toUpperCase())}
+            disabled={camposQdiReadOnly}
             required
-            className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
+            className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 disabled:bg-slate-100 disabled:text-slate-500"
           />
         </label>
         <label>
-          <span className="text-xs font-medium text-slate-700">ANT (antiguidade)</span>
+          <span className="text-xs font-medium text-slate-700">
+            ANT (antiguidade) {camposQdiReadOnly && <span className="text-slate-400">(QDI)</span>}
+          </span>
           <input
             type="number"
             value={ant}
             onChange={(e) => setAnt(Number.parseInt(e.target.value, 10) || 0)}
+            disabled={camposQdiReadOnly}
             required
             min={0}
-            className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
+            className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 disabled:bg-slate-100 disabled:text-slate-500"
           />
         </label>
+        {modo === 'edit' && (
+          <label className="sm:col-span-2">
+            <span className="text-xs font-medium text-slate-700">
+              E-mail (recuperação de senha e notificações)
+            </span>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value.trim().toLowerCase())}
+              placeholder="usuario@exemplo.com"
+              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5"
+            />
+            <p className="mt-1 text-[10px] text-slate-500">
+              Normalmente preenchido pelo próprio usuário no primeiro acesso. Admin pode cadastrar
+              ou corrigir manualmente aqui.
+            </p>
+          </label>
+        )}
       </div>
 
       <fieldset className="mt-3">

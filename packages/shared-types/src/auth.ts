@@ -137,11 +137,20 @@ export const createUsuarioInputSchema = z.object({
 });
 export type CreateUsuarioInput = z.infer<typeof createUsuarioInputSchema>;
 
-/** Atualização parcial — qualquer campo exceto NF (key imutável). */
+/**
+ * Atualização parcial. NF é imutável (key). S2.10.4b: posto/nome/ant
+ * vêm do QDI e não são editáveis pelo admin via UI — apenas email
+ * (admin pode cadastrar/corrigir) e papeis (RBAC) + resetSenha.
+ *
+ * Campos QDI permanecem no schema para back-compat com chamadas
+ * internas (ex.: sync futuro do EFETIVO via endpoint admin).
+ */
 export const updateUsuarioInputSchema = z.object({
   nome: z.string().trim().min(1).optional(),
   posto: z.string().trim().min(1).optional(),
   ant: z.number().int().nonnegative().optional(),
+  /** S2.10.4b — admin pode cadastrar/corrigir email do militar. */
+  email: z.string().email('E-mail inválido').optional().or(z.literal('')),
   papeis: z.array(z.enum(PAPEIS)).min(1).optional(),
   /** Se preenchido, reseta a senha e marca `primeiroAcesso=true`. */
   resetSenha: z.boolean().optional(),
