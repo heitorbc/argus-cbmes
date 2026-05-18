@@ -134,7 +134,7 @@ export function ConferenciaEquipePage() {
         <Link to={`/mapa-forca/${data}`} className="text-sm opacity-90 hover:opacity-100">
           ← Voltar à Prévia
         </Link>
-        <h1 className="mt-1 text-lg font-bold">Conferência da Equipe</h1>
+        <h1 className="mt-1 text-lg font-bold">Conferência do Chefe de Equipe (efetivo)</h1>
         <p className="text-xs opacity-90">
           {data} {previa?.equipe ? `· Equipe ${previa.equipe} (${previa.equipeNome})` : ''}
         </p>

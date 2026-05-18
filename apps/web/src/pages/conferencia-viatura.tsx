@@ -1,12 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  STATUS_ITEM_MATERIAL,
-  STATUS_ITEM_MATERIAL_LABEL,
+  CATEGORIA_CHECKLIST_COV_LABEL,
+  CATEGORIAS_CHECKLIST_COV,
+  CHECKLIST_COV_TEMPLATE,
   STATUS_VIATURA,
   STATUS_VIATURA_LABEL,
-  type ItemConferenciaMaterial,
-  type StatusItemMaterial,
+  formatDisplayName,
+  type CategoriaChecklistCov,
+  type ChecklistCovItem,
+  type Militar,
   type StatusViatura,
   type Viatura,
 } from '@argus/shared-types';
@@ -14,13 +17,27 @@ import { ApiError, api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { STATUS_VIATURA_BADGE } from '@/lib/status-viatura-style';
 
+/**
+ * S2.10.6 — Conferência do COV/Motorista (viatura).
+ *
+ * Mudanças vs S6b/S8:
+ * 1. Renomeada (era "Conferência da Viatura").
+ * 2. Materiais REMOVIDOS — agora em página dedicada `/conferencia-materiais`.
+ * 3. Termo de Responsabilidade adicionado antes do checklist (modal com
+ *    placeholders auto-preenchidos do EFETIVO + Viatura).
+ * 4. Checklist de 25 itens em 4 seções (Inspeção externa, Motor, Cabine,
+ *    Equipamentos de emergência).
+ * 5. Operação tradicional (KM, tanque, status) continua igual.
+ */
 export function ConferenciaViaturaPage() {
   const { data, vtrPrefixo } = useParams<{ data: string; vtrPrefixo: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
   const isAdmin = user?.papeis.includes('admin') ?? false;
+  const decodedPrefixo = vtrPrefixo ? decodeURIComponent(vtrPrefixo) : '';
 
   const [viatura, setViatura] = useState<Viatura | null>(null);
+  const [motoristaMilitar, setMotoristaMilitar] = useState<Militar | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,10 +49,13 @@ export function ConferenciaViaturaPage() {
   const [statusMudanca, setStatusMudanca] = useState<StatusViatura>('DISPONIVEL');
   const [motivoBaixa, setMotivoBaixa] = useState<string>('');
 
-  // S8 — Conferência de Materiais (seção adicional)
-  const [itensMateriais, setItensMateriais] = useState<ItemConferenciaMaterial[]>([]);
-  const [savingMateriais, setSavingMateriais] = useState(false);
-  const [materiaisOk, setMateriaisOk] = useState(false);
+  // S2.10.6 — Termo + Checklist
+  const [termoAceito, setTermoAceito] = useState(false);
+  const [termoAceitoEm, setTermoAceitoEm] = useState<string | null>(null);
+  const [showTermoModal, setShowTermoModal] = useState(false);
+  const [checklistItens, setChecklistItens] = useState<ChecklistCovItem[]>(() =>
+    CHECKLIST_COV_TEMPLATE.map((t) => ({ ...t, ok: false })),
+  );
 
   useEffect(() => {
     if (!vtrPrefixo) return;
@@ -45,9 +65,9 @@ export function ConferenciaViaturaPage() {
       .viaturasList()
       .then((all) => {
         if (cancelled) return;
-        const v = all.find((x) => x.prefixo === decodeURIComponent(vtrPrefixo));
+        const v = all.find((x) => x.prefixo === decodedPrefixo);
         if (!v) {
-          setError(`Viatura ${vtrPrefixo} não encontrada`);
+          setError(`Viatura ${decodedPrefixo} não encontrada`);
           return;
         }
         setViatura(v);
@@ -64,57 +84,44 @@ export function ConferenciaViaturaPage() {
     return () => {
       cancelled = true;
     };
-  }, [vtrPrefixo]);
+  }, [vtrPrefixo, decodedPrefixo]);
 
-  // S8 — Carrega checklist padrão + conferência existente da data/viatura
+  // Auto-fill do motorista logado (EFETIVO) para o termo.
   useEffect(() => {
-    if (!vtrPrefixo || !data) return;
-    const decoded = decodeURIComponent(vtrPrefixo);
+    if (!user?.nf) return;
     let cancelled = false;
-    Promise.all([
-      api.materiaisChecklistPadrao(decoded).catch(() => [] as string[]),
-      api.materiaisGet(data, decoded).catch(() => null),
-    ]).then(([padrao, existing]) => {
-      if (cancelled) return;
-      const existingConf = existing && !Array.isArray(existing) ? existing : null;
-      if (existingConf) {
-        setItensMateriais(existingConf.itens.map((i) => ({ ...i })));
-      } else {
-        setItensMateriais(padrao.map((label) => ({ label, status: 'OK' })));
-      }
-    });
+    api
+      .efetivoFindByNf(user.nf)
+      .then((m) => {
+        if (!cancelled) setMotoristaMilitar(m);
+      })
+      .catch(() => {
+        // Se Efetivo não retornar (cache stale), o termo ainda funciona sem auto-fill.
+      });
     return () => {
       cancelled = true;
     };
-  }, [vtrPrefixo, data]);
+  }, [user?.nf]);
 
-  const handleSalvarMateriais = async () => {
-    if (!data || !vtrPrefixo || itensMateriais.length === 0) return;
-    setSavingMateriais(true);
-    setError(null);
-    try {
-      await api.materiaisRegistrar({
-        data,
-        vtrPrefixo: decodeURIComponent(vtrPrefixo),
-        itens: itensMateriais,
-      });
-      setMateriaisOk(true);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Erro ao salvar conferência de materiais');
-    } finally {
-      setSavingMateriais(false);
-    }
-  };
+  // Carrega conferência COV existente do dia/viatura (admin pode editar).
+  useEffect(() => {
+    if (!data || !decodedPrefixo) return;
+    let cancelled = false;
+    api
+      .conferenciaCovGet(data, decodedPrefixo)
+      .then((existing) => {
+        if (cancelled || !existing) return;
+        setTermoAceito(true);
+        setTermoAceitoEm(existing.termoAceitoEm);
+        setChecklistItens(existing.itens);
+        if (existing.observacao) setObservacao(existing.observacao);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [data, decodedPrefixo]);
 
-  const updateItemMaterial = (i: number, patch: Partial<ItemConferenciaMaterial>) => {
-    setItensMateriais((arr) => arr.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
-    setMateriaisOk(false);
-  };
-
-  // S0.x — KM histórico: deriva o último KM registrado a partir do
-  // historicoKm (origem 'manual_admin' | 'conferencia' | 'ocorrencia') ou
-  // do kmAtual atual da viatura (fallback). Bloqueia decremento; admin
-  // pode forçar apenas com observação obrigatória.
   const ultimoKm = (viatura?.historicoKm ?? []).reduce(
     (acc, h) => Math.max(acc, h.kmRegistrado),
     viatura?.kmAtual ?? 0,
@@ -125,7 +132,55 @@ export function ConferenciaViaturaPage() {
   const decrementoExigeObservacao = isDecremento && isAdmin;
   const observacaoFaltando = decrementoExigeObservacao && !observacao.trim();
 
-  const handleSalvar = async () => {
+  const itensPorCategoria = useMemo(() => {
+    const groups: Record<CategoriaChecklistCov, ChecklistCovItem[]> = {
+      inspecao_externa: [],
+      compartimento_motor: [],
+      cabine: [],
+      equipamentos_emergencia: [],
+    };
+    for (const item of checklistItens) groups[item.categoria].push(item);
+    return groups;
+  }, [checklistItens]);
+
+  const totalItens = checklistItens.length;
+  const itensOk = checklistItens.filter((i) => i.ok).length;
+  const todosOk = itensOk === totalItens;
+  const itensNokSemObs = checklistItens.filter((i) => !i.ok && !i.observacao?.trim()).length;
+
+  const toggleItem = (idx: number, patch: Partial<ChecklistCovItem>) => {
+    setChecklistItens((arr) => arr.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+  };
+
+  const handleAceitarTermo = () => {
+    setTermoAceito(true);
+    setTermoAceitoEm(new Date().toISOString());
+    setShowTermoModal(false);
+  };
+
+  const handleSalvarChecklist = async () => {
+    if (!data || !decodedPrefixo || !termoAceitoEm) return;
+    if (itensNokSemObs > 0) {
+      setError(`${itensNokSemObs} item(s) marcado(s) como ✗ precisam de observação.`);
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await api.conferenciaCovRegistrar(data, decodedPrefixo, {
+        termoAceitoEm,
+        itens: checklistItens,
+        observacao: observacao.trim() || undefined,
+      });
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Erro ao salvar conferência do COV');
+      setSaving(false);
+      return;
+    }
+    setSaving(false);
+  };
+
+  const handleSalvarOperacional = async () => {
     if (!data || !vtrPrefixo) return;
     if (mudarStatus && statusMudanca === 'BAIXADA' && !motivoBaixa.trim()) {
       setError('Motivo da baixa é obrigatório.');
@@ -147,8 +202,8 @@ export function ConferenciaViaturaPage() {
     setSaving(true);
     setError(null);
     try {
-      await api.conferenciaViaturaRegistrar(data, decodeURIComponent(vtrPrefixo), {
-        vtrPrefixo: decodeURIComponent(vtrPrefixo),
+      await api.conferenciaViaturaRegistrar(data, decodedPrefixo, {
+        vtrPrefixo: decodedPrefixo,
         kmAtual: kmAtual.trim() ? Number(kmAtual) : undefined,
         estadoTanquePercent: estadoTanque,
         observacao: observacao.trim() || undefined,
@@ -171,25 +226,76 @@ export function ConferenciaViaturaPage() {
         <Link to={`/mapa-forca/${data}`} className="text-sm opacity-90 hover:opacity-100">
           ← Voltar à Prévia
         </Link>
-        <h1 className="mt-1 text-lg font-bold">Conferência da Viatura</h1>
+        <h1 className="mt-1 text-lg font-bold">Conferência do COV/Motorista (viatura)</h1>
         <p className="text-xs opacity-90">
-          {decodeURIComponent(vtrPrefixo)} · {data}
+          {decodedPrefixo} · {data}
         </p>
       </header>
 
-      <section className="mx-auto max-w-2xl p-4">
+      <section className="mx-auto max-w-2xl space-y-4 p-4">
         {loading && <p className="text-sm text-slate-500">Carregando…</p>}
         {error && (
           <div
             role="alert"
-            className="mt-2 rounded border border-feedback-error/30 bg-feedback-error/10 p-3 text-sm text-feedback-error"
+            className="rounded border border-feedback-error/30 bg-feedback-error/10 p-3 text-sm text-feedback-error"
           >
             {error}
           </div>
         )}
 
+        {viatura && !termoAceito && (
+          <div className="rounded border border-cbmes-blue/40 bg-cbmes-blue/5 p-4 text-sm">
+            <p className="font-semibold text-cbmes-blue">⚠ Aceite do Termo de Responsabilidade</p>
+            <p className="mt-1 text-slate-600">
+              Antes de iniciar o checklist da viatura, o COV/Motorista precisa aceitar o termo
+              institucional.
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowTermoModal(true)}
+              className="mt-3 w-full rounded-button bg-cbmes-blue py-2 text-sm font-semibold text-white"
+            >
+              Abrir Termo de Responsabilidade
+            </button>
+          </div>
+        )}
+
+        {viatura && termoAceito && (
+          <>
+            <ChecklistCov
+              itensPorCategoria={itensPorCategoria}
+              totalItens={totalItens}
+              itensOk={itensOk}
+              todosOk={todosOk}
+              onToggle={toggleItem}
+            />
+
+            <div className="rounded border border-cbmes-blue/30 bg-white p-4 text-xs">
+              <p className="font-medium text-slate-700">
+                Termo aceito em{' '}
+                {termoAceitoEm ? new Date(termoAceitoEm).toLocaleString('pt-BR') : '—'} por NF{' '}
+                {user?.nf ?? '—'}.
+              </p>
+              <button
+                type="button"
+                onClick={handleSalvarChecklist}
+                disabled={saving || !todosOk || itensNokSemObs > 0}
+                className="mt-2 w-full rounded-button bg-cbmes-blue py-2 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {saving ? 'Salvando…' : 'Salvar checklist do COV'}
+              </button>
+              {itensNokSemObs > 0 && (
+                <p className="mt-1 text-feedback-error">
+                  {itensNokSemObs} item(s) marcado(s) como ✗ precisam de observação.
+                </p>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* Bloco operacional (KM, tanque, status) — mantido de S6b */}
         {viatura && (
-          <div className="space-y-4 rounded border border-cbmes-blue/30 bg-white p-4">
+          <div className="space-y-4 rounded border border-cbmes-red/30 bg-white p-4">
             <div>
               <p className="text-xs uppercase text-slate-500">Status atual</p>
               <span
@@ -223,8 +329,7 @@ export function ConferenciaViaturaPage() {
               )}
               {decrementoExigeObservacao && (
                 <span className="mt-1 block text-xs font-semibold text-amber-700">
-                  ⚠ Decremento detectado. Como admin, informe uma observação obrigatória abaixo
-                  (será registrada no histórico com origem "manual_admin").
+                  ⚠ Decremento detectado. Como admin, informe observação obrigatória abaixo.
                 </span>
               )}
             </label>
@@ -253,7 +358,7 @@ export function ConferenciaViaturaPage() {
                 onChange={(e) => setObservacao(e.target.value)}
                 placeholder={
                   decrementoExigeObservacao
-                    ? 'Justifique o decremento de KM (ex.: troca de hodômetro)'
+                    ? 'Justifique o decremento de KM'
                     : 'Ex.: Viatura em ordem; sem novidades.'
                 }
                 required={decrementoExigeObservacao}
@@ -301,113 +406,14 @@ export function ConferenciaViaturaPage() {
               )}
             </fieldset>
 
-            {viatura.observacoesDataDas && viatura.observacoesDataDas.length > 0 && (
-              <div className="rounded bg-slate-50 p-3">
-                <p className="text-xs font-semibold text-slate-700">Histórico de observações</p>
-                <ul className="mt-1 space-y-1 text-xs text-slate-600">
-                  {viatura.observacoesDataDas.slice(-5).map((o, i) => (
-                    <li key={i}>
-                      <span className="text-slate-500">
-                        [{new Date(o.data).toLocaleString('pt-BR')} · NF {o.registradoPorNf}]
-                      </span>{' '}
-                      {o.texto}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {viatura.historicoKm && viatura.historicoKm.length > 0 && (
-              <div className="rounded bg-slate-50 p-3">
-                <p className="text-xs font-semibold text-slate-700">Histórico de KM</p>
-                <ul className="mt-1 space-y-1 text-xs text-slate-600">
-                  {[...viatura.historicoKm]
-                    .sort(
-                      (a, b) =>
-                        new Date(b.registradoEm).getTime() - new Date(a.registradoEm).getTime(),
-                    )
-                    .slice(0, 5)
-                    .map((h, i) => (
-                      <li key={i}>
-                        <span className="text-slate-500">
-                          [{new Date(h.registradoEm).toLocaleString('pt-BR')} · NF{' '}
-                          {h.registradoPorNf} · {h.origem}]
-                        </span>{' '}
-                        <strong>{h.kmRegistrado.toLocaleString('pt-BR')} km</strong>
-                      </li>
-                    ))}
-                </ul>
-              </div>
-            )}
-
-            {/* S8 — Conferência de Materiais */}
-            {itensMateriais.length > 0 && (
-              <fieldset className="rounded border border-cbmes-blue/40 bg-white p-3">
-                <legend className="text-sm font-semibold text-cbmes-blue">
-                  Conferência de Materiais
-                </legend>
-                <p className="text-[11px] text-slate-500">
-                  Marque o estado de cada item da carga. Itens ≠ OK alimentam a seção "Alteração de
-                  Almoxarifado" da Parte Diária.
-                </p>
-                <ul className="mt-2 space-y-2">
-                  {itensMateriais.map((item, i) => (
-                    <li
-                      key={i}
-                      className="flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-slate-50 p-2"
-                    >
-                      <span className="flex-1 min-w-[60%] text-sm">{item.label}</span>
-                      <select
-                        value={item.status}
-                        onChange={(e) =>
-                          updateItemMaterial(i, { status: e.target.value as StatusItemMaterial })
-                        }
-                        className="rounded border border-slate-300 px-2 py-1 text-xs"
-                      >
-                        {STATUS_ITEM_MATERIAL.map((s) => (
-                          <option key={s} value={s}>
-                            {STATUS_ITEM_MATERIAL_LABEL[s]}
-                          </option>
-                        ))}
-                      </select>
-                      {item.status !== 'OK' && (
-                        <input
-                          type="text"
-                          value={item.observacao ?? ''}
-                          onChange={(e) =>
-                            updateItemMaterial(i, { observacao: e.target.value || undefined })
-                          }
-                          placeholder="Observação"
-                          className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
-                        />
-                      )}
-                    </li>
-                  ))}
-                </ul>
-                <div className="mt-2 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleSalvarMateriais}
-                    disabled={savingMateriais}
-                    className="rounded border border-cbmes-blue px-3 py-1 text-xs font-medium text-cbmes-blue hover:bg-cbmes-blue/10 disabled:opacity-50"
-                  >
-                    {savingMateriais ? 'Salvando…' : 'Salvar materiais'}
-                  </button>
-                  {materiaisOk && (
-                    <span className="text-xs text-emerald-700">✓ Materiais conferidos.</span>
-                  )}
-                </div>
-              </fieldset>
-            )}
-
             <div className="flex gap-2 pt-2">
               <button
                 type="button"
-                onClick={handleSalvar}
+                onClick={handleSalvarOperacional}
                 disabled={saving || decrementoBloqueado || observacaoFaltando}
                 className="flex-1 rounded-button bg-cbmes-red py-2 text-base font-semibold text-white disabled:opacity-60"
               >
-                {saving ? 'Salvando…' : 'Salvar conferência'}
+                {saving ? 'Salvando…' : 'Salvar e voltar à Prévia'}
               </button>
               <Link
                 to={`/mapa-forca/${data}`}
@@ -419,6 +425,231 @@ export function ConferenciaViaturaPage() {
           </div>
         )}
       </section>
+
+      {showTermoModal && viatura && (
+        <TermoModal
+          motorista={
+            motoristaMilitar ??
+            ({
+              nf: user?.nf ?? '',
+              nome: user?.nome ?? '',
+              nomeGuerra: user?.nomeGuerra,
+              posto: user?.posto ?? '',
+              ant: user?.ant ?? 0,
+            } as Militar)
+          }
+          viatura={viatura}
+          dataServico={data}
+          onAceitar={handleAceitarTermo}
+          onCancelar={() => setShowTermoModal(false)}
+        />
+      )}
     </main>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Checklist (4 categorias)
+// ────────────────────────────────────────────────────────────────────────
+
+function ChecklistCov({
+  itensPorCategoria,
+  totalItens,
+  itensOk,
+  todosOk,
+  onToggle,
+}: {
+  itensPorCategoria: Record<CategoriaChecklistCov, ChecklistCovItem[]>;
+  totalItens: number;
+  itensOk: number;
+  todosOk: boolean;
+  onToggle: (idxGlobal: number, patch: Partial<ChecklistCovItem>) => void;
+}) {
+  let indexCursor = 0;
+  return (
+    <div className="space-y-3 rounded border border-cbmes-blue/30 bg-white p-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-bold text-cbmes-blue">Checklist do COV (25 itens)</h2>
+        <span
+          className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+            todosOk ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+          }`}
+        >
+          {itensOk}/{totalItens} ✓
+        </span>
+      </div>
+
+      {CATEGORIAS_CHECKLIST_COV.map((cat) => {
+        const itens = itensPorCategoria[cat];
+        const inicio = indexCursor;
+        indexCursor += itens.length;
+        return (
+          <details key={cat} open className="rounded border border-slate-200 bg-slate-50">
+            <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-slate-700">
+              {CATEGORIA_CHECKLIST_COV_LABEL[cat]} ({itens.filter((i) => i.ok).length}/
+              {itens.length})
+            </summary>
+            <ul className="space-y-1 px-3 py-2">
+              {itens.map((item, i) => {
+                const globalIdx = inicio + i;
+                return (
+                  <li
+                    key={`${cat}-${i}`}
+                    className="flex flex-wrap items-start gap-2 rounded border border-slate-200 bg-white p-2"
+                  >
+                    <label className="flex flex-1 items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={item.ok}
+                        onChange={(e) => onToggle(globalIdx, { ok: e.target.checked })}
+                        className="mt-0.5 h-4 w-4"
+                      />
+                      <span className="text-sm text-slate-700">{item.descricao}</span>
+                    </label>
+                    {!item.ok && (
+                      <input
+                        type="text"
+                        value={item.observacao ?? ''}
+                        onChange={(e) =>
+                          onToggle(globalIdx, { observacao: e.target.value || undefined })
+                        }
+                        placeholder="Observação obrigatória"
+                        className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                      />
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </details>
+        );
+      })}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Termo de Responsabilidade (modal)
+// ────────────────────────────────────────────────────────────────────────
+
+function TermoModal({
+  motorista,
+  viatura,
+  dataServico,
+  onAceitar,
+  onCancelar,
+}: {
+  motorista: Militar;
+  viatura: Viatura;
+  dataServico: string;
+  onAceitar: () => void;
+  onCancelar: () => void;
+}) {
+  const nomeCompleto = motorista.nome ?? '';
+  const postoGrad = motorista.posto ?? '';
+  const matricula = motorista.nf ?? '';
+  const lotacao = motorista.lotacao ?? motorista.unidade ?? '1ª Cia / 1º BBM';
+  const cnh = motorista.cnh ?? '—';
+  const categoriaCnh = ''; // QDI atual não tem essa categorização granular; admin pode estender
+  const cnhValidade = motorista.cnhValidade ?? '—';
+  const prefixo = viatura.prefixo;
+  const placa = viatura.placa ?? '—';
+  const modelo = viatura.tipo ?? '—';
+  const formatDataHora = `${dataServico} às ${String(new Date().getHours()).padStart(2, '0')}h`;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onCancelar}
+      className="fixed inset-0 z-30 flex items-center justify-center bg-black/60 p-3"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded border border-cbmes-blue bg-white p-5 shadow-xl"
+      >
+        <h2 className="text-lg font-bold text-cbmes-blue">
+          Termo de Responsabilidade — Condutor Operador de Viatura
+        </h2>
+        <p className="mt-1 text-xs text-slate-500">
+          Auto-preenchido com dados do EFETIVO/QDI e da viatura. Leia atentamente.
+        </p>
+
+        <div className="mt-3 space-y-2 text-xs leading-relaxed text-slate-700">
+          <p>
+            Eu, <strong>{nomeCompleto || '___________________________'}</strong>, posto/graduação{' '}
+            <strong>{postoGrad || '__________'}</strong>, matrícula nº{' '}
+            <strong>{matricula || '_________'}</strong>, lotado(a) no(a) <strong>{lotacao}</strong>,
+            portador(a) da CNH nº <strong>{cnh}</strong>
+            {categoriaCnh ? `, categoria ${categoriaCnh}` : ''}, válida até{' '}
+            <strong>{cnhValidade}</strong>, ao assumir a condução da viatura prefixo{' '}
+            <strong>{prefixo}</strong>, placa <strong>{placa}</strong>, modelo{' '}
+            <strong>{modelo}</strong>, no serviço iniciado em <strong>{formatDataHora}</strong>,
+            declaro estar ciente e assumo integralmente as seguintes responsabilidades:
+          </p>
+          <ol className="ml-5 list-decimal space-y-1.5">
+            <li>
+              Encontro-me em plenas condições físicas e psicológicas para conduzir o veículo, não
+              estando sob efeito de álcool, medicamentos que comprometam os reflexos ou qualquer
+              outra substância que afete minha capacidade de direção.
+            </li>
+            <li>
+              Realizei a inspeção prévia da viatura conforme checklist anexo, atestando suas
+              condições de segurança, funcionamento e abastecimento operacional.
+            </li>
+            <li>
+              Comprometo-me a observar rigorosamente o Código de Trânsito Brasileiro (Lei nº
+              9.503/97), as normas internas do CBMES — em especial a Portaria nº 330-R/2014 e a
+              Portaria nº 135-R/2008 — bem como as orientações do Chefe de Socorro/Comandante da
+              guarnição.
+            </li>
+            <li>
+              Utilizarei os dispositivos de prioridade de passagem (sinais luminosos e sonoros)
+              somente em situações de efetiva emergência, conduzindo com a prudência exigida pelo
+              art. 29, §§ 2º e 3º, do CTB.
+            </li>
+            <li>
+              Responsabilizo-me pela guarda, conservação e correta operação da viatura e de seus
+              equipamentos embarcados durante o período sob minha responsabilidade, comunicando
+              imediatamente ao superior qualquer avaria, sinistro, infração de trânsito ou
+              ocorrência anormal.
+            </li>
+            <li>
+              Estou ciente de que o descumprimento dos deveres aqui assumidos poderá ensejar
+              responsabilização administrativa, civil e penal, nos termos da legislação vigente.
+            </li>
+          </ol>
+        </div>
+
+        <div className="mt-4 rounded bg-amber-50 p-3 text-xs text-amber-800">
+          Ao clicar em <strong>CIENTE</strong>, este aceite será registrado com seu NF (
+          {motorista.nf || '—'}) e o timestamp do servidor.{' '}
+          <strong>
+            {formatDisplayName({
+              posto: postoGrad,
+              nome: nomeCompleto,
+              nomeGuerra: motorista.nomeGuerra,
+            })}
+          </strong>
+        </div>
+
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={onAceitar}
+            className="flex-1 rounded-button bg-cbmes-blue py-3 text-sm font-bold text-white hover:bg-cbmes-blue/90"
+          >
+            CIENTE
+          </button>
+          <button
+            type="button"
+            onClick={onCancelar}
+            className="rounded-button border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

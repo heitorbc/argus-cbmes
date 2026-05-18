@@ -499,3 +499,63 @@ model IncidenteBaon {
 
   @@map("incidentes_baon")
 }
+
+/// S2.10.6 — Conferência do COV/Motorista da viatura.
+/// Inclui aceite do Termo de Responsabilidade + checklist de 25 itens
+/// (Inspeção externa, Motor, Cabine, Equipamentos de emergência).
+/// Unique por (data, vtrPrefixo, motoristaNf) — 1 conferência por turno.
+model ConferenciaCov {
+  id            String   @id @default(cuid())
+  data          String // YYYY-MM-DD
+  vtrPrefixo    String
+  motoristaNf   String
+  termoAceitoEm DateTime
+  /// JSONB: { itens: [{categoria, descricao, ok: boolean, observacao?}] }
+  checklist     Json
+  observacao    String?
+  criadoEm      DateTime @default(now())
+  atualizadoEm  DateTime @updatedAt
+
+  @@unique([data, vtrPrefixo, motoristaNf])
+  @@index([data])
+  @@map("conferencias_cov")
+}
+
+/// S2.10.6 — Cadastro de compartimentos para Conferência de Materiais.
+/// Personalizado por viatura (ABTS 011, AR 044, ATB 001, AU 154, TE 110)
+/// ou local (SALA_FISCAL, ALMOXARIFADO_OPERACIONAL, GUARITA_QCG).
+///
+/// `contexto` formato: `viatura:<prefixo>` ou `local:<slug>`.
+model CompartimentoMaterial {
+  id            String   @id @default(cuid())
+  contexto      String // 'viatura:ABTS_011' | 'local:SALA_FISCAL'
+  contextoLabel String // 'ABTS 011' | 'Sala do Fiscal'
+  compartimento String // 'Box 1' | 'Armário lateral'
+  /// JSONB: string[] — lista de materiais esperados nesse compartimento.
+  materiais     Json
+  ordem         Int      @default(0)
+  ativo         Boolean  @default(true)
+  criadoEm      DateTime @default(now())
+  atualizadoEm  DateTime @updatedAt
+
+  @@index([contexto])
+  @@map("compartimentos_materiais")
+}
+
+/// S2.10.6 — Registro de Conferência de Materiais realizada no dia.
+/// Qualquer militar escalado pode realizar (RBAC: papel `militar`).
+/// Unique por (data, contexto) — 1 conferência por dia/contexto.
+model ConferenciaMaterial {
+  id             String   @id @default(cuid())
+  data           String // YYYY-MM-DD
+  contexto       String // mesmo formato de CompartimentoMaterial
+  realizadoPorNf String
+  realizadoEm    DateTime @default(now())
+  /// JSONB: [{compartimentoId, material, status: 'OK'|'AUSENTE'|'DANIFICADO', observacao?}]
+  itens          Json
+  observacao     String?
+
+  @@unique([data, contexto])
+  @@index([data])
+  @@map("conferencias_materiais")
+}

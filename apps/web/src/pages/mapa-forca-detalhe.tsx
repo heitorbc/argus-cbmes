@@ -23,6 +23,7 @@ import {
 import { ApiError, api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { formatPreviaParaWhatsapp } from '@/lib/whatsapp';
+import { CountdownAteOito } from '@/components/CountdownAteOito';
 import { MilitarSelect } from '@/components/militar-select';
 import {
   PERIODO_TROCA_DEFAULT,
@@ -398,6 +399,14 @@ export function MapaForcaDetalhePage() {
       </header>
 
       <section className="mx-auto max-w-3xl p-4">
+        {/* S2.10.6 — Contador até 08:00 enquanto MF CIODES não foi preenchido,
+            servindo de alerta ao Fiscal de Serviço. */}
+        {previa && estado !== 'PREENCHENDO_MF' && estado !== 'ENCERRADO' && (
+          <div className="mb-3">
+            <CountdownAteOito />
+          </div>
+        )}
+
         <div className="flex items-center justify-between rounded border border-slate-200 bg-white p-3">
           <div className="text-sm text-slate-700">
             <span className="font-medium">Data:</span> {formatDataBr(data)}

@@ -27,7 +27,9 @@ import { RecursosPage } from '@/pages/recursos';
 import { UnidadesPage } from '@/pages/unidades';
 import { UsuariosPage } from '@/pages/usuarios';
 import { AtestadosPage } from '@/pages/atestados';
+import { CompartimentosMateriaisPage } from '@/pages/compartimentos-materiais';
 import { ConferenciaEquipePage } from '@/pages/conferencia-equipe';
+import { ConferenciaMateriaisPage } from '@/pages/conferencia-materiais';
 import { ConferenciaViaturaPage } from '@/pages/conferencia-viatura';
 import { DispensasPage } from '@/pages/dispensas';
 import { FeriasPage } from '@/pages/ferias';
@@ -135,6 +137,11 @@ export const router = createBrowserRouter([
           { path: '/configuracoes/usuarios', element: <UsuariosPage /> },
           { path: '/configuracoes/recursos', element: <RecursosPage /> },
           { path: '/configuracoes/integracoes', element: <IntegracoesPage /> },
+          {
+            path: '/configuracoes/compartimentos-materiais',
+            element: <CompartimentosMateriaisPage />,
+          },
+          { path: '/conferencia-materiais', element: <ConferenciaMateriaisPage /> },
           { path: '/mapa-forca', element: <MapaForcaPage /> },
           { path: '/mapa-forca/:data', element: <MapaForcaDetalhePage /> },
           // Redirect curto para bookmarks antigos (S0.x/rename-mapa-forca).

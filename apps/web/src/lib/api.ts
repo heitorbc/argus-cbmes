@@ -7,8 +7,12 @@ import type {
   UpdateUsuarioInput,
   UsuarioAdmin,
   ComposicaoEntry,
+  CompartimentoMaterial,
+  ConferenciaCov,
   ConferenciaEquipeEntry,
   ConferenciaMateriaisDoDia,
+  ConferenciaMaterialV2,
+  CreateCompartimentoMaterialInput,
   CreateFeriasInput,
   Ferias,
   TrocaAutorizada,
@@ -25,6 +29,8 @@ import type {
   CreateFiscalInput,
   CreateNotaServicoInput,
   CreateRecursoInput,
+  RegistrarConferenciaCovInput,
+  RegistrarConferenciaMaterialInput,
   RegistrarConferenciaMateriaisInput,
   CreateUnidadeInput,
   CreateViaturaInput,
@@ -65,6 +71,7 @@ import type {
   UpdateAtestadoInput,
   UpdateDispensaInput,
   UpdateNotaServicoInput,
+  UpdateCompartimentoMaterialInput,
   UpdateRecursoInput,
   UpdateUnidadeInput,
   TipoIdeo,
@@ -497,6 +504,53 @@ export const api = {
       `/conferencia/viatura/${data}/${encodeURIComponent(vtrPrefixo)}`,
       { method: 'PUT', body: JSON.stringify(input) },
     ),
+
+  // S2.10.6 — Conferência do COV (termo + checklist 25 itens)
+  conferenciaCovGet: (data: string, vtrPrefixo: string) =>
+    request<ConferenciaCov | null>(`/conferencia/cov/${data}/${encodeURIComponent(vtrPrefixo)}`),
+
+  conferenciaCovRegistrar: (
+    data: string,
+    vtrPrefixo: string,
+    input: RegistrarConferenciaCovInput,
+  ) =>
+    request<ConferenciaCov>(`/conferencia/cov/${data}/${encodeURIComponent(vtrPrefixo)}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+
+  // S2.10.6 — Compartimentos de Materiais (CRUD admin)
+  compartimentosMateriaisList: (contexto?: string) =>
+    request<CompartimentoMaterial[]>(
+      `/compartimentos-materiais${contexto ? `?contexto=${encodeURIComponent(contexto)}` : ''}`,
+    ),
+
+  compartimentoMaterialCreate: (input: CreateCompartimentoMaterialInput) =>
+    request<CompartimentoMaterial>('/compartimentos-materiais', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  compartimentoMaterialUpdate: (id: string, input: UpdateCompartimentoMaterialInput) =>
+    request<CompartimentoMaterial>(`/compartimentos-materiais/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+
+  compartimentoMaterialDelete: (id: string) =>
+    request<CompartimentoMaterial>(`/compartimentos-materiais/${id}`, { method: 'DELETE' }),
+
+  // S2.10.6 — Conferência de Materiais (qualquer militar escalado)
+  conferenciaMaterialV2Get: (data: string, contexto: string) =>
+    request<ConferenciaMaterialV2 | null>(
+      `/conferencia-materiais/${data}/${encodeURIComponent(contexto)}`,
+    ),
+
+  conferenciaMaterialV2Registrar: (input: RegistrarConferenciaMaterialInput) =>
+    request<ConferenciaMaterialV2>('/conferencia-materiais', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
 
   // Mapa Força (S5)
   mapaForcaSnapshot: () => request<MapaForcaSnapshot>(`/mapa-forca/snapshot`),
