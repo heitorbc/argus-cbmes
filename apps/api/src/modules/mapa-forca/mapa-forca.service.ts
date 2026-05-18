@@ -648,6 +648,7 @@ function buildComposicaoMf(
         chefe: undefined,
         motorista: undefined,
         operadores: [],
+        efetivoPrevistoNaoPreenchido: [],
       };
       byRecurso.set(recurso, entry);
     }
@@ -659,6 +660,15 @@ function buildComposicaoMf(
       statusConferencia: 'pendente',
       isFiscal: t.isFiscal,
     };
+    // S2.10.7 Parte B — VTR BAIXADA/EMPRESTADA: NÃO preenche efetivo no
+    // recurso. O escalado fica na lista `efetivoPrevistoNaoPreenchido`
+    // para o Fiscal decidir individualmente (usar/não usar/alterar VTR).
+    const vtrStatus = entry.vtrStatus;
+    if (vtrStatus === 'BAIXADA' || vtrStatus === 'EMPRESTADA') {
+      entry.efetivoPrevistoNaoPreenchido.push({ funcao: t.funcao, militar });
+      entry.semEquipe = true;
+      continue;
+    }
     if (t.funcao === 'Ch') entry.chefe = militar;
     else if (t.funcao === 'Mot') entry.motorista = militar;
     else entry.operadores.push(militar);
@@ -684,6 +694,7 @@ function buildComposicaoMf(
       chefe: undefined,
       motorista: undefined,
       operadores: [],
+      efetivoPrevistoNaoPreenchido: [],
     });
   }
 
@@ -704,6 +715,7 @@ function buildComposicaoMf(
       chefe: undefined,
       motorista: undefined,
       operadores: [],
+      efetivoPrevistoNaoPreenchido: [],
     });
   }
 

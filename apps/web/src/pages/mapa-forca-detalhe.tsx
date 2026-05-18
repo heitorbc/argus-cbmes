@@ -32,6 +32,22 @@ import {
 } from '@/lib/periodo-troca';
 import { STATUS_VIATURA_BADGE, STATUS_VIATURA_CARD } from '@/lib/status-viatura-style';
 
+/**
+ * S2.10.7 Parte D — Viaturas órfãs (reservas) que NÃO devem ser exibidas
+ * standalone na UI. Continuam no MF CIODES backend; aparecem apenas
+ * dentro de um recurso quando ativadas via "Ativar recurso adicional".
+ *
+ * Decisão D3 do plano S2.10.7: some da UI mas continua no backend.
+ * Comparação normaliza espaços/underscores (ABTS 011 == ABTS_011).
+ */
+const VIATURAS_ORFAS_OCULTAS = new Set(['ABTS_011', 'AR_031', 'ATB_001', 'AU_154', 'TE_110']);
+
+function isViaturaOrfaOculta(codigoOuPrefixo: string | null | undefined): boolean {
+  if (!codigoOuPrefixo) return false;
+  const normalized = codigoOuPrefixo.replace(/\s+/g, '_').toUpperCase();
+  return VIATURAS_ORFAS_OCULTAS.has(normalized);
+}
+
 const EQUIPE_COLOR: Record<LetraEquipe, string> = {
   A: 'bg-emerald-100 text-emerald-900 border-emerald-300',
   B: 'bg-amber-100 text-amber-900 border-amber-300',
@@ -556,6 +572,39 @@ export function MapaForcaDetalhePage() {
                     ). Toque em outra posição da MESMA equipe para trocar.
                   </p>
                 )}
+                {/* S2.10.7 Parte B — Avisos de viaturas BAIXADA/EMPRESTADA cujo
+                    efetivo escalado NÃO foi preenchido automaticamente */}
+                {previa.composicaoMf
+                  .filter(
+                    (c) =>
+                      c.efetivoPrevistoNaoPreenchido && c.efetivoPrevistoNaoPreenchido.length > 0,
+                  )
+                  .map((c) => (
+                    <div
+                      key={`previsto-${c.recurso}`}
+                      className="mb-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs"
+                    >
+                      <p className="font-semibold text-amber-900">
+                        ⚠ {c.recurso} ({c.vtrPrefixo}) está <strong>{c.vtrStatus}</strong> — efetivo
+                        escalado NÃO foi preenchido:
+                      </p>
+                      <ul className="mt-1 list-disc pl-5 text-amber-800">
+                        {c.efetivoPrevistoNaoPreenchido.map((e, i) => (
+                          <li key={i}>
+                            <strong>{e.funcao}</strong>:{' '}
+                            {e.militar.militarResolvido
+                              ? `${e.militar.militarResolvido.posto} ${e.militar.militarResolvido.nomeGuerra ?? e.militar.militarResolvido.nome.split(' ')[0]}`
+                              : e.militar.raw}
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="mt-1 text-[10px] text-amber-700">
+                        Após o início do serviço, confirme individualmente cada militar (usar / não
+                        usar) ou altere o status da VTR no Mapa Força CIODES.
+                      </p>
+                    </div>
+                  ))}
+
                 {previa.swapsMilitares.length > 0 && (
                   <details className="mb-2 rounded border border-slate-200 bg-white p-2 text-xs">
                     <summary className="cursor-pointer font-medium text-slate-700">
@@ -811,36 +860,42 @@ export function MapaForcaDetalhePage() {
               </section>
             )}
 
-            {previa.viaturasOperacionais.length > 0 && (
+            {previa.viaturasOperacionais.filter((v) => !isViaturaOrfaOculta(v.codigo)).length >
+              0 && (
               <section className="mt-4">
                 <h3 className="mb-2 text-sm font-semibold text-slate-700">
                   Viaturas (status do Mapa Força)
                 </h3>
                 <ul className="grid grid-cols-2 gap-2 text-xs md:grid-cols-3">
-                  {previa.viaturasOperacionais.map((v) => {
-                    // S6c/F3 — paleta única; status são DISPONIVEL/BAIXADA/EMPRESTADA (ADR-009)
-                    const statusClass =
-                      v.vtrStatus && v.vtrStatus in STATUS_VIATURA_CARD
-                        ? STATUS_VIATURA_CARD[v.vtrStatus as keyof typeof STATUS_VIATURA_CARD]
-                        : 'border-slate-200 bg-white text-slate-700';
-                    const badgeClass =
-                      v.vtrStatus && v.vtrStatus in STATUS_VIATURA_BADGE
-                        ? STATUS_VIATURA_BADGE[v.vtrStatus as keyof typeof STATUS_VIATURA_BADGE]
-                        : 'bg-slate-200 text-slate-700';
-                    return (
-                      <li key={v.id} className={`rounded border-2 p-2 text-center ${statusClass}`}>
-                        <p className="font-bold">{v.codigo}</p>
-                        <p className="text-[10px] opacity-70">{v.descricao}</p>
-                        {v.vtrStatus && v.vtrStatus !== 'DISPONIVEL' && (
-                          <span
-                            className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${badgeClass}`}
-                          >
-                            {v.vtrStatus}
-                          </span>
-                        )}
-                      </li>
-                    );
-                  })}
+                  {previa.viaturasOperacionais
+                    .filter((v) => !isViaturaOrfaOculta(v.codigo))
+                    .map((v) => {
+                      // S6c/F3 — paleta única; status são DISPONIVEL/BAIXADA/EMPRESTADA (ADR-009)
+                      const statusClass =
+                        v.vtrStatus && v.vtrStatus in STATUS_VIATURA_CARD
+                          ? STATUS_VIATURA_CARD[v.vtrStatus as keyof typeof STATUS_VIATURA_CARD]
+                          : 'border-slate-200 bg-white text-slate-700';
+                      const badgeClass =
+                        v.vtrStatus && v.vtrStatus in STATUS_VIATURA_BADGE
+                          ? STATUS_VIATURA_BADGE[v.vtrStatus as keyof typeof STATUS_VIATURA_BADGE]
+                          : 'bg-slate-200 text-slate-700';
+                      return (
+                        <li
+                          key={v.id}
+                          className={`rounded border-2 p-2 text-center ${statusClass}`}
+                        >
+                          <p className="font-bold">{v.codigo}</p>
+                          <p className="text-[10px] opacity-70">{v.descricao}</p>
+                          {v.vtrStatus && v.vtrStatus !== 'DISPONIVEL' && (
+                            <span
+                              className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${badgeClass}`}
+                            >
+                              {v.vtrStatus}
+                            </span>
+                          )}
+                        </li>
+                      );
+                    })}
                 </ul>
               </section>
             )}
@@ -1502,13 +1557,26 @@ function ProgressoConferenciasBox({
   isAdmin: boolean;
 }) {
   const estado = previa.estadoServico;
-  // S0.x/dev-fixes — Aparece também em EQUIPE_CONFERIDA: o backend faz
-  // soft-promote para VIATURA_CONFERIDA quando o auto-detect não disparou
-  // (composicaoMf sem viaturas DISPONIVEL ou divergência de prefixo).
-  const podePreencherInicial = estado === 'VIATURA_CONFERIDA' || estado === 'EQUIPE_CONFERIDA';
+  // S2.10.7 Parte A — gate corrigido: exige VIATURA_CONFERIDA, não basta
+  // EQUIPE_CONFERIDA. Antes o botão habilitava com soft-promote do backend,
+  // mas isso permitia preencher o MF CIODES sem todas as conferências
+  // operacionais terminadas. Agora o caminho é estrito.
+  const podePreencherInicial = estado === 'VIATURA_CONFERIDA';
+  // Estados anteriores onde o botão aparece visível (mas inativo) com
+  // mensagem explicativa do que falta — sinaliza ao Fiscal o progresso.
+  const aindaConferindo = estado === 'INICIADO' || estado === 'EQUIPE_CONFERIDA';
   const jaPreencheu = estado === 'PREENCHENDO_MF';
   const dirtyDesde = previa.mfDirtyDesde;
   const podeAtualizar = jaPreencheu && Boolean(dirtyDesde);
+
+  /** Quais conferências ainda faltam para destravar o botão. */
+  const pendencias: string[] = [];
+  if (estado === 'INICIADO' || estado === 'PREVIA_INICIADA') {
+    pendencias.push('conferência do Chefe de Equipe (efetivo)');
+    pendencias.push('conferência do COV/Motorista (viatura)');
+  } else if (estado === 'EQUIPE_CONFERIDA') {
+    pendencias.push('conferência do COV/Motorista (viatura)');
+  }
 
   const [inflight, setInflight] = useState(false);
   const [mfMsg, setMfMsg] = useState<string | null>(null);
@@ -1555,14 +1623,16 @@ function ProgressoConferenciasBox({
       </section>
 
       {/* Botão dinâmico Preencher / Atualizar Mapa Força CIODES */}
-      {(podePreencherInicial || jaPreencheu) && (
+      {(podePreencherInicial || jaPreencheu || aindaConferindo) && (
         <section
           className={`mt-3 rounded border-2 p-3 ${
             podeAtualizar
               ? 'border-amber-500 bg-amber-50'
               : jaPreencheu
                 ? 'border-slate-300 bg-slate-50'
-                : 'border-emerald-500 bg-emerald-50'
+                : podePreencherInicial
+                  ? 'border-emerald-500 bg-emerald-50'
+                  : 'border-slate-300 bg-slate-50'
           }`}
         >
           <div className="flex items-baseline justify-between gap-3">
@@ -1592,7 +1662,7 @@ function ProgressoConferenciasBox({
                     Aguarda nova alteração estrutural para reativar.
                   </p>
                 </>
-              ) : (
+              ) : podePreencherInicial ? (
                 <>
                   <h3 className="text-sm font-semibold text-emerald-900">
                     ✓ Equipes, viaturas e IDEO conferidas
@@ -1600,6 +1670,13 @@ function ProgressoConferenciasBox({
                   <p className="text-xs text-emerald-800">
                     Pronto para preencher o Mapa Força CIODES. (Escrita automatizada chega no S9.)
                   </p>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-sm font-semibold text-slate-700">
+                    🔒 Preencher Mapa Força CIODES (bloqueado)
+                  </h3>
+                  <p className="text-xs text-slate-600">Pendente: {pendencias.join(' + ')}.</p>
                 </>
               )}
             </div>
@@ -1621,7 +1698,7 @@ function ProgressoConferenciasBox({
               >
                 Mapa Força CIODES preenchido
               </button>
-            ) : (
+            ) : podePreencherInicial ? (
               <button
                 type="button"
                 onClick={() => void handlePreencher()}
@@ -1629,6 +1706,15 @@ function ProgressoConferenciasBox({
                 className="rounded-button bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
               >
                 {inflight ? 'Preenchendo…' : '🗺️ Preencher Mapa Força CIODES'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="rounded-button bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-500"
+                title={`Pendente: ${pendencias.join(' + ')}`}
+              >
+                🔒 Preencher Mapa Força CIODES
               </button>
             )}
           </div>
