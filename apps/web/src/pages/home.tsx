@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { formatDisplayName } from '@argus/shared-types';
 import { useAuth } from '@/lib/auth-context';
 import { canSeeSection } from '@/lib/permissions';
 import { AgendaCard } from '@/components/AgendaCard';
@@ -50,9 +51,7 @@ export function HomePage() {
           <p className="text-xs uppercase tracking-wide text-slate-500">
             Você está autenticado como
           </p>
-          <p className="mt-1 text-lg font-semibold text-cbmes-blue">
-            {user.posto} {user.nome}
-          </p>
+          <p className="mt-1 text-lg font-semibold text-cbmes-blue">{formatDisplayName(user)}</p>
           <p className="text-sm text-slate-600">
             NF: {user.nf} · ANT: {user.ant}
           </p>

@@ -39,11 +39,17 @@ model User {
   id             String    @id @default(cuid())
   nf             String    @unique
   nome           String
+  /// Nome de guerra (do QDI) — usado em formatDisplayName para exibição
+  /// institucional "{posto} {nomeGuerra}". Auto-fill no provisioning.
+  nomeGuerra     String?
   posto          String
   ant            Int
   papeis         String[]  @default([])
   senhaHash      String
   primeiroAcesso Boolean   @default(true)
+  /// Email para recuperação de senha. Coletado no 1º acesso ou via admin.
+  /// Unique para evitar enumeração via colisão.
+  email          String?   @unique
   ultimoLoginEm  DateTime?
   criadoEm       DateTime  @default(now())
   atualizadoEm   DateTime  @updatedAt

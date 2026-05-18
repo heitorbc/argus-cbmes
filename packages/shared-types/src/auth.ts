@@ -27,7 +27,39 @@ export const senhaInicialSchema = z
   .string()
   .regex(/^\d{11}$/, 'CPF deve conter 11 dígitos numéricos');
 
-export const senhaForteSchema = z.string().min(12, 'Senha deve ter no mínimo 12 caracteres');
+/**
+ * S2.10.4 — Política de senha forte.
+ *  - Mínimo 8 caracteres
+ *  - Pelo menos uma letra (inclui acentos)
+ *  - Pelo menos um número
+ *  - Pelo menos um caractere especial (qualquer não-letra/não-número/não-espaço)
+ *
+ * Validações idênticas no frontend e backend (Zod compartilhado). UI deve
+ * mostrar checklist em tempo real usando `senhaCriteriosAtendidos()`.
+ */
+export const senhaForteSchema = z
+  .string()
+  .min(8, 'Senha deve ter no mínimo 8 caracteres')
+  .regex(/[A-Za-zÀ-ÿ]/, 'Senha deve conter pelo menos uma letra')
+  .regex(/\d/, 'Senha deve conter pelo menos um número')
+  .regex(/[^A-Za-z0-9À-ÿ\s]/, 'Senha deve conter pelo menos um caractere especial');
+
+/** Checklist por critério — usado pelo `PasswordInput` para feedback live. */
+export interface SenhaCriteriosAtendidos {
+  comprimento: boolean;
+  letra: boolean;
+  numero: boolean;
+  especial: boolean;
+}
+
+export function senhaCriteriosAtendidos(senha: string): SenhaCriteriosAtendidos {
+  return {
+    comprimento: senha.length >= 8,
+    letra: /[A-Za-zÀ-ÿ]/.test(senha),
+    numero: /\d/.test(senha),
+    especial: /[^A-Za-z0-9À-ÿ\s]/.test(senha),
+  };
+}
 
 // ---------- Login ---------- //
 
@@ -44,6 +76,12 @@ export const changePasswordInputSchema = z
     senhaAtual: z.string().min(1, 'Senha atual obrigatória'),
     novaSenha: senhaForteSchema,
     confirmacao: z.string(),
+    /**
+     * S2.10.4 — email para cadastro/atualização. Obrigatório no 1º acesso
+     * (frontend valida via `primeiroAcesso` do UserSession), opcional nas
+     * trocas seguintes. Backend persiste em `User.email` (unique).
+     */
+    email: z.string().email('E-mail inválido').optional(),
   })
   .refine((data) => data.novaSenha === data.confirmacao, {
     message: 'Confirmação não confere',
@@ -55,15 +93,32 @@ export const changePasswordInputSchema = z
   });
 export type ChangePasswordInput = z.infer<typeof changePasswordInputSchema>;
 
+// ---------- Forgot password ---------- //
+
+/**
+ * S2.10.4 — Solicitação de recuperação de senha por email.
+ * Backend busca User por NF; se email cadastrado, dispara Supabase Auth Email.
+ * Se email ausente, responde com mensagem explícita "Contate o administrador"
+ * (única exceção à política anti-enumeration — admin precisa cadastrar email).
+ */
+export const forgotPasswordInputSchema = z.object({
+  nf: nfSchema,
+});
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordInputSchema>;
+
 // ---------- Sessão / usuário autenticado ---------- //
 
 export const userSessionSchema = z.object({
   nf: z.string(),
   nome: z.string(),
+  /** Nome de guerra (do QDI) — usado em formatDisplayName para exibição padrão. */
+  nomeGuerra: z.string().optional(),
   posto: z.string(),
   ant: z.number().int().nonnegative(),
   papeis: z.array(z.enum(PAPEIS)),
   primeiroAcesso: z.boolean(),
+  /** Email cadastrado para recuperação de senha. Coletado no 1º acesso. */
+  email: z.string().optional(),
 });
 export type UserSession = z.infer<typeof userSessionSchema>;
 

@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { loginInputSchema, type LoginInput } from '@argus/shared-types';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api';
+import { StatusBar } from '@/components/StatusBar';
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -16,6 +17,7 @@ export function LoginPage() {
   const {
     register,
     handleSubmit,
+    getValues,
     formState: { errors },
   } = useForm<LoginInput>({
     resolver: zodResolver(loginInputSchema),
@@ -112,9 +114,20 @@ export function LoginPage() {
           >
             {submitting ? 'Entrando…' : 'Entrar'}
           </button>
+
+          <div className="text-center">
+            <Link
+              to={`/esqueci-a-senha${getValues('nf') ? `?nf=${getValues('nf')}` : ''}`}
+              className="text-sm text-cbmes-blue hover:underline"
+            >
+              Esqueci a senha
+            </Link>
+          </div>
         </form>
 
-        <p className="mt-8 text-center text-xs text-slate-400">Sprint S1 — Auth + RBAC</p>
+        <div className="mt-6">
+          <StatusBar />
+        </div>
       </div>
     </main>
   );
