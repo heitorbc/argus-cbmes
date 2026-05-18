@@ -402,7 +402,8 @@ export class MapaForcaService {
 
     // S6j — Dispensas: deriva de DispensasService.listAtivasNoDia (entidade
     // canônica) + enriquece com nome do militar quando NF resolve no efetivo.
-    const dispensasAtivas = this.dispensasSvc.listAtivasNoDia(dataIso);
+    // S2.10.7d — agora async (Prisma).
+    const dispensasAtivas = await this.dispensasSvc.listAtivasNoDia(dataIso);
     const dispensasPrevia: PreviaDispensa[] = dispensasAtivas.map((d) => {
       const m = efetivoByNf.get(d.militarNf);
       return {

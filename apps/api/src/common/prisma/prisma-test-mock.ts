@@ -468,3 +468,139 @@ export function makeAprovacoesPrismaMock(): PrismaService {
   };
   return prismaLike as unknown as PrismaService;
 }
+
+/**
+ * S2.10.7d — Mock in-memory de `PrismaService` para `dispensa` + `militar`.
+ * Cobre o subset usado por `DispensasService` e `DispensasImportService`:
+ * findMany/findUnique/findFirst, create/update, upsert por
+ * (militarNf, dataInicio, tipo).
+ */
+export function makeDispensasPrismaMock(): PrismaService {
+  type DispensaRow = {
+    id: string;
+    militarNf: string;
+    tipo: string;
+    dataInicio: string;
+    dias: number;
+    numeroEdocs: string | null;
+    observacoes: string | null;
+    minuta: string | null;
+    equipe: string | null;
+    origem: string;
+    criadoEm: Date;
+    criadoPorNf: string | null;
+    atualizadoEm: Date;
+    deletedAt: Date | null;
+  };
+  const dispensas = new Map<string, DispensaRow>();
+  const militares = new Map<string, { nf: string }>();
+  let counter = 1;
+
+  const matchWhere = (row: DispensaRow, where: Record<string, unknown>): boolean => {
+    if (where.id !== undefined && row.id !== where.id) return false;
+    if (where.militarNf !== undefined && row.militarNf !== where.militarNf) return false;
+    if (where.tipo !== undefined && row.tipo !== where.tipo) return false;
+    if (where.deletedAt === null && row.deletedAt !== null) return false;
+    if (where.dataInicio !== undefined) {
+      const di = where.dataInicio;
+      if (typeof di === 'string') {
+        if (row.dataInicio !== di) return false;
+      } else if (di && typeof di === 'object') {
+        const cond = di as { gte?: string; lte?: string };
+        if (cond.gte !== undefined && row.dataInicio < cond.gte) return false;
+        if (cond.lte !== undefined && row.dataInicio > cond.lte) return false;
+      }
+    }
+    return true;
+  };
+
+  const dispensa = {
+    findMany: async ({
+      where = {},
+      orderBy,
+    }: {
+      where?: Record<string, unknown>;
+      orderBy?: unknown;
+    } = {}) => {
+      let out = Array.from(dispensas.values()).filter((r) => matchWhere(r, where));
+      // Aplicar orderBy [{ dataInicio: 'desc' }, { criadoEm: 'desc' }]
+      if (Array.isArray(orderBy)) {
+        out = out.sort((a, b) => b.dataInicio.localeCompare(a.dataInicio));
+      }
+      return out;
+    },
+    findUnique: async ({
+      where,
+    }: {
+      where: {
+        id?: string;
+        militarNf_dataInicio_tipo?: { militarNf: string; dataInicio: string; tipo: string };
+      };
+    }) => {
+      if (where.id) return dispensas.get(where.id) ?? null;
+      if (where.militarNf_dataInicio_tipo) {
+        const { militarNf, dataInicio, tipo } = where.militarNf_dataInicio_tipo;
+        for (const r of dispensas.values()) {
+          if (r.militarNf === militarNf && r.dataInicio === dataInicio && r.tipo === tipo) {
+            return r;
+          }
+        }
+      }
+      return null;
+    },
+    findFirst: async ({ where = {} }: { where?: Record<string, unknown> } = {}) => {
+      for (const r of dispensas.values()) {
+        if (matchWhere(r, where)) return r;
+      }
+      return null;
+    },
+    create: async ({ data }: { data: Partial<DispensaRow> }) => {
+      const id = `disp-${counter++}`;
+      const now = new Date();
+      const row: DispensaRow = {
+        id,
+        militarNf: (data.militarNf as string) ?? '',
+        tipo: (data.tipo as string) ?? '',
+        dataInicio: (data.dataInicio as string) ?? '',
+        dias: (data.dias as number) ?? 0,
+        numeroEdocs: (data.numeroEdocs as string | null) ?? null,
+        observacoes: (data.observacoes as string | null) ?? null,
+        minuta: (data.minuta as string | null) ?? null,
+        equipe: (data.equipe as string | null) ?? null,
+        origem: (data.origem as string) ?? 'manual',
+        criadoEm: now,
+        criadoPorNf: (data.criadoPorNf as string | null) ?? null,
+        atualizadoEm: now,
+        deletedAt: null,
+      };
+      dispensas.set(id, row);
+      return row;
+    },
+    update: async ({ where, data }: { where: { id: string }; data: Partial<DispensaRow> }) => {
+      const cur = dispensas.get(where.id);
+      if (!cur) throw new Error(`No dispensa ${where.id}`);
+      const next: DispensaRow = {
+        ...cur,
+        ...data,
+        atualizadoEm: new Date(),
+      };
+      dispensas.set(where.id, next);
+      return next;
+    },
+  };
+
+  const militar = {
+    findUnique: async ({ where }: { where: { nf: string }; select?: unknown }) =>
+      militares.get(where.nf) ?? null,
+  };
+
+  // Test helper: pré-popular militares (FK simulada)
+  const _seedMilitar = (nf: string) => militares.set(nf, { nf });
+
+  const prismaLike = {
+    dispensa,
+    militar,
+    _seedMilitar,
+  };
+  return prismaLike as unknown as PrismaService & { _seedMilitar: (nf: string) => void };
+}

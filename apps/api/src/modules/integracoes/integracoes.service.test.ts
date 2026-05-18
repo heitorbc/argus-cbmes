@@ -62,6 +62,21 @@ describe('IntegracoesService', () => {
   let trocasAut: FakeSheetService;
   let chefesOp: FakeSheetService;
   let dispensasSheet: FakeSheetService;
+  let dispensasImport: {
+    getSyncStatus: () => {
+      syncedAt: string | null;
+      counts: { created: number; updated: number; skipped: number } | null;
+      stale: boolean;
+      inconsistencias: number;
+    };
+    forceSync: () => Promise<{
+      created: number;
+      updated: number;
+      skipped: number;
+      inconsistencias: string[];
+      syncedAt: string;
+    }>;
+  };
   let viaturasQdv: FakeSheetService;
   let viaturasQdvExtras: FakeExtrasService;
 
@@ -69,6 +84,16 @@ describe('IntegracoesService', () => {
     trocasAut = makeFakeService({ syncedAt: null, count: 0, stale: false });
     chefesOp = makeFakeService({ syncedAt: null, count: 0, stale: false });
     dispensasSheet = makeFakeService({ syncedAt: null, count: 0, stale: false });
+    dispensasImport = {
+      getSyncStatus: () => ({ syncedAt: null, counts: null, stale: false, inconsistencias: 0 }),
+      forceSync: async () => ({
+        created: 0,
+        updated: 0,
+        skipped: 0,
+        inconsistencias: [],
+        syncedAt: new Date().toISOString(),
+      }),
+    };
     viaturasQdv = makeFakeService({ syncedAt: null, count: 0, stale: false });
     viaturasQdvExtras = makeFakeExtras();
 
@@ -78,16 +103,18 @@ describe('IntegracoesService', () => {
       trocasAut as unknown as TrocasAutorizadasService,
       chefesOp as unknown as ChefesOperacoesService,
       dispensasSheet as unknown as DispensasSheetService,
+      dispensasImport as unknown as import('../dispensas/dispensas-import.service').DispensasImportService,
       viaturasQdv as unknown as ViaturasQdvService,
       viaturasQdvExtras as unknown as ViaturasQdvExtrasService,
     );
   });
 
-  it('lista as 7 integrações cadastradas (1BBM_1CIA + 3 abas extras)', () => {
+  it('lista as 8 integrações cadastradas (S2.10.7d: +dispensas-import)', () => {
     const result = svc.list();
-    expect(result).toHaveLength(7);
+    expect(result).toHaveLength(8);
     expect(result.map((r) => r.id).sort()).toEqual([
       'chefes-operacoes',
+      'dispensas-import',
       'dispensas-sheet',
       'trocas-autorizadas',
       'viaturas-qdv',

@@ -715,6 +715,19 @@ export const api = {
   dispensasSaldoMilitar: (militarNf: string, ano: number) =>
     request<DispensaSaldoMilitar>(`/dispensas/saldo/${militarNf}/${ano}`),
 
+  /**
+   * S2.10.7d — Força sync com a planilha "Dispensas 2026" (admin only).
+   * Retorna counts (created, updated, skipped) + inconsistências.
+   */
+  dispensasSyncPlanilha: () =>
+    request<{
+      created: number;
+      updated: number;
+      skipped: number;
+      inconsistencias: string[];
+      syncedAt: string;
+    }>('/dispensas/sync-planilha', { method: 'POST' }),
+
   // Trocas Autorizadas (item 1 + S0.5/PR1)
   trocasAutorizadasList: (filter: { data?: string } = {}) => {
     const params = new URLSearchParams();

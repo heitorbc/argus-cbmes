@@ -323,7 +323,8 @@ export class AgendaService {
   private async coletarDispensas(nf: string, inicio: string, fim: string): Promise<AgendaItem[]> {
     const out: AgendaItem[] = [];
     for (const data of iterDias(inicio, fim)) {
-      const ativas = this.dispensas.listAtivasNoDia(data);
+      // S2.10.7d — listAtivasNoDia agora é async (Prisma).
+      const ativas = await this.dispensas.listAtivasNoDia(data);
       for (const d of ativas) {
         if (d.militarNf !== nf) continue;
         out.push({

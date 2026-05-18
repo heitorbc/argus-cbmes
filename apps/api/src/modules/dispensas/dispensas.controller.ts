@@ -25,6 +25,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { EfetivoService } from '../efetivo/efetivo.service';
 import { parseMilitarCell } from '../escalas/escala-xlsx-parser';
 import { NomeMatcher } from '../mapa-forca/nome-matching';
+import { DispensasImportService, type SyncResult } from './dispensas-import.service';
 import { DispensasService } from './dispensas.service';
 import { DispensasSheetService } from './dispensas-sheet.service';
 
@@ -42,6 +43,7 @@ export class DispensasController {
   constructor(
     private readonly dispensas: DispensasService,
     private readonly dispensasSheet: DispensasSheetService,
+    private readonly dispensasImport: DispensasImportService,
     private readonly efetivo: EfetivoService,
   ) {}
 
@@ -68,7 +70,7 @@ export class DispensasController {
   }
 
   @Get()
-  list(@Query() query: unknown): Dispensa[] {
+  async list(@Query() query: unknown): Promise<Dispensa[]> {
     const parsed = listQuerySchema.safeParse(query);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
@@ -77,7 +79,10 @@ export class DispensasController {
   }
 
   @Get('saldo/:militarNf/:ano')
-  saldo(@Param('militarNf') militarNf: string, @Param('ano') ano: string): DispensaSaldoMilitar {
+  async saldo(
+    @Param('militarNf') militarNf: string,
+    @Param('ano') ano: string,
+  ): Promise<DispensaSaldoMilitar> {
     if (!/^\d{4}$/.test(ano)) {
       throw new BadRequestException('ano inválido (esperado YYYY)');
     }
@@ -85,14 +90,14 @@ export class DispensasController {
   }
 
   @Get(':id')
-  findById(@Param('id') id: string): Dispensa {
+  async findById(@Param('id') id: string): Promise<Dispensa> {
     return this.dispensas.findById(id);
   }
 
   @Roles('admin', 'sargenteante', 'fiscal')
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  create(@Body() body: unknown, @CurrentUser() user: UserSession): Dispensa {
+  async create(@Body() body: unknown, @CurrentUser() user: UserSession): Promise<Dispensa> {
     const parsed = createDispensaInputSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
@@ -102,7 +107,7 @@ export class DispensasController {
 
   @Roles('admin', 'sargenteante')
   @Put(':id')
-  update(@Param('id') id: string, @Body() body: unknown): Dispensa {
+  async update(@Param('id') id: string, @Body() body: unknown): Promise<Dispensa> {
     const parsed = updateDispensaInputSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
@@ -113,7 +118,19 @@ export class DispensasController {
   @Roles('admin', 'sargenteante')
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  remove(@Param('id') id: string): void {
-    this.dispensas.remove(id);
+  async remove(@Param('id') id: string): Promise<void> {
+    await this.dispensas.remove(id);
+  }
+
+  /**
+   * S2.10.7d — Força sync imediato com a planilha "Dispensas 2026".
+   * Admin only. Retorna counts (created, updated, skipped) + lista de
+   * inconsistências (NFs não resolvidas, etc.).
+   */
+  @Roles('admin', 'sargenteante')
+  @Post('sync-planilha')
+  @HttpCode(HttpStatus.OK)
+  async syncPlanilha(): Promise<SyncResult> {
+    return this.dispensasImport.forceSync();
   }
 }

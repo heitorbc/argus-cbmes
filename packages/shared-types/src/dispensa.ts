@@ -1,10 +1,12 @@
 import { z } from 'zod';
 
 /**
- * S6j — Tipos canônicos de Dispensa (8 categorias).
+ * S6j/S2.10.7d — Tipos canônicos de Dispensa (9 categorias).
  *
- * Lista institucional definida pelo Tech Lead (2026-05-10). Cada tipo tem
- * limite anual de dias por militar; `LIMITE_DIAS_POR_TIPO` codifica isso.
+ * Lista institucional definida pelo Tech Lead (2026-05-10) e ampliada em
+ * S2.10.7d para incluir IX_OUTRAS (coluna N da planilha "Dispensas 2026"
+ * com header "O"=OUTRAS). Cada tipo tem limite anual de dias por militar;
+ * `LIMITE_DIAS_POR_TIPO` codifica isso.
  *
  *   I — TAF institucional
  *   II — Exame de saúde
@@ -14,6 +16,7 @@ import { z } from 'zod';
  *   VI — Assiduidade
  *   VII — Mérito disciplinar
  *   VIII — Situações diversas (publicação por ato específico)
+ *   IX — Outras (catch-all S2.10.7d)
  */
 export const TIPO_DISPENSA = [
   'I_TAF',
@@ -24,6 +27,7 @@ export const TIPO_DISPENSA = [
   'VI_ASSIDUIDADE',
   'VII_MERITO',
   'VIII_DIVERSAS',
+  'IX_OUTRAS',
 ] as const;
 export type TipoDispensa = (typeof TIPO_DISPENSA)[number];
 
@@ -36,12 +40,13 @@ export const TIPO_DISPENSA_LABEL: Record<TipoDispensa, string> = {
   VI_ASSIDUIDADE: 'VI — Assiduidade',
   VII_MERITO: 'VII — Mérito disciplinar',
   VIII_DIVERSAS: 'VIII — Situações diversas',
+  IX_OUTRAS: 'IX — Outras',
 };
 
 /**
- * Limite anual de dias por militar por tipo. Para `VIII_DIVERSAS` o controle
- * é por ato específico publicado (sem limite numérico), por isso o valor
- * sentinela `999`.
+ * Limite anual de dias por militar por tipo. Para `VIII_DIVERSAS` e
+ * `IX_OUTRAS` o controle é por ato específico publicado (sem limite
+ * numérico), por isso o valor sentinela `999`.
  */
 export const LIMITE_DIAS_POR_TIPO: Record<TipoDispensa, number> = {
   I_TAF: 4,
@@ -52,7 +57,16 @@ export const LIMITE_DIAS_POR_TIPO: Record<TipoDispensa, number> = {
   VI_ASSIDUIDADE: 6,
   VII_MERITO: 2,
   VIII_DIVERSAS: 999,
+  IX_OUTRAS: 999,
 };
+
+/**
+ * S2.10.7d — Proveniência da dispensa: `manual` (cadastrada pela UI) ou
+ * `planilha` (importada do sync "Dispensas 2026"). Usada para distinguir
+ * na UI e impedir overwrite acidental.
+ */
+export const ORIGEM_DISPENSA = ['manual', 'planilha'] as const;
+export type OrigemDispensa = (typeof ORIGEM_DISPENSA)[number];
 
 /**
  * Entidade Dispensa registrada por militar/tipo/período.
@@ -75,6 +89,12 @@ export const dispensaSchema = z.object({
   numeroEdocs: z.string().optional(),
   /** Observação livre (motivo extra, contexto, etc.). */
   observacoes: z.string().optional(),
+  /** S2.10.7d — Nº BG (Boletim do Geral). Vem da coluna MINUTA da planilha. */
+  minuta: z.string().optional(),
+  /** S2.10.7d — Equipe da planilha (A/B/C/D ou texto livre tipo MERGULHO/SAT). */
+  equipe: z.string().optional(),
+  /** S2.10.7d — Proveniência: `manual` (UI) ou `planilha` (sync). */
+  origem: z.enum(ORIGEM_DISPENSA).default('manual'),
   criadoEm: z.string(),
   criadoPorNf: z.string(),
 });
@@ -87,6 +107,8 @@ export const createDispensaInputSchema = z.object({
   dias: z.number().int().min(1).max(365),
   numeroEdocs: z.string().trim().optional(),
   observacoes: z.string().trim().optional(),
+  minuta: z.string().trim().optional(),
+  equipe: z.string().trim().optional(),
 });
 export type CreateDispensaInput = z.infer<typeof createDispensaInputSchema>;
 
@@ -99,6 +121,8 @@ export const updateDispensaInputSchema = z.object({
   dias: z.number().int().min(1).max(365).optional(),
   numeroEdocs: z.string().trim().optional(),
   observacoes: z.string().trim().optional(),
+  minuta: z.string().trim().optional(),
+  equipe: z.string().trim().optional(),
 });
 export type UpdateDispensaInput = z.infer<typeof updateDispensaInputSchema>;
 

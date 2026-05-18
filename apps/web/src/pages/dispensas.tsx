@@ -20,6 +20,8 @@ interface FormState {
   dias: number;
   numeroEdocs: string;
   observacoes: string;
+  minuta: string;
+  equipe: string;
 }
 
 function todayIso(): string {
@@ -35,6 +37,8 @@ const EMPTY_FORM: FormState = {
   dias: 1,
   numeroEdocs: '',
   observacoes: '',
+  minuta: '',
+  equipe: '',
 };
 
 const TIPO_BADGE: Record<TipoDispensa, string> = {
@@ -46,6 +50,7 @@ const TIPO_BADGE: Record<TipoDispensa, string> = {
   VI_ASSIDUIDADE: 'bg-cbmes-blue/15 text-cbmes-blue',
   VII_MERITO: 'bg-cbmes-red/15 text-cbmes-red',
   VIII_DIVERSAS: 'bg-slate-500/15 text-slate-700',
+  IX_OUTRAS: 'bg-stone-500/15 text-stone-700',
 };
 
 export function DispensasPage() {
@@ -67,6 +72,8 @@ export function DispensasPage() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [refreshSeed, setRefreshSeed] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -114,6 +121,8 @@ export function DispensasPage() {
       dias: d.dias,
       numeroEdocs: d.numeroEdocs ?? '',
       observacoes: d.observacoes ?? '',
+      minuta: d.minuta ?? '',
+      equipe: d.equipe ?? '',
     });
     setEditingId(d.id);
     setFormError(null);
@@ -136,6 +145,8 @@ export function DispensasPage() {
           dias: form.dias,
           numeroEdocs: form.numeroEdocs.trim() || undefined,
           observacoes: form.observacoes.trim() || undefined,
+          minuta: form.minuta.trim() || undefined,
+          equipe: form.equipe.trim() || undefined,
         });
       } else {
         const input: CreateDispensaInput = {
@@ -145,6 +156,8 @@ export function DispensasPage() {
           dias: form.dias,
           numeroEdocs: form.numeroEdocs.trim() || undefined,
           observacoes: form.observacoes.trim() || undefined,
+          minuta: form.minuta.trim() || undefined,
+          equipe: form.equipe.trim() || undefined,
         };
         await api.dispensasCreate(input);
       }
@@ -155,6 +168,24 @@ export function DispensasPage() {
       setFormError(err instanceof ApiError ? err.message : 'Erro ao salvar');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSyncPlanilha = async () => {
+    if (!confirm('Sincronizar dispensas com a planilha "Dispensas 2026"?')) return;
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const r = await api.dispensasSyncPlanilha();
+      setSyncResult(
+        `✓ Sync OK — criadas: ${r.created}, atualizadas: ${r.updated}, puladas: ${r.skipped}` +
+          (r.inconsistencias.length > 0 ? ` (${r.inconsistencias.length} inconsistências)` : ''),
+      );
+      await reload();
+    } catch (err) {
+      setSyncResult(err instanceof ApiError ? `✗ ${err.message}` : '✗ Erro ao sincronizar');
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -178,7 +209,8 @@ export function DispensasPage() {
         </Link>
         <h1 className="mt-1 text-lg font-bold">Dispensas</h1>
         <p className="text-xs opacity-90">
-          Sargenteação · 8 tipos canônicos (I–VIII) com limites institucionais
+          Sargenteação · 9 tipos canônicos (I–IX) com limites institucionais · sync planilha
+          "Dispensas 2026"
         </p>
       </header>
 
@@ -230,13 +262,35 @@ export function DispensasPage() {
         </div>
 
         {podeCriar && !showForm && (
-          <button
-            type="button"
-            onClick={startCreate}
-            className="mt-3 w-full rounded-button bg-cbmes-red py-2.5 text-base font-semibold text-white"
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
+            <button
+              type="button"
+              onClick={startCreate}
+              className="rounded-button bg-cbmes-red py-2.5 text-base font-semibold text-white"
+            >
+              + Nova dispensa
+            </button>
+            {podeEditar && (
+              <button
+                type="button"
+                onClick={() => void handleSyncPlanilha()}
+                disabled={syncing}
+                title='Sincronizar com a planilha "Dispensas 2026" (upsert por militar/data/tipo)'
+                className="rounded-button border border-cbmes-blue bg-white px-3 py-2.5 text-sm font-medium text-cbmes-blue hover:bg-cbmes-blue/5 disabled:opacity-50"
+              >
+                {syncing ? '⟳ Sincronizando…' : '🔄 Sincronizar planilha'}
+              </button>
+            )}
+          </div>
+        )}
+
+        {syncResult && (
+          <p
+            role="status"
+            className="mt-2 rounded border border-slate-300 bg-white p-2 text-xs text-slate-700"
           >
-            + Nova dispensa
-          </button>
+            {syncResult}
+          </p>
         )}
 
         {showForm && podeCriar && (
@@ -318,6 +372,33 @@ export function DispensasPage() {
               />
             </label>
 
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">
+                  Minuta (BG) <span className="text-[10px] text-slate-500">(opcional)</span>
+                </span>
+                <input
+                  type="text"
+                  value={form.minuta}
+                  onChange={(e) => setForm({ ...form, minuta: e.target.value })}
+                  placeholder="Ex.: 150829"
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">
+                  Equipe <span className="text-[10px] text-slate-500">(opcional)</span>
+                </span>
+                <input
+                  type="text"
+                  value={form.equipe}
+                  onChange={(e) => setForm({ ...form, equipe: e.target.value })}
+                  placeholder="A/B/C/D ou MERGULHO/SAT"
+                  className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm"
+                />
+              </label>
+            </div>
+
             <label className="block">
               <span className="text-sm font-medium text-slate-700">
                 Observações <span className="text-[10px] text-slate-500">(opcional)</span>
@@ -372,7 +453,17 @@ export function DispensasPage() {
             <div key={d.id} className="rounded border border-slate-200 bg-white p-3 text-sm">
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <p className="font-semibold text-cbmes-blue">NF {d.militarNf}</p>
+                  <p className="font-semibold text-cbmes-blue">
+                    NF {d.militarNf}
+                    {d.origem === 'planilha' && (
+                      <span
+                        className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-900"
+                        title="Importada da planilha Dispensas 2026"
+                      >
+                        🔗 planilha
+                      </span>
+                    )}
+                  </p>
                   <p className="mt-0.5 text-xs text-slate-700">
                     <span
                       className={`mr-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${TIPO_BADGE[d.tipo]}`}
@@ -384,6 +475,8 @@ export function DispensasPage() {
                   <p className="mt-1 text-xs text-slate-600">
                     {d.dataInicio} · <strong>{d.dias}</strong> dia(s)
                     {d.numeroEdocs && <> · E-Docs {d.numeroEdocs}</>}
+                    {d.minuta && <> · BG {d.minuta}</>}
+                    {d.equipe && <> · Equipe {d.equipe}</>}
                   </p>
                   {d.observacoes && (
                     <p className="mt-1 text-xs italic text-slate-500">{d.observacoes}</p>
