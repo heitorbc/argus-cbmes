@@ -207,6 +207,198 @@ describe('AjustesPreviaService — gate de edição (S0.x/rename-mapa-forca)', (
   });
 });
 
+describe('AjustesPreviaService — aprovações individuais (S2.10.7b/Partes C+G)', () => {
+  let service: AjustesPreviaService;
+  let servico: ServicoService;
+  const dataIso = '2026-05-09';
+
+  beforeEach(() => {
+    servico = new ServicoService();
+    service = new AjustesPreviaService(servico);
+    iniciarPrevia(servico, dataIso);
+  });
+
+  it('getAprovacoes devolve mapa vazio antes de qualquer decisão', () => {
+    expect(service.getAprovacoes(dataIso).size).toBe(0);
+  });
+
+  it('setAprovacaoItem grava decisão "aprovar" como aprovada', () => {
+    const status = service.setAprovacaoItem(dataIso, 'troca', 'troca-1', 'aprovar', FISCAL_NF);
+    expect(status).toBe('aprovada');
+    expect(service.getAprovacoes(dataIso).get('troca:troca-1')).toBe('aprovada');
+  });
+
+  it('setAprovacaoItem é idempotente (mesma decisão reaplica)', () => {
+    service.setAprovacaoItem(dataIso, 'dispensa', 'disp-1', 'aprovar', FISCAL_NF);
+    const status = service.setAprovacaoItem(dataIso, 'dispensa', 'disp-1', 'aprovar', FISCAL_NF);
+    expect(status).toBe('aprovada');
+    expect(service.getAprovacoes(dataIso).size).toBe(1);
+  });
+
+  it('setAprovacaoItem permite inverter aprovada → rejeitada', () => {
+    service.setAprovacaoItem(dataIso, 'atestado', 'at-1', 'aprovar', FISCAL_NF);
+    const status = service.setAprovacaoItem(dataIso, 'atestado', 'at-1', 'rejeitar', FISCAL_NF);
+    expect(status).toBe('rejeitada');
+    expect(service.getAprovacoes(dataIso).get('atestado:at-1')).toBe('rejeitada');
+  });
+
+  it('reset limpa também as aprovações do dia', () => {
+    service.setAprovacaoItem(dataIso, 'troca', 't-1', 'aprovar', FISCAL_NF);
+    service.reset(dataIso);
+    expect(service.getAprovacoes(dataIso).size).toBe(0);
+  });
+
+  it('setAprovacaoItem rejeita após início do serviço (sem isAdmin)', () => {
+    servico.iniciar(dataIso, FISCAL_NF);
+    expect(() =>
+      service.setAprovacaoItem(dataIso, 'troca', 't-1', 'aprovar', FISCAL_NF, false),
+    ).toThrow(ForbiddenException);
+  });
+});
+
+describe('AjustesPreviaService — empenhos de Escala Especial (S2.10.7b/Parte F)', () => {
+  let service: AjustesPreviaService;
+  let servico: ServicoService;
+  const dataIso = '2026-05-09';
+  const ato = {
+    data: dataIso,
+    militarRaw: 'CB HENRIQUE LOPES',
+    horario: '07:10 ÀS 13:10',
+    funcao: 'APOIO',
+  };
+
+  beforeEach(() => {
+    servico = new ServicoService();
+    service = new AjustesPreviaService(servico);
+    iniciarPrevia(servico, dataIso);
+  });
+
+  it('add cria empenho com timestamps + nf de registro', () => {
+    const e = service.addEmpenhoEscalaEspecial(
+      dataIso,
+      {
+        atoOriginal: ato,
+        recursoAlvo: 'SENTINELA 1',
+        funcaoAlvo: 'Sent. 1',
+        periodoInicio: '07:10',
+        periodoFim: '09:10',
+      },
+      FISCAL_NF,
+    );
+    expect(e.recursoAlvo).toBe('SENTINELA 1');
+    expect(e.registradoPorNf).toBe(FISCAL_NF);
+    expect(e.registradoEm).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(service.get(dataIso).empenhosEscalaEspecial).toHaveLength(1);
+  });
+
+  it('add substitui empenho existente para o mesmo (ato, recurso, função)', () => {
+    service.addEmpenhoEscalaEspecial(
+      dataIso,
+      {
+        atoOriginal: ato,
+        recursoAlvo: 'SENTINELA 1',
+        funcaoAlvo: 'Sent. 1',
+        periodoInicio: '07:10',
+        periodoFim: '08:10',
+      },
+      FISCAL_NF,
+    );
+    service.addEmpenhoEscalaEspecial(
+      dataIso,
+      {
+        atoOriginal: ato,
+        recursoAlvo: 'SENTINELA 1',
+        funcaoAlvo: 'Sent. 1',
+        periodoInicio: '09:00',
+        periodoFim: '11:00',
+      },
+      FISCAL_NF,
+    );
+    const ajustes = service.get(dataIso);
+    expect(ajustes.empenhosEscalaEspecial).toHaveLength(1);
+    expect(ajustes.empenhosEscalaEspecial?.[0]?.periodoInicio).toBe('09:00');
+  });
+
+  it('add permite empenhos paralelos do mesmo ato em recursos diferentes', () => {
+    service.addEmpenhoEscalaEspecial(
+      dataIso,
+      {
+        atoOriginal: ato,
+        recursoAlvo: 'SENTINELA 1',
+        funcaoAlvo: 'Sent. 1',
+        periodoInicio: '07:10',
+        periodoFim: '09:10',
+      },
+      FISCAL_NF,
+    );
+    service.addEmpenhoEscalaEspecial(
+      dataIso,
+      {
+        atoOriginal: ato,
+        recursoAlvo: 'ABTS_01',
+        funcaoAlvo: 'Op 2',
+        periodoInicio: '09:10',
+        periodoFim: '11:10',
+      },
+      FISCAL_NF,
+    );
+    expect(service.get(dataIso).empenhosEscalaEspecial).toHaveLength(2);
+  });
+
+  it('add rejeita período inválido (fim ≤ início)', () => {
+    expect(() =>
+      service.addEmpenhoEscalaEspecial(
+        dataIso,
+        {
+          atoOriginal: ato,
+          recursoAlvo: 'SENTINELA 1',
+          funcaoAlvo: 'Sent. 1',
+          periodoInicio: '10:00',
+          periodoFim: '10:00',
+        },
+        FISCAL_NF,
+      ),
+    ).toThrow(/Período inválido/);
+  });
+
+  it('add rejeita data do ato divergente do dia', () => {
+    expect(() =>
+      service.addEmpenhoEscalaEspecial(
+        '2026-05-09',
+        {
+          atoOriginal: { ...ato, data: '2026-05-10' },
+          recursoAlvo: 'SENTINELA 1',
+          funcaoAlvo: 'Sent. 1',
+          periodoInicio: '07:10',
+          periodoFim: '09:10',
+        },
+        FISCAL_NF,
+      ),
+    ).toThrow(/2026-05-10.*2026-05-09/);
+  });
+
+  it('remove encontra por empenhoKey', () => {
+    service.addEmpenhoEscalaEspecial(
+      dataIso,
+      {
+        atoOriginal: ato,
+        recursoAlvo: 'SENTINELA 1',
+        funcaoAlvo: 'Sent. 1',
+        periodoInicio: '07:10',
+        periodoFim: '09:10',
+      },
+      FISCAL_NF,
+    );
+    const key = `${atoKey(ato)}|SENTINELA 1|Sent. 1`;
+    expect(service.removeEmpenhoEscalaEspecial(dataIso, key, FISCAL_NF)).toBe(true);
+    expect(service.get(dataIso).empenhosEscalaEspecial).toHaveLength(0);
+  });
+
+  it('remove devolve false quando empenho não existe', () => {
+    expect(service.removeEmpenhoEscalaEspecial(dataIso, 'inexistente', FISCAL_NF)).toBe(false);
+  });
+});
+
 describe('AjustesPreviaService.upsert — fix trocas duplicadas (S0.x/fixes-3)', () => {
   let service: AjustesPreviaService;
   let servico: ServicoService;

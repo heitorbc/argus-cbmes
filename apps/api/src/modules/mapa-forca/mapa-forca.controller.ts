@@ -14,11 +14,15 @@ import {
 } from '@nestjs/common';
 import { z } from 'zod';
 import {
+  addEscalaEspecialEmpenhoSchema,
   addTrocaEscalaEspecialSchema,
+  aprovarItemInputSchema,
   upsertAjustesPreviaSchema,
   type AjustesPrevia,
+  type EscalaEspecialEmpenho,
   type FiscalDoDia,
   type MapaForcaDoDia,
+  type StatusAprovacao,
   type TrocaEscalaEspecial,
   type UserSession,
 } from '@argus/shared-types';
@@ -144,5 +148,93 @@ export class MapaForcaController {
     if (!removed) {
       throw new NotFoundException('Troca de Escala Especial não encontrada para este ato.');
     }
+  }
+
+  /**
+   * S2.10.7b/Parte F — Registra empenho de Escala Especial em recurso
+   * operacional ativo. Substitui empenho existente para o mesmo
+   * `(ato, recurso, função)`.
+   */
+  @Roles('admin', 'fiscal', 'sargenteante')
+  @Post(':data/ajustes/escala-especial/empenhos')
+  @HttpCode(HttpStatus.OK)
+  addEmpenhoEscalaEspecial(
+    @Param('data') data: string,
+    @Body() body: unknown,
+    @CurrentUser() user: UserSession,
+  ): EscalaEspecialEmpenho {
+    if (!dataParamRegex.test(data)) {
+      throw new BadRequestException('data inválida (esperado YYYY-MM-DD)');
+    }
+    const parsed = addEscalaEspecialEmpenhoSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.errors.map((e) => e.message));
+    }
+    return this.ajustes.addEmpenhoEscalaEspecial(
+      data,
+      parsed.data,
+      user.nf,
+      user.papeis.includes('admin'),
+    );
+  }
+
+  /** S2.10.7b/Parte F — Remove empenho de Escala Especial. */
+  @Roles('admin', 'fiscal', 'sargenteante')
+  @Delete(':data/ajustes/escala-especial/empenhos/:empenhoKey')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  removeEmpenhoEscalaEspecial(
+    @Param('data') data: string,
+    @Param('empenhoKey') empenhoKey: string,
+    @CurrentUser() user: UserSession,
+  ): void {
+    if (!dataParamRegex.test(data)) {
+      throw new BadRequestException('data inválida (esperado YYYY-MM-DD)');
+    }
+    const removed = this.ajustes.removeEmpenhoEscalaEspecial(
+      data,
+      decodeURIComponent(empenhoKey),
+      user.nf,
+      user.papeis.includes('admin'),
+    );
+    if (!removed) {
+      throw new NotFoundException('Empenho de Escala Especial não encontrado.');
+    }
+  }
+
+  /**
+   * S2.10.7b/Partes C+G — Aprovação individual (aprovar/rejeitar) de troca
+   * autorizada, dispensa ou atestado. Único endpoint parametrizado pelo tipo.
+   */
+  @Roles('admin', 'fiscal', 'sargenteante')
+  @Post(':data/aprovacoes/:tipo/:id')
+  @HttpCode(HttpStatus.OK)
+  aprovarItem(
+    @Param('data') data: string,
+    @Param('tipo') tipo: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @CurrentUser() user: UserSession,
+  ): { statusAprovacao: StatusAprovacao } {
+    if (!dataParamRegex.test(data)) {
+      throw new BadRequestException('data inválida (esperado YYYY-MM-DD)');
+    }
+    if (tipo !== 'troca' && tipo !== 'dispensa' && tipo !== 'atestado') {
+      throw new BadRequestException(
+        `tipo inválido (esperado 'troca' | 'dispensa' | 'atestado'); recebido ${tipo}`,
+      );
+    }
+    const parsed = aprovarItemInputSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.errors.map((e) => e.message));
+    }
+    const status = this.ajustes.setAprovacaoItem(
+      data,
+      tipo,
+      decodeURIComponent(id),
+      parsed.data.decisao,
+      user.nf,
+      user.papeis.includes('admin'),
+    );
+    return { statusAprovacao: status };
   }
 }
