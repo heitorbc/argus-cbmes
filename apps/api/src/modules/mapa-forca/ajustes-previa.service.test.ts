@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ForbiddenException } from '@nestjs/common';
+import { makeAprovacoesPrismaMock } from '../../common/prisma/prisma-test-mock';
 import { ServicoService } from '../servico/servico.service';
 import { AjustesPreviaService, atoKey } from './ajustes-previa.service';
 
@@ -34,7 +35,7 @@ describe('AjustesPreviaService — trocas de Escala Especial (S6a-fix)', () => {
 
   beforeEach(() => {
     servico = new ServicoService();
-    service = new AjustesPreviaService(servico);
+    service = new AjustesPreviaService(servico, makeAprovacoesPrismaMock());
     iniciarPrevia(servico, dataIso);
   });
 
@@ -143,7 +144,7 @@ describe('AjustesPreviaService — gate de edição (S0.x/rename-mapa-forca)', (
 
   beforeEach(() => {
     servico = new ServicoService();
-    service = new AjustesPreviaService(servico);
+    service = new AjustesPreviaService(servico, makeAprovacoesPrismaMock());
   });
 
   it('upsert rejeita em NAO_INICIADO (precisa "Iniciar Prévia do Mapa Força" primeiro)', () => {
@@ -214,45 +215,78 @@ describe('AjustesPreviaService — aprovações individuais (S2.10.7b/Partes C+G
 
   beforeEach(() => {
     servico = new ServicoService();
-    service = new AjustesPreviaService(servico);
+    service = new AjustesPreviaService(servico, makeAprovacoesPrismaMock());
     iniciarPrevia(servico, dataIso);
   });
 
-  it('getAprovacoes devolve mapa vazio antes de qualquer decisão', () => {
-    expect(service.getAprovacoes(dataIso).size).toBe(0);
+  it('getAprovacoes devolve mapa vazio antes de qualquer decisão', async () => {
+    const aprovacoes = await service.getAprovacoes(dataIso);
+    expect(aprovacoes.size).toBe(0);
   });
 
-  it('setAprovacaoItem grava decisão "aprovar" como aprovada', () => {
-    const status = service.setAprovacaoItem(dataIso, 'troca', 'troca-1', 'aprovar', FISCAL_NF);
+  it('setAprovacaoItem grava decisão "aprovar" como aprovada', async () => {
+    const status = await service.setAprovacaoItem(
+      dataIso,
+      'troca',
+      'troca-1',
+      'aprovar',
+      FISCAL_NF,
+    );
     expect(status).toBe('aprovada');
-    expect(service.getAprovacoes(dataIso).get('troca:troca-1')).toBe('aprovada');
+    const aprovacoes = await service.getAprovacoes(dataIso);
+    expect(aprovacoes.get('troca:troca-1')).toBe('aprovada');
   });
 
-  it('setAprovacaoItem é idempotente (mesma decisão reaplica)', () => {
-    service.setAprovacaoItem(dataIso, 'dispensa', 'disp-1', 'aprovar', FISCAL_NF);
-    const status = service.setAprovacaoItem(dataIso, 'dispensa', 'disp-1', 'aprovar', FISCAL_NF);
+  it('setAprovacaoItem é idempotente (mesma decisão reaplica)', async () => {
+    await service.setAprovacaoItem(dataIso, 'dispensa', 'disp-1', 'aprovar', FISCAL_NF);
+    const status = await service.setAprovacaoItem(
+      dataIso,
+      'dispensa',
+      'disp-1',
+      'aprovar',
+      FISCAL_NF,
+    );
     expect(status).toBe('aprovada');
-    expect(service.getAprovacoes(dataIso).size).toBe(1);
+    const aprovacoes = await service.getAprovacoes(dataIso);
+    expect(aprovacoes.size).toBe(1);
   });
 
-  it('setAprovacaoItem permite inverter aprovada → rejeitada', () => {
-    service.setAprovacaoItem(dataIso, 'atestado', 'at-1', 'aprovar', FISCAL_NF);
-    const status = service.setAprovacaoItem(dataIso, 'atestado', 'at-1', 'rejeitar', FISCAL_NF);
+  it('setAprovacaoItem permite inverter aprovada → rejeitada', async () => {
+    await service.setAprovacaoItem(dataIso, 'atestado', 'at-1', 'aprovar', FISCAL_NF);
+    const status = await service.setAprovacaoItem(
+      dataIso,
+      'atestado',
+      'at-1',
+      'rejeitar',
+      FISCAL_NF,
+    );
     expect(status).toBe('rejeitada');
-    expect(service.getAprovacoes(dataIso).get('atestado:at-1')).toBe('rejeitada');
+    const aprovacoes = await service.getAprovacoes(dataIso);
+    expect(aprovacoes.get('atestado:at-1')).toBe('rejeitada');
   });
 
-  it('reset limpa também as aprovações do dia', () => {
-    service.setAprovacaoItem(dataIso, 'troca', 't-1', 'aprovar', FISCAL_NF);
-    service.reset(dataIso);
-    expect(service.getAprovacoes(dataIso).size).toBe(0);
+  it('reset limpa também as aprovações do dia', async () => {
+    await service.setAprovacaoItem(dataIso, 'troca', 't-1', 'aprovar', FISCAL_NF);
+    await service.reset(dataIso);
+    const aprovacoes = await service.getAprovacoes(dataIso);
+    expect(aprovacoes.size).toBe(0);
   });
 
-  it('setAprovacaoItem rejeita após início do serviço (sem isAdmin)', () => {
+  it('setAprovacaoItem rejeita após início do serviço (sem isAdmin)', async () => {
     servico.iniciar(dataIso, FISCAL_NF);
-    expect(() =>
+    await expect(
       service.setAprovacaoItem(dataIso, 'troca', 't-1', 'aprovar', FISCAL_NF, false),
-    ).toThrow(ForbiddenException);
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('persistência: aprovação sobrevive a recriação do service (mesmo Prisma)', async () => {
+    // Simula restart do AjustesPreviaService mas compartilha o "banco" (Prisma mock).
+    const prisma = makeAprovacoesPrismaMock();
+    const svc1 = new AjustesPreviaService(servico, prisma);
+    await svc1.setAprovacaoItem(dataIso, 'troca', 'persistente-1', 'aprovar', FISCAL_NF);
+    const svc2 = new AjustesPreviaService(servico, prisma);
+    const aprovacoes = await svc2.getAprovacoes(dataIso);
+    expect(aprovacoes.get('troca:persistente-1')).toBe('aprovada');
   });
 });
 
@@ -269,7 +303,7 @@ describe('AjustesPreviaService — empenhos de Escala Especial (S2.10.7b/Parte F
 
   beforeEach(() => {
     servico = new ServicoService();
-    service = new AjustesPreviaService(servico);
+    service = new AjustesPreviaService(servico, makeAprovacoesPrismaMock());
     iniciarPrevia(servico, dataIso);
   });
 
@@ -406,7 +440,7 @@ describe('AjustesPreviaService.upsert — fix trocas duplicadas (S0.x/fixes-3)',
 
   beforeEach(() => {
     servico = new ServicoService();
-    service = new AjustesPreviaService(servico);
+    service = new AjustesPreviaService(servico, makeAprovacoesPrismaMock());
     iniciarPrevia(servico, dataIso);
   });
 

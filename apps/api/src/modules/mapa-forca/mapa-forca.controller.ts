@@ -208,13 +208,13 @@ export class MapaForcaController {
   @Roles('admin', 'fiscal', 'sargenteante')
   @Post(':data/aprovacoes/:tipo/:id')
   @HttpCode(HttpStatus.OK)
-  aprovarItem(
+  async aprovarItem(
     @Param('data') data: string,
     @Param('tipo') tipo: string,
     @Param('id') id: string,
     @Body() body: unknown,
     @CurrentUser() user: UserSession,
-  ): { statusAprovacao: StatusAprovacao } {
+  ): Promise<{ statusAprovacao: StatusAprovacao }> {
     if (!dataParamRegex.test(data)) {
       throw new BadRequestException('data inválida (esperado YYYY-MM-DD)');
     }
@@ -227,7 +227,7 @@ export class MapaForcaController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     }
-    const status = this.ajustes.setAprovacaoItem(
+    const status = await this.ajustes.setAprovacaoItem(
       data,
       tipo,
       decodeURIComponent(id),
