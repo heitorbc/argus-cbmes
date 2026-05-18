@@ -20,27 +20,51 @@ describe('parseDispensas2026Csv (S2.10.7d)', () => {
     });
   });
 
-  it('linha com 2 tipos preenchidos gera 2 entries (JARDEL: VI=6, VII=2)', () => {
+  it('S2.10.7e — sequencia dispensas: JARDEL VI(04/01 +6d) → VII(10/01 +2d)', () => {
     const linhas = parseDispensas2026Csv(FIXTURE, 2026);
     const jardel = linhas.filter((l) => l.militarRaw === '2ºSGT JARDEL');
     expect(jardel).toHaveLength(2);
-    const tipos = jardel.map((l) => l.tipo).sort();
-    expect(tipos).toEqual(['VII_MERITO', 'VI_ASSIDUIDADE']);
-    expect(jardel.find((l) => l.tipo === 'VI_ASSIDUIDADE')?.dias).toBe(6);
-    expect(jardel.find((l) => l.tipo === 'VII_MERITO')?.dias).toBe(2);
-    expect(jardel[0]?.data).toBe('2026-01-04');
-    expect(jardel[0]?.minuta).toBe('150829');
+
+    const vi = jardel.find((l) => l.tipo === 'VI_ASSIDUIDADE')!;
+    const vii = jardel.find((l) => l.tipo === 'VII_MERITO')!;
+    expect(vi.dias).toBe(6);
+    expect(vii.dias).toBe(2);
+    // S2.10.7e — sequenciamento: VI cobre 04-09/01, VII inicia 10/01
+    expect(vi.data).toBe('2026-01-04');
+    expect(vii.data).toBe('2026-01-10');
+    // Ambas compartilham o mesmo E-Docs e MINUTA (vem da linha única)
+    expect(vi.edocs).toBe('2025-VJGXD3');
+    expect(vii.edocs).toBe('2025-VJGXD3');
+    expect(vi.minuta).toBe('150829');
+    expect(vii.minuta).toBe('150829');
   });
 
-  it('linha com 2 tipos não-adjacentes (ESMAEL: I_TAF=4, V_ANIVERSARIO=1)', () => {
+  it('S2.10.7e — sequencia tipos NÃO-adjacentes (ESMAEL: I_TAF=4 em 09/01 → V_ANIVERSARIO=1 em 13/01)', () => {
     const linhas = parseDispensas2026Csv(FIXTURE, 2026);
     const esmael = linhas.filter((l) => l.militarRaw === 'CB ESMAEL');
     expect(esmael).toHaveLength(2);
-    const tipos = esmael.map((l) => l.tipo).sort();
-    expect(tipos).toEqual(['I_TAF', 'V_ANIVERSARIO']);
-    expect(esmael.find((l) => l.tipo === 'I_TAF')?.dias).toBe(4);
-    expect(esmael.find((l) => l.tipo === 'V_ANIVERSARIO')?.dias).toBe(1);
-    expect(esmael[0]?.minuta).toBe('151012');
+    const taf = esmael.find((l) => l.tipo === 'I_TAF')!;
+    const aniv = esmael.find((l) => l.tipo === 'V_ANIVERSARIO')!;
+    expect(taf.dias).toBe(4);
+    expect(aniv.dias).toBe(1);
+    expect(taf.data).toBe('2026-01-09');
+    expect(aniv.data).toBe('2026-01-13'); // 09/01 + 4 dias
+    expect(taf.minuta).toBe('151012');
+  });
+
+  it('S2.10.7e — sequencia 3 tipos: SCARAMUSSA V=1 (01/02) → VI=3 (02/02) → IX=1 (05/02)', () => {
+    const linhas = parseDispensas2026Csv(FIXTURE, 2026);
+    const scaramussa = linhas.filter((l) => l.militarRaw === 'SD SCARAMUSSA');
+    expect(scaramussa).toHaveLength(3);
+    const v = scaramussa.find((l) => l.tipo === 'V_ANIVERSARIO')!;
+    const vi = scaramussa.find((l) => l.tipo === 'VI_ASSIDUIDADE')!;
+    const ix = scaramussa.find((l) => l.tipo === 'IX_OUTRAS')!;
+    expect(v.dias).toBe(1);
+    expect(vi.dias).toBe(3);
+    expect(ix.dias).toBe(1);
+    expect(v.data).toBe('2026-02-01'); // dataInicial
+    expect(vi.data).toBe('2026-02-02'); // V cobre só 01/02 → VI inicia 02/02
+    expect(ix.data).toBe('2026-02-05'); // VI cobre 02-04/02 → IX inicia 05/02
   });
 
   it('linha sem NF (SCARAMUSSA) cai com nfRaw=undefined — caller resolve via NomeMatcher', () => {

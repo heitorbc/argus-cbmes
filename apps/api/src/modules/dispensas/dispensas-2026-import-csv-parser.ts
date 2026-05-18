@@ -95,7 +95,13 @@ export function parseDispensas2026Csv(csv: string, anoDefault: number): Dispensa
     const dataIso = brDateToIso(colC, anoDefault);
     if (!dataIso) continue; // data inválida — skip
 
-    // Para cada coluna F..N (posições 5..13 0-indexed), se valor numérico > 0 cria entry
+    // S2.10.7e — Sequenciamento de tipos: quando uma linha tem múltiplos
+    // tipos preenchidos (F..N), cada próxima dispensa começa QUANDO a
+    // anterior termina (dataInicio_próxima = dataInicio_atual + dias_atual).
+    // Exemplo (caso prático Tech Lead — JARDEL 04/01 com VI=6 e VII=2):
+    //   VI: dataInicio=2026-01-04, dias=6 → cobre 04-09/01
+    //   VII: dataInicio=2026-01-10, dias=2 → cobre 10-11/01
+    let dataAcumulada = dataIso;
     for (let i = 0; i < TIPO_POR_COLUNA.length; i++) {
       const valorRaw = (row[5 + i] ?? '').trim();
       if (!valorRaw) continue;
@@ -104,7 +110,7 @@ export function parseDispensas2026Csv(csv: string, anoDefault: number): Dispensa
       out.push({
         nfRaw: nfRaw || undefined,
         militarRaw: colB,
-        data: dataIso,
+        data: dataAcumulada,
         edocs: edocs || undefined,
         equipe: equipe || undefined,
         tipo: TIPO_POR_COLUNA[i]!,
@@ -112,10 +118,22 @@ export function parseDispensas2026Csv(csv: string, anoDefault: number): Dispensa
         observacoes: observacoes || undefined,
         minuta: minuta || undefined,
       });
+      dataAcumulada = addDaysIso(dataAcumulada, dias);
     }
   }
 
   return out;
+}
+
+/**
+ * S2.10.7e — Soma `days` dias corridos a uma data ISO `YYYY-MM-DD` sem
+ * problemas de fuso horário (usa UTC explícito).
+ */
+function addDaysIso(iso: string, days: number): string {
+  const [y, m, d] = iso.split('-').map((s) => Number.parseInt(s, 10));
+  const date = new Date(Date.UTC(y!, (m ?? 1) - 1, d ?? 1));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 function onlyDigits(raw: string): string {

@@ -1,5 +1,6 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { Militar as MilitarShared } from '@argus/shared-types';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EfetivoService } from '../efetivo/efetivo.service';
 import { parseMilitarCell } from '../escalas/escala-xlsx-parser';
@@ -117,6 +118,9 @@ export class DispensasImportService {
       incluirEfetivoOrfao: true,
     });
     const matcher = new NomeMatcher(efetivoTotal);
+    // S2.10.7e — index NF→Militar para auto-upsert quando Militar não existe
+    // em Postgres mas existe no efetivo consolidado.
+    const efetivoByNf = new Map(efetivoTotal.map((m) => [m.nf, m]));
 
     let created = 0;
     let updated = 0;
@@ -145,11 +149,24 @@ export class DispensasImportService {
         select: { nf: true },
       });
       if (!militarExiste) {
-        skipped++;
-        inconsistencias.push(
-          `Militar NF ${militarNf} não existe no banco (linha "${linha.militarRaw}" em ${linha.data})`,
-        );
-        continue;
+        // S2.10.7e — Auto-upsert a partir do EfetivoService (decisão D2 do
+        // plano). Se o militar existe no efetivo consolidado em memória,
+        // persiste em Prisma antes de seguir. Caso contrário, registra
+        // inconsistência (NF realmente desconhecido).
+        const fromEfetivo = efetivoByNf.get(militarNf);
+        if (!fromEfetivo) {
+          skipped++;
+          inconsistencias.push(
+            `Militar NF ${militarNf} ("${linha.militarRaw}") não existe nem em Postgres nem no Efetivo consolidado`,
+          );
+          continue;
+        }
+        const data = militarToPrismaData(fromEfetivo);
+        await this.prisma.militar.upsert({
+          where: { nf: militarNf },
+          create: data,
+          update: data,
+        });
       }
 
       // Upsert idempotente por (militarNf, dataInicio, tipo)
@@ -232,4 +249,44 @@ export class DispensasImportService {
       clearTimeout(timeoutId);
     }
   }
+}
+
+/**
+ * S2.10.7e — Converte um `Militar` do shared-types (consolidado pelo
+ * EfetivoService) para o shape esperado pelo `prisma.militar.upsert`.
+ * Mapeia campos opcionais → `null` (Prisma não aceita `undefined`).
+ */
+function militarToPrismaData(m: MilitarShared) {
+  return {
+    nf: m.nf,
+    ant: m.ant,
+    posto: m.posto,
+    nome: m.nome,
+    nomeGuerra: m.nomeGuerra ?? null,
+    funcao: m.funcao ?? null,
+    unidade: m.unidade ?? null,
+    subSecao: m.subSecao ?? null,
+    postoPrevisto: m.postoPrevisto ?? null,
+    municipio: m.municipio ?? null,
+    idade: m.idade ?? null,
+    servico: m.servico ?? null,
+    situacao: m.situacao ?? null,
+    lotacao: m.lotacao ?? null,
+    classe: m.classe ?? null,
+    conceitoDisciplinar: m.conceitoDisciplinar ?? null,
+    pontos: m.pontos ?? null,
+    cnh: m.cnh ?? null,
+    cnhValidade: m.cnhValidade ?? null,
+    incorporacao: m.incorporacao ?? null,
+    planoFerias: m.planoFerias ?? null,
+    mergulho: m.mergulho ?? null,
+    ftba: m.ftba ?? null,
+    etsp: m.etsp ?? null,
+    ccve: m.ccve ?? null,
+    ccveValidade: m.ccveValidade ?? null,
+    censo: m.censo ?? null,
+    origensFonte: m.origensFonte ?? [],
+    papelEspecial: m.papelEspecial ?? null,
+    sincronizadoEm: new Date(),
+  };
 }
