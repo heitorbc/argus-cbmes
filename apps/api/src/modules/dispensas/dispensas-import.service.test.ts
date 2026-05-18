@@ -45,16 +45,14 @@ describe('DispensasImportService (S2.10.7d)', () => {
 
   beforeEach(() => {
     prisma = makeDispensasPrismaMock() as typeof prisma;
-    // Pré-popular militares "existentes" no banco para passar no findUnique de FK
-    prisma._seedMilitar('2967316'); // JARDEL
-    prisma._seedMilitar('3037703'); // LOUZADA
-    prisma._seedMilitar('4151631'); // ESMAEL
-    prisma._seedMilitar('4750667'); // BORBA
-    prisma._seedMilitar('4152409'); // BERGI
-    prisma._seedMilitar('9999999'); // SCARAMUSSA via matcher
-
+    // S2.10.7e — não pre-seed Militar. O auto-upsert (a partir do
+    // EfetivoService) deve preencher a tabela durante o sync.
     const efetivo = makeEfetivoStub([
       militar('2967316', '2ºSGT', 'JARDEL DA SILVA', 'JARDEL'),
+      militar('3037703', '3ºSGT', 'LOUZADA', 'LOUZADA'),
+      militar('4151631', 'CB', 'ESMAEL', 'ESMAEL'),
+      militar('4750667', 'SD', 'BORBA', 'BORBA'),
+      militar('4152409', 'CB', 'BERGI', 'BERGI'),
       militar('9999999', 'SD', 'SCARAMUSSA SOUZA', 'SCARAMUSSA'),
     ]);
 
@@ -83,6 +81,26 @@ describe('DispensasImportService (S2.10.7d)', () => {
     expect(tipos).toEqual(['VII_MERITO', 'VI_ASSIDUIDADE']);
     expect(jardel[0]!.origem).toBe('planilha');
     expect(jardel[0]!.criadoPorNf).toBeNull();
+  });
+
+  it('S2.10.7e — auto-upsert: cria Militar em Postgres a partir do EfetivoService', async () => {
+    // Antes do sync, Militar table está vazia (não pre-seed)
+    expect(await prisma.militar.findUnique({ where: { nf: '2967316' } })).toBeNull();
+    await svc.syncToDatabase();
+    // Após sync, JARDEL foi auto-criado
+    const jardelMilitar = await prisma.militar.findUnique({ where: { nf: '2967316' } });
+    expect(jardelMilitar).not.toBeNull();
+    expect((jardelMilitar as { posto: string }).posto).toBe('2ºSGT');
+    expect((jardelMilitar as { nomeGuerra: string | null }).nomeGuerra).toBe('JARDEL');
+  });
+
+  it('S2.10.7e — sequenciamento: JARDEL VI(04/01) → VII(10/01)', async () => {
+    await svc.syncToDatabase();
+    const jardel = await prisma.dispensa.findMany({ where: { militarNf: '2967316' } });
+    const vi = jardel.find((d) => d.tipo === 'VI_ASSIDUIDADE');
+    const vii = jardel.find((d) => d.tipo === 'VII_MERITO');
+    expect(vi?.dataInicio).toBe('2026-01-04');
+    expect(vii?.dataInicio).toBe('2026-01-10');
   });
 
   it('syncToDatabase é idempotente (2 runs = mesmos counts)', async () => {
@@ -139,15 +157,20 @@ describe('DispensasImportService (S2.10.7d)', () => {
     expect(s.stale).toBe(false);
   });
 
-  it('militar não existe no banco → skipped + inconsistência', async () => {
-    // ESMAEL não está pre-seeded → vai pular
-    const promiscuPrisma = makeDispensasPrismaMock() as typeof prisma;
-    // Pré-popular só BORBA — outros falham na FK
-    promiscuPrisma._seedMilitar('4750667');
-    svc = new DispensasImportService(makeConfigStub(), promiscuPrisma, makeEfetivoStub([]));
+  it('S2.10.7e — militar nem em Postgres nem no Efetivo → skipped + inconsistência', async () => {
+    // Efetivo vazio + Postgres vazio → todas linhas com NF resolvido falham
+    const prismaSemSeed = makeDispensasPrismaMock() as typeof prisma;
+    // Pré-popular só BORBA em Postgres (FK passa); outros caem no auto-upsert
+    // que tenta efetivo vazio → inconsistência.
+    prismaSemSeed._seedMilitar('4750667');
+    svc = new DispensasImportService(makeConfigStub(), prismaSemSeed, makeEfetivoStub([]));
     const r = await svc.syncToDatabase();
-    expect(r.created).toBeGreaterThan(0); // BORBA passa
-    expect(r.skipped).toBeGreaterThan(0); // outros falham
-    expect(r.inconsistencias.some((m) => m.includes('não existe no banco'))).toBe(true);
+    expect(r.created).toBeGreaterThan(0); // BORBA passa (Postgres já tinha)
+    expect(r.skipped).toBeGreaterThan(0); // outros não resolvem nem por NomeMatcher nem por Postgres
+    expect(
+      r.inconsistencias.some(
+        (m) => m.includes('não existe nem em Postgres') || m.includes('Linha sem NF resolvida'),
+      ),
+    ).toBe(true);
   });
 });

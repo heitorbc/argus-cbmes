@@ -493,7 +493,7 @@ export function makeDispensasPrismaMock(): PrismaService {
     deletedAt: Date | null;
   };
   const dispensas = new Map<string, DispensaRow>();
-  const militares = new Map<string, { nf: string }>();
+  const militares = new Map<string, Record<string, unknown> & { nf: string }>();
   let counter = 1;
 
   const matchWhere = (row: DispensaRow, where: Record<string, unknown>): boolean => {
@@ -592,6 +592,24 @@ export function makeDispensasPrismaMock(): PrismaService {
   const militar = {
     findUnique: async ({ where }: { where: { nf: string }; select?: unknown }) =>
       militares.get(where.nf) ?? null,
+    upsert: async ({
+      where,
+      create,
+      update,
+    }: {
+      where: { nf: string };
+      create: Record<string, unknown> & { nf: string };
+      update: Record<string, unknown>;
+    }) => {
+      const existing = militares.get(where.nf);
+      if (existing) {
+        const merged = { ...existing, ...update };
+        militares.set(where.nf, merged);
+        return merged;
+      }
+      militares.set(where.nf, create);
+      return create;
+    },
   };
 
   // Test helper: pré-popular militares (FK simulada)
