@@ -81,6 +81,21 @@ export const composicaoMfEntrySchema = z.object({
   chefe: composicaoMfMilitarSchema.optional(),
   motorista: composicaoMfMilitarSchema.optional(),
   operadores: z.array(composicaoMfMilitarSchema).default([]),
+  /**
+   * S2.10.7 Parte B — Quando a viatura está BAIXADA/EMPRESTADA, o efetivo
+   * que estava previsto no XLSX para esse recurso NÃO é preenchido em
+   * `chefe/motorista/operadores`. Em vez disso, fica aqui como aviso à
+   * Prévia para o Fiscal decidir individualmente (usar/não usar/trocar
+   * status da VTR). Vazio na maioria dos casos (vtr DISPONIVEL).
+   */
+  efetivoPrevistoNaoPreenchido: z
+    .array(
+      z.object({
+        funcao: z.string(),
+        militar: composicaoMfMilitarSchema,
+      }),
+    )
+    .default([]),
 });
 export type ComposicaoMfEntry = z.infer<typeof composicaoMfEntrySchema>;
 
