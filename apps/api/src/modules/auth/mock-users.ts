@@ -15,6 +15,15 @@ import type { Papel } from '@argus/shared-types';
 export interface MockUser {
   nf: string;
   nome: string;
+  /**
+   * Nome de guerra canônico do QDI (institucional). Usado em
+   * `formatDisplayName` para exibição "{posto} {nomeGuerra}".
+   *
+   * S2.10.4b — preenchido manualmente para os mocks iniciais. Para
+   * militares auto-provisionados, vem do `EfetivoService.findByNf`
+   * (consolidação QDI+EFETIVO).
+   */
+  nomeGuerra: string;
   posto: string;
   ant: number;
   /** Senha do primeiro acesso. Para todos: "batalhao01". */
@@ -32,6 +41,7 @@ export const MOCK_USERS: MockUser[] = [
   {
     nf: '3037509',
     nome: 'HEITOR BARCELLOS COELHO',
+    nomeGuerra: 'BARCELLOS',
     posto: '2ºSGT',
     ant: 419,
     cpfFake: DEFAULT_SENHA,
@@ -45,6 +55,7 @@ export const MOCK_USERS: MockUser[] = [
     // Fonte: QDI seção "1ªCIA/1ºBBM" → função "Sargenteante" → nome de guerra "D. MATTOS".
     nf: '2982390',
     nome: 'DANIEL DE AMORIM MATTOS',
+    nomeGuerra: 'D. MATTOS',
     posto: '2ºSGT',
     ant: 366,
     cpfFake: DEFAULT_SENHA,
@@ -55,6 +66,7 @@ export const MOCK_USERS: MockUser[] = [
   {
     nf: '4750713',
     nome: 'CAUE LYRA CASTRO',
+    nomeGuerra: 'CAUÊ LYRA',
     posto: 'SD',
     ant: 1164,
     cpfFake: DEFAULT_SENHA,
@@ -65,6 +77,7 @@ export const MOCK_USERS: MockUser[] = [
   {
     nf: '3670180',
     nome: 'DANILO VICENTE COELHO DA SILVA',
+    nomeGuerra: 'VICENTE',
     posto: 'CB',
     ant: 891,
     cpfFake: DEFAULT_SENHA,
@@ -75,6 +88,7 @@ export const MOCK_USERS: MockUser[] = [
   {
     nf: '4750241',
     nome: 'FERNANDA FONSECA MARTINELLI',
+    nomeGuerra: 'MARTINELLI',
     posto: 'SD',
     ant: 1096,
     cpfFake: DEFAULT_SENHA,
@@ -85,6 +99,7 @@ export const MOCK_USERS: MockUser[] = [
   {
     nf: '3022269',
     nome: 'BRUNO MELO',
+    nomeGuerra: 'MELO',
     posto: '3ºSGT',
     ant: 650,
     cpfFake: DEFAULT_SENHA,
@@ -95,6 +110,7 @@ export const MOCK_USERS: MockUser[] = [
   {
     nf: '2984946',
     nome: 'MARIANE GUARNIER BRUMATTI',
+    nomeGuerra: 'MARIANE',
     posto: '2ºSGT',
     ant: 250,
     cpfFake: DEFAULT_SENHA,
@@ -105,6 +121,7 @@ export const MOCK_USERS: MockUser[] = [
   {
     nf: '3037770',
     nome: 'JEZREEL',
+    nomeGuerra: 'JEZREEL',
     posto: 'SGT',
     ant: 420,
     cpfFake: DEFAULT_SENHA,
@@ -118,6 +135,7 @@ export const MOCK_USERS: MockUser[] = [
   {
     nf: '4151550',
     nome: 'VIVIANE BARCELLOS COELHO',
+    nomeGuerra: 'VIVIANE',
     posto: 'CB',
     ant: 1100,
     cpfFake: DEFAULT_SENHA,
@@ -128,6 +146,7 @@ export const MOCK_USERS: MockUser[] = [
   {
     nf: '4750799',
     nome: 'RITA CAROLINA BATISTA DE OLIVEIRA FILPO',
+    nomeGuerra: 'RITA',
     posto: 'SD',
     ant: 1200,
     cpfFake: DEFAULT_SENHA,
@@ -138,6 +157,7 @@ export const MOCK_USERS: MockUser[] = [
   {
     nf: '4150600',
     nome: 'CASSIO MONTEIRO FLEGLER',
+    nomeGuerra: 'FLEGLER',
     posto: 'CB',
     ant: 950,
     cpfFake: DEFAULT_SENHA,

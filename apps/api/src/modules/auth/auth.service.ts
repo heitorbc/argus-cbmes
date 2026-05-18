@@ -258,6 +258,7 @@ export class AuthService {
       nome?: string;
       posto?: string;
       ant?: number;
+      email?: string | null;
       papeis?: Papel[];
       senhaHash?: string;
       primeiroAcesso?: boolean;
@@ -266,6 +267,17 @@ export class AuthService {
     if (input.posto !== undefined) data.posto = input.posto;
     if (input.ant !== undefined) data.ant = input.ant;
     if (input.papeis !== undefined) data.papeis = input.papeis;
+    if (input.email !== undefined) {
+      // S2.10.4b — admin pode cadastrar/corrigir email; string vazia limpa.
+      const novoEmail = input.email.trim() === '' ? null : input.email.trim();
+      if (novoEmail && novoEmail !== user.email) {
+        const conflict = await this.prisma.user.findUnique({ where: { email: novoEmail } });
+        if (conflict && conflict.nf !== nf) {
+          throw new ConflictException('E-mail já está em uso por outro usuário');
+        }
+      }
+      data.email = novoEmail;
+    }
     if (input.resetSenha) {
       data.senhaHash = await bcrypt.hash(DEFAULT_SENHA, this.bcryptCost());
       data.primeiroAcesso = true;
