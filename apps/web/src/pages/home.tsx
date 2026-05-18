@@ -92,10 +92,11 @@ export function HomePage() {
           <CardLink to="/parte-diaria" icon="📑" label="Parte Diária" />
           <CardLink to="/cadastros/fiscais" icon="⭐" label="Fiscais (override)" />
           <CardLink to="/cadastros/ideo" icon="📋" label="IDEO" />
+          <CardLink to="/conferencia-materiais" icon="📦" label="Conferência de Materiais" />
           <CardInfo
             icon="✅"
-            label="Conferências"
-            descricao="Acesse via Mapa Força → Iniciar Prévia → Iniciar Serviço"
+            label="Outras Conferências"
+            descricao="Chefe de Equipe + COV/Motorista via Mapa Força → Iniciar Prévia → Iniciar Serviço"
           />
         </ModuloSection>
 
@@ -137,6 +138,11 @@ export function HomePage() {
             <CardLink to="/configuracoes/usuarios" icon="👥" label="Usuários" />
             <CardLink to="/configuracoes/unidades" icon="🏛️" label="Unidades" />
             <CardLink to="/configuracoes/integracoes" icon="🔗" label="Integrações" />
+            <CardLink
+              to="/configuracoes/compartimentos-materiais"
+              icon="📦"
+              label="Compartimentos de Materiais"
+            />
           </ModuloSection>
         )}
 

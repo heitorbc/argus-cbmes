@@ -4,6 +4,8 @@ import { PrismaModule } from './common/prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AgendaModule } from './modules/agenda/agenda.module';
 import { ChefesOperacoesModule } from './modules/chefes-operacoes/chefes-operacoes.module';
+import { CompartimentosMateriaisModule } from './modules/compartimentos-materiais/compartimentos-materiais.module';
+import { ConferenciaCovModule } from './modules/conferencia-cov/conferencia-cov.module';
 import { ConferenciaEquipeModule } from './modules/conferencia-equipe/conferencia-equipe.module';
 import { AtestadosModule } from './modules/atestados/atestados.module';
 import { ConferenciaViaturaModule } from './modules/conferencia-viatura/conferencia-viatura.module';
@@ -48,6 +50,8 @@ import { ViaturasModule } from './modules/viaturas/viaturas.module';
     AuthModule,
     AgendaModule,
     ChefesOperacoesModule,
+    CompartimentosMateriaisModule,
+    ConferenciaCovModule,
     ConferenciaEquipeModule,
     ConferenciaViaturaModule,
     DispensasModule,
