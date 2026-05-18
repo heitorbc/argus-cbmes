@@ -89,7 +89,7 @@ export class MapaForcaService {
     const [ano, mes, dia] = parseDataIso(dataIso);
     const inconsistencias: MapaForcaInconsistencia[] = [];
 
-    const escala = this.escalas.get(ano, mes);
+    const escala = await this.escalas.get(ano, mes);
     if (!escala) {
       inconsistencias.push({
         tipo: 'SEM_ESCALA_NO_MES',
@@ -97,7 +97,7 @@ export class MapaForcaService {
       });
     }
 
-    const escalados = this.escalas.getEscaladosDoDia(ano, mes, dataIso);
+    const escalados = await this.escalas.getEscaladosDoDia(ano, mes, dataIso);
     const equipe = escalados.equipe;
     if (escala && !equipe) {
       inconsistencias.push({
@@ -191,12 +191,14 @@ export class MapaForcaService {
     const ajustes = this.ajustes.get(dataIso);
 
     // S6a-fix item 4 — atos da Escala Especial do dia (read-only injetado).
-    const atosEspeciais = this.escalasEspeciais.getAtosDoDia(ano, mes, dataIso).map((a) => ({
-      data: a.data,
-      militarRaw: a.militarRaw,
-      horario: a.horario,
-      funcao: a.funcao,
-    }));
+    const atosEspeciais = (await this.escalasEspeciais.getAtosDoDia(ano, mes, dataIso)).map(
+      (a) => ({
+        data: a.data,
+        militarRaw: a.militarRaw,
+        horario: a.horario,
+        funcao: a.funcao,
+      }),
+    );
 
     // S6a-fix item 6 — Chefes de Operações escalados no dia (planilha externa).
     const chefes = await this.chefesOperacoes.getEscaladosDoDia(ano, mes, dia).catch(() => []);
@@ -369,7 +371,7 @@ export class MapaForcaService {
     });
 
     // S6l — Notas de Serviço do dia, enriquecidas com militares (nome formatado).
-    const nsDoDia = this.notasServicoSvc.listDoDia(dataIso);
+    const nsDoDia = await this.notasServicoSvc.listDoDia(dataIso);
     const notasServicoEnriched: PreviaNotaServico[] = nsDoDia.map((n) => ({
       codigo: n.codigo,
       descricao: n.descricao,

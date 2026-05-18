@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { EscalaEspecialMensal } from '@argus/shared-types';
+import type {
+  EscalaEspecialAto as PrismaAto,
+  EscalaEspecialMensal as PrismaMensal,
+} from '@prisma/client';
 import { EscalasEspeciaisService } from './escalas-especiais.service';
+import type { PrismaService } from '../../common/prisma/prisma.service';
 
 function fakeEscala(over: Partial<EscalaEspecialMensal> = {}): EscalaEspecialMensal {
   return {
@@ -18,45 +23,185 @@ function fakeEscala(over: Partial<EscalaEspecialMensal> = {}): EscalaEspecialMen
   };
 }
 
+/**
+ * Mock in-memory de `prisma.escalaEspecialMensal.*` e `escalaEspecialAto.*`
+ * com suporte a $transaction (callback recebe o próprio mock).
+ */
+function makePrismaMock(): PrismaService {
+  const mesesById = new Map<string, PrismaMensal>();
+  const atosByMesId = new Map<string, PrismaAto[]>();
+  let counter = 1;
+
+  const keyAnoMes = (ano: number, mes: number): string => `${ano}-${String(mes).padStart(2, '0')}`;
+
+  const escalaEspecialMensal = {
+    count: async () => mesesById.size,
+    findUnique: async ({
+      where,
+      include,
+    }: {
+      where: { ano_mes: { ano: number; mes: number } };
+      include?: { atos?: boolean };
+    }) => {
+      for (const m of mesesById.values()) {
+        if (m.ano === where.ano_mes.ano && m.mes === where.ano_mes.mes) {
+          return include?.atos
+            ? ({ ...m, atos: atosByMesId.get(m.id) ?? [] } as PrismaMensal & {
+                atos: PrismaAto[];
+              })
+            : m;
+        }
+      }
+      return null;
+    },
+    findMany: async ({
+      orderBy: _orderBy,
+      include: _include,
+    }: { orderBy?: unknown; include?: unknown } = {}) => {
+      const arr = [...mesesById.values()].sort((a, b) => b.ano - a.ano || b.mes - a.mes);
+      return arr.map((m) => ({
+        ...m,
+        _count: { atos: (atosByMesId.get(m.id) ?? []).length },
+      }));
+    },
+    create: async ({
+      data,
+    }: {
+      data: {
+        ano: number;
+        mes: number;
+        origemArquivo: string;
+        importadoEm: Date;
+        importadoPorNf?: string | null;
+        avisos?: object;
+        atos?: { create: Array<Omit<PrismaAto, 'id' | 'escalaEspecialId'>> };
+      };
+    }) => {
+      const id = `esp-${counter++}`;
+      const now = new Date();
+      const m: PrismaMensal = {
+        id,
+        ano: data.ano,
+        mes: data.mes,
+        origemArquivo: data.origemArquivo,
+        importadoEm: data.importadoEm,
+        importadoPorNf: data.importadoPorNf ?? null,
+        avisos: (data.avisos ?? null) as PrismaMensal['avisos'],
+      };
+      mesesById.set(id, m);
+      const atos: PrismaAto[] = (data.atos?.create ?? []).map((a, i) => ({
+        ...a,
+        id: `${id}-ato-${i}`,
+        escalaEspecialId: id,
+      }));
+      atosByMesId.set(id, atos);
+      void now;
+      return m;
+    },
+    update: async ({
+      where,
+      data,
+    }: {
+      where: { id: string };
+      data: Partial<PrismaMensal> & {
+        atos?: { create: Array<Omit<PrismaAto, 'id' | 'escalaEspecialId'>> };
+      };
+    }) => {
+      const m = mesesById.get(where.id);
+      if (!m) throw new Error(`No esp ${where.id}`);
+      const next: PrismaMensal = { ...m, ...data } as PrismaMensal;
+      mesesById.set(where.id, next);
+      if (data.atos?.create) {
+        const atos: PrismaAto[] = data.atos.create.map((a, i) => ({
+          ...a,
+          id: `${where.id}-ato-${i}`,
+          escalaEspecialId: where.id,
+        }));
+        atosByMesId.set(where.id, atos);
+      }
+      return next;
+    },
+    delete: async ({ where }: { where: { ano_mes: { ano: number; mes: number } } }) => {
+      for (const [id, m] of mesesById.entries()) {
+        if (m.ano === where.ano_mes.ano && m.mes === where.ano_mes.mes) {
+          mesesById.delete(id);
+          atosByMesId.delete(id);
+          return m;
+        }
+      }
+      throw new Error('Not found');
+    },
+  };
+
+  const escalaEspecialAto = {
+    deleteMany: async ({ where }: { where: { escalaEspecialId: string } }) => {
+      atosByMesId.delete(where.escalaEspecialId);
+      return { count: 0 };
+    },
+    findMany: async ({
+      where,
+    }: {
+      where: { data: string; escalaEspecial: { ano: number; mes: number } };
+    }) => {
+      const m = [...mesesById.values()].find(
+        (x) => x.ano === where.escalaEspecial.ano && x.mes === where.escalaEspecial.mes,
+      );
+      if (!m) return [];
+      return (atosByMesId.get(m.id) ?? []).filter((a) => a.data === where.data);
+    },
+  };
+
+  const prismaLike = {
+    escalaEspecialMensal,
+    escalaEspecialAto,
+    $transaction: async (cb: (tx: unknown) => Promise<unknown>) => cb(prismaLike),
+  };
+  void keyAnoMes;
+  return prismaLike as unknown as PrismaService;
+}
+
 describe('EscalasEspeciaisService', () => {
   let service: EscalasEspeciaisService;
   beforeEach(() => {
-    service = new EscalasEspeciaisService();
+    service = new EscalasEspeciaisService(makePrismaMock());
   });
 
-  it('save + get', () => {
+  it('save + get', async () => {
     const e = fakeEscala();
-    service.save(e);
-    expect(service.get(2026, 5)).toEqual(e);
-    expect(service.get(2026, 4)).toBeNull();
+    await service.save(e);
+    const got = await service.get(2026, 5);
+    expect(got?.ano).toBe(e.ano);
+    expect(got?.mes).toBe(e.mes);
+    expect(got?.atos).toHaveLength(3);
+    expect(await service.get(2026, 4)).toBeNull();
   });
 
-  it('list ordena por ano/mes desc', () => {
-    service.save(fakeEscala({ ano: 2026, mes: 5 }));
-    service.save(fakeEscala({ ano: 2026, mes: 6 }));
-    service.save(fakeEscala({ ano: 2026, mes: 4 }));
-    const r = service.list().escalas;
+  it('list ordena por ano/mes desc', async () => {
+    await service.save(fakeEscala({ ano: 2026, mes: 5 }));
+    await service.save(fakeEscala({ ano: 2026, mes: 6 }));
+    await service.save(fakeEscala({ ano: 2026, mes: 4 }));
+    const r = (await service.list()).escalas;
     expect(r.map((x) => x.mes)).toEqual([6, 5, 4]);
     expect(r[0]?.totalAtos).toBe(3);
   });
 
-  it('save sobrescreve por ano/mes', () => {
-    service.save(fakeEscala({ origemArquivo: 'v1.xlsm' }));
-    service.save(fakeEscala({ origemArquivo: 'v2.xlsm' }));
-    expect(service.get(2026, 5)?.origemArquivo).toBe('v2.xlsm');
+  it('save sobrescreve por ano/mes', async () => {
+    await service.save(fakeEscala({ origemArquivo: 'v1.xlsm' }));
+    await service.save(fakeEscala({ origemArquivo: 'v2.xlsm' }));
+    expect((await service.get(2026, 5))?.origemArquivo).toBe('v2.xlsm');
   });
 
-  it('delete remove', () => {
-    service.save(fakeEscala());
-    expect(service.delete(2026, 5)).toBe(true);
-    expect(service.get(2026, 5)).toBeNull();
+  it('delete remove', async () => {
+    await service.save(fakeEscala());
+    expect(await service.delete(2026, 5)).toBe(true);
+    expect(await service.get(2026, 5)).toBeNull();
   });
 
-  it('getAtosDoDia filtra por data', () => {
-    service.save(fakeEscala());
-    expect(service.getAtosDoDia(2026, 5, '2026-05-01')).toHaveLength(2);
-    expect(service.getAtosDoDia(2026, 5, '2026-05-02')).toHaveLength(1);
-    expect(service.getAtosDoDia(2026, 5, '2026-05-03')).toEqual([]);
-    expect(service.getAtosDoDia(2026, 4, '2026-04-01')).toEqual([]); // mês não importado
+  it('getAtosDoDia filtra por data', async () => {
+    await service.save(fakeEscala());
+    expect(await service.getAtosDoDia(2026, 5, '2026-05-01')).toHaveLength(2);
+    expect(await service.getAtosDoDia(2026, 5, '2026-05-02')).toHaveLength(1);
+    expect(await service.getAtosDoDia(2026, 5, '2026-05-03')).toEqual([]);
+    expect(await service.getAtosDoDia(2026, 4, '2026-04-01')).toEqual([]);
   });
 });

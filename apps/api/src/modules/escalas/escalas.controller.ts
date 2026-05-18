@@ -79,14 +79,14 @@ export class EscalasController {
   ) {}
 
   @Get()
-  list(@Query() query: unknown) {
+  async list(@Query() query: unknown) {
     const parsed = listQuerySchema.safeParse(query);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     }
     const { ano, mes } = parsed.data;
     if (ano && mes) {
-      const escala = this.escalas.get(Number.parseInt(ano, 10), Number.parseInt(mes, 10));
+      const escala = await this.escalas.get(Number.parseInt(ano, 10), Number.parseInt(mes, 10));
       if (!escala) return { escala: null };
       return { escala };
     }
@@ -95,18 +95,15 @@ export class EscalasController {
 
   /**
    * S0.x/rename-mapa-forca — Lista os dias do mês com escala XLSX importada.
-   * Usado pela página `/mapa-forca` (calendário/lista) para destacar dias
-   * clicáveis. Retorna `{ dias, equipePorDia }` ou `{ dias: [] }` se não houver
-   * escala importada para o mês.
    */
   @Get(':ano/:mes/dias-disponiveis')
-  diasDisponiveis(@Param('ano') ano: string, @Param('mes') mes: string) {
+  async diasDisponiveis(@Param('ano') ano: string, @Param('mes') mes: string) {
     const a = Number.parseInt(ano, 10);
     const m = Number.parseInt(mes, 10);
     if (!Number.isFinite(a) || !Number.isFinite(m)) {
       throw new BadRequestException('ano/mês inválidos');
     }
-    const escala = this.escalas.get(a, m);
+    const escala = await this.escalas.get(a, m);
     if (!escala) {
       return { ano: a, mes: m, dias: [] as string[], equipePorDia: {} as Record<string, string> };
     }
@@ -115,7 +112,7 @@ export class EscalasController {
   }
 
   @Get('escalados-do-dia')
-  escaladosDoDia(@Query() query: unknown) {
+  async escaladosDoDia(@Query() query: unknown) {
     const parsed = escaladosDoDiaSchema.safeParse(query);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
@@ -151,11 +148,9 @@ export class EscalasController {
       }
       throw err;
     }
-    const vigente = this.escalas.get(escala.ano, escala.mes);
+    const vigente = await this.escalas.get(escala.ano, escala.mes);
     const diff = vigente ? computeDiff(vigente, escala) : null;
     // S2.3 — bloqueios: dias da escala que já têm Prévia/Serviço iniciado.
-    // Se algum dia for bloqueado, o frontend mostra o aviso e o user precisa
-    // destravar antes de chamar `confirm`.
     const datas = Object.keys(escala.diaEquipe);
     const bloqueios = computeBloqueios(this.servico, datas);
     return { escala, diff, bloqueios };
@@ -172,7 +167,7 @@ export class EscalasController {
   @Roles('admin', 'sargenteante')
   @Post('confirm')
   @HttpCode(HttpStatus.OK)
-  confirm(@Body() body: unknown) {
+  async confirm(@Body() body: unknown) {
     // S2.8.2 — body novo aceita `{ escala, diasDescartados? }`. Para
     // backwards compat com clients antigos que enviam `EscalaMensal` puro,
     // aceitamos ambos os formatos.
@@ -193,7 +188,7 @@ export class EscalasController {
     // S2.8.2 — merge: para cada dia em `diasDescartados`, preserva a
     // equipe que está na escala vigente. Sem `diasDescartados`, retorna
     // `escala` inalterada (= comportamento legacy).
-    const vigente = this.escalas.get(escala.ano, escala.mes);
+    const vigente = await this.escalas.get(escala.ano, escala.mes);
     const escalaFinal = vigente
       ? mergeEscalaPreservandoDias(vigente, escala, diasDescartados)
       : escala;
@@ -215,14 +210,14 @@ export class EscalasController {
   @Roles('admin')
   @Delete(':ano/:mes')
   @HttpCode(HttpStatus.NO_CONTENT)
-  remove(@Param('ano') ano: string, @Param('mes') mes: string) {
+  async remove(@Param('ano') ano: string, @Param('mes') mes: string) {
     const a = Number.parseInt(ano, 10);
     const m = Number.parseInt(mes, 10);
     if (!Number.isFinite(a) || !Number.isFinite(m)) {
       throw new BadRequestException('ano/mês inválidos');
     }
     // S2.3 — bloqueia delete se algum dia da escala está em uso.
-    const escala = this.escalas.get(a, m);
+    const escala = await this.escalas.get(a, m);
     if (escala) {
       const datas = Object.keys(escala.diaEquipe);
       const bloqueios = computeBloqueios(this.servico, datas);
@@ -233,7 +228,7 @@ export class EscalasController {
         });
       }
     }
-    this.escalas.delete(a, m);
+    await this.escalas.delete(a, m);
   }
 
   /**
@@ -242,7 +237,11 @@ export class EscalasController {
    */
   @Roles('admin', 'sargenteante')
   @Put(':ano/:mes/dia-equipe')
-  updateDiaEquipe(@Param('ano') ano: string, @Param('mes') mes: string, @Body() body: unknown) {
+  async updateDiaEquipe(
+    @Param('ano') ano: string,
+    @Param('mes') mes: string,
+    @Body() body: unknown,
+  ) {
     const schema = z.object({
       data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       equipe: z.enum(['A', 'B', 'C', 'D']).nullable(),
@@ -254,7 +253,7 @@ export class EscalasController {
     const a = Number.parseInt(ano, 10);
     const m = Number.parseInt(mes, 10);
     try {
-      return this.escalas.updateDiaEquipe(a, m, parsed.data.data, parsed.data.equipe);
+      return await this.escalas.updateDiaEquipe(a, m, parsed.data.data, parsed.data.equipe);
     } catch (err) {
       throw new NotFoundException((err as Error).message);
     }
@@ -267,7 +266,11 @@ export class EscalasController {
    */
   @Roles('admin', 'sargenteante')
   @Put(':ano/:mes/composicao')
-  upsertComposicao(@Param('ano') ano: string, @Param('mes') mes: string, @Body() body: unknown) {
+  async upsertComposicao(
+    @Param('ano') ano: string,
+    @Param('mes') mes: string,
+    @Body() body: unknown,
+  ) {
     const schema = z.object({
       quinzena: z.union([z.literal(1), z.literal(2)]),
       equipe: z.enum(['A', 'B', 'C', 'D', 'AQUATICAS', 'STAFF']),
@@ -290,7 +293,7 @@ export class EscalasController {
     const m = Number.parseInt(mes, 10);
     const { quinzena, ...entry } = parsed.data;
     try {
-      return this.escalas.upsertComposicao(a, m, quinzena, entry);
+      return await this.escalas.upsertComposicao(a, m, quinzena, entry);
     } catch (err) {
       throw new NotFoundException((err as Error).message);
     }

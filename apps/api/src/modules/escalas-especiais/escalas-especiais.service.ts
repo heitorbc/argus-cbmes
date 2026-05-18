@@ -2,65 +2,68 @@ import { Injectable, Logger, Optional, type OnModuleInit } from '@nestjs/common'
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EscalaEspecialMensal } from '@argus/shared-types';
+import type {
+  EscalaEspecialAto as PrismaEscalaEspecialAto,
+  EscalaEspecialMensal as PrismaEscalaEspecialMensal,
+} from '@prisma/client';
 import { resolveDataDir } from '../../common/dev-fixtures';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import { parseEscalaEspecialXlsm, parseFilenameEspecial } from './escala-especial-xlsm-parser';
 import { SheetsDbService } from '../sheets-db/sheets-db.service';
 import { escalaEspecialToRows, rowsToEscalasEspeciais } from '../sheets-db/sheets-db-serializers';
 
-interface EscalaKey {
-  ano: number;
-  mes: number;
-}
-
-function key(k: EscalaKey): string {
-  return `${k.ano}-${String(k.mes).padStart(2, '0')}`;
-}
-
 /**
- * Mock service in-memory para Escalas Especiais (S6a).
- * Padrão idêntico a `EscalasService` (escala mensal). Em S5b migra para Prisma.
+ * S2.10.5 — Persistência em Postgres via Prisma. Sheets-DB continua como
+ * espelho institucional (dual-write fire-and-forget). XLSM fallback dev
+ * preservado mas só roda se Postgres E Sheets-DB estiverem vazios.
  */
 @Injectable()
 export class EscalasEspeciaisService implements OnModuleInit {
   private readonly logger = new Logger(EscalasEspeciaisService.name);
-  private readonly byMes = new Map<string, EscalaEspecialMensal>();
 
-  constructor(@Optional() private readonly sheetsDb?: SheetsDbService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly sheetsDb?: SheetsDbService,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     if (process.env.NODE_ENV === 'test') return;
-    if (this.byMes.size > 0) return;
-    // S2.8.2 — Sheets-DB é fonte primária; XLSM é fallback dev.
-    await this.bootstrapFromSheetsDb();
-    if (this.byMes.size === 0 && process.env.NODE_ENV !== 'production') {
-      await this.bootstrapFromFilesystem();
-    }
-  }
-
-  private async bootstrapFromSheetsDb(): Promise<void> {
-    if (!this.sheetsDb?.isEnabled()) {
-      this.logger.log('Bootstrap escala especial: Sheets-DB desabilitado, tentando XLSM local.');
-      return;
-    }
-    try {
-      const rows = await this.sheetsDb.readEscalaEspecial();
-      const escalas = rowsToEscalasEspeciais(rows);
-      for (const [k, escala] of escalas.entries()) {
-        this.byMes.set(k, escala);
-      }
-      this.logger.log(
-        `Bootstrap escala especial: ${escalas.size} meses carregados do Sheets-DB (${rows.length} linhas).`,
-      );
-    } catch (err) {
-      this.logger.warn(
-        `Bootstrap escala especial Sheets-DB falhou: ${(err as Error).message}. Tentando XLSM local.`,
-      );
+    await this.bootstrapFromSheetsDbIfEmpty();
+    if (process.env.NODE_ENV !== 'production') {
+      const total = await this.countMeses();
+      if (total === 0) await this.bootstrapFromFilesystem();
     }
   }
 
   /**
-   * Dev-only — ao iniciar, se o cache está vazio, lê o XLSM mais recente em
-   * `data/Escala Especial Tabela de Lançamento/` e popula. Idempotente.
+   * Importa Sheets-DB → Postgres se Postgres está vazio. Idempotente.
+   * Roda só na 1ª execução pós-migração; depois Postgres é fonte.
+   */
+  private async bootstrapFromSheetsDbIfEmpty(): Promise<void> {
+    try {
+      const count = await this.countMeses();
+      if (count > 0) return;
+      if (!this.sheetsDb?.isEnabled()) return;
+      const rows = await this.sheetsDb.readEscalaEspecial();
+      const escalas = rowsToEscalasEspeciais(rows);
+      let imported = 0;
+      for (const escala of escalas.values()) {
+        await this.upsertNoPostgres(escala);
+        imported += 1;
+      }
+      if (imported > 0) {
+        this.logger.log(
+          `Bootstrap escala especial: ${imported} meses importados do Sheets-DB → Postgres.`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(`Bootstrap escala especial falhou: ${(err as Error).message}.`);
+    }
+  }
+
+  /**
+   * Dev-only — lê o XLSM mais recente em `data/Escala Especial Tabela de Lançamento/`.
+   * Só roda se Postgres E Sheets-DB estiverem vazios.
    */
   private async bootstrapFromFilesystem(): Promise<void> {
     const dataDir = resolveDataDir('Escala Especial Tabela de Lançamento');
@@ -91,7 +94,7 @@ export class EscalasEspeciaisService implements OnModuleInit {
       const buffer = readFileSync(join(dataDir, f));
       try {
         const { escala } = await parseEscalaEspecialXlsm({ buffer, filename: f });
-        this.byMes.set(key(escala), escala);
+        await this.upsertNoPostgres(escala);
         this.logger.log(
           `Bootstrap escala especial: ${f} (${String(escala.mes).padStart(2, '0')}/${escala.ano}, ${escala.atos.length} atos)`,
         );
@@ -103,7 +106,7 @@ export class EscalasEspeciaisService implements OnModuleInit {
     }
   }
 
-  list(): {
+  async list(): Promise<{
     escalas: {
       ano: number;
       mes: number;
@@ -111,67 +114,169 @@ export class EscalasEspeciaisService implements OnModuleInit {
       importadoEm: string;
       totalAtos: number;
     }[];
-  } {
-    const escalas = [...this.byMes.values()]
-      .map((e) => ({
-        ano: e.ano,
-        mes: e.mes,
-        origemArquivo: e.origemArquivo,
-        importadoEm: e.importadoEm,
-        totalAtos: e.atos.length,
-      }))
-      .sort((a, b) => b.ano - a.ano || b.mes - a.mes);
-    return { escalas };
+  }> {
+    const rows = await this.prisma.escalaEspecialMensal.findMany({
+      orderBy: [{ ano: 'desc' }, { mes: 'desc' }],
+      include: { _count: { select: { atos: true } } },
+    });
+    return {
+      escalas: rows.map((r) => ({
+        ano: r.ano,
+        mes: r.mes,
+        origemArquivo: r.origemArquivo,
+        importadoEm: r.importadoEm.toISOString(),
+        totalAtos: r._count.atos,
+      })),
+    };
   }
 
-  get(ano: number, mes: number): EscalaEspecialMensal | null {
-    return this.byMes.get(key({ ano, mes })) ?? null;
+  async get(ano: number, mes: number): Promise<EscalaEspecialMensal | null> {
+    const row = await this.prisma.escalaEspecialMensal.findUnique({
+      where: { ano_mes: { ano, mes } },
+      include: { atos: true },
+    });
+    if (!row) return null;
+    return toEscalaEspecial(row);
   }
 
   /**
-   * S2.2 — dual-write: persiste in-memory e dispara replace no Sheets-DB
-   * em background. Falhas Sheets logam warning mas não derrubam.
+   * S2.2 → S2.10.5 — Persiste em Postgres (transação cascata) + dispara
+   * replace no Sheets-DB em background. Falhas Sheets logam warning mas
+   * não derrubam.
    */
-  save(escala: EscalaEspecialMensal): EscalaEspecialMensal {
-    this.byMes.set(key(escala), escala);
+  async save(escala: EscalaEspecialMensal): Promise<EscalaEspecialMensal> {
+    await this.upsertNoPostgres(escala);
     this.syncToSheetsDb(escala);
-    return escala;
+    return (await this.get(escala.ano, escala.mes)) ?? escala;
   }
 
-  delete(ano: number, mes: number): boolean {
-    const removed = this.byMes.delete(key({ ano, mes }));
-    if (removed) this.deleteFromSheetsDb(ano, mes);
-    return removed;
+  async delete(ano: number, mes: number): Promise<boolean> {
+    const existing = await this.prisma.escalaEspecialMensal.findUnique({
+      where: { ano_mes: { ano, mes } },
+    });
+    if (!existing) return false;
+    await this.prisma.escalaEspecialMensal.delete({
+      where: { ano_mes: { ano, mes } },
+    });
+    this.deleteFromSheetsDb(ano, mes);
+    return true;
+  }
+
+  /** Atos especiais que ocorrem em uma data específica. Útil para Prévia (S6b). */
+  async getAtosDoDia(
+    ano: number,
+    mes: number,
+    dataIso: string,
+  ): Promise<EscalaEspecialMensal['atos']> {
+    const rows = await this.prisma.escalaEspecialAto.findMany({
+      where: { data: dataIso, escalaEspecial: { ano, mes } },
+    });
+    return rows.map((a) => ({
+      data: a.data,
+      militarRaw: a.militarRaw,
+      militarNf: a.militarNf ?? undefined,
+      horario: a.horario,
+      funcao: a.funcao,
+    }));
+  }
+
+  // ── helpers privados ──────────────────────────────────────────────
+
+  private async countMeses(): Promise<number> {
+    try {
+      return await this.prisma.escalaEspecialMensal.count();
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Upsert por (ano, mes) com cascata de atos: deleta atos antigos e
+   * recria. Re-import substitui mês inteiro (ADR-014 D4).
+   */
+  private async upsertNoPostgres(escala: EscalaEspecialMensal): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.escalaEspecialMensal.findUnique({
+        where: { ano_mes: { ano: escala.ano, mes: escala.mes } },
+      });
+      if (existing) {
+        await tx.escalaEspecialAto.deleteMany({
+          where: { escalaEspecialId: existing.id },
+        });
+        await tx.escalaEspecialMensal.update({
+          where: { id: existing.id },
+          data: {
+            origemArquivo: escala.origemArquivo,
+            importadoEm: new Date(escala.importadoEm),
+            importadoPorNf: escala.importadoPorNf ?? null,
+            avisos: escala.avisos as unknown as object,
+            atos: { create: escala.atos.map(toAtoCreate) },
+          },
+        });
+      } else {
+        await tx.escalaEspecialMensal.create({
+          data: {
+            ano: escala.ano,
+            mes: escala.mes,
+            origemArquivo: escala.origemArquivo,
+            importadoEm: new Date(escala.importadoEm),
+            importadoPorNf: escala.importadoPorNf ?? null,
+            avisos: escala.avisos as unknown as object,
+            atos: { create: escala.atos.map(toAtoCreate) },
+          },
+        });
+      }
+    });
   }
 
   private syncToSheetsDb(escala: EscalaEspecialMensal): void {
     if (!this.sheetsDb?.isEnabled()) return;
     const rows = escalaEspecialToRows(escala);
-    void this.sheetsDb.replaceEscalaEspecialMes(escala.ano, escala.mes, rows).catch((err) => {
-      this.logger.warn(
-        `Sheets-DB write falhou para escala especial ${escala.mes}/${escala.ano}: ${(err as Error).message}.`,
-      );
-    });
+    void this.sheetsDb
+      .replaceEscalaEspecialMes(escala.ano, escala.mes, rows)
+      .catch((err: Error) => {
+        this.logger.warn(
+          `Sheets-DB write falhou para escala especial ${escala.mes}/${escala.ano}: ${err.message}.`,
+        );
+      });
   }
 
   private deleteFromSheetsDb(ano: number, mes: number): void {
     if (!this.sheetsDb?.isEnabled()) return;
-    void this.sheetsDb.replaceEscalaEspecialMes(ano, mes, []).catch((err) => {
+    void this.sheetsDb.replaceEscalaEspecialMes(ano, mes, []).catch((err: Error) => {
       this.logger.warn(
-        `Sheets-DB delete falhou para escala especial ${mes}/${ano}: ${(err as Error).message}.`,
+        `Sheets-DB delete falhou para escala especial ${mes}/${ano}: ${err.message}.`,
       );
     });
   }
+}
 
-  /** Atos especiais que ocorrem em uma data específica. Útil para Prévia (S6b). */
-  getAtosDoDia(ano: number, mes: number, dataIso: string): EscalaEspecialMensal['atos'] {
-    const escala = this.get(ano, mes);
-    if (!escala) return [];
-    return escala.atos.filter((a) => a.data === dataIso);
-  }
+function toAtoCreate(a: EscalaEspecialMensal['atos'][number]) {
+  return {
+    data: a.data,
+    militarRaw: a.militarRaw,
+    militarNf: a.militarNf ?? null,
+    horario: a.horario,
+    funcao: a.funcao,
+  };
+}
 
-  /** Reset usado nos tests. */
-  reset(): void {
-    this.byMes.clear();
-  }
+function toEscalaEspecial(
+  row: PrismaEscalaEspecialMensal & { atos: PrismaEscalaEspecialAto[] },
+): EscalaEspecialMensal {
+  return {
+    ano: row.ano,
+    mes: row.mes,
+    origemArquivo: row.origemArquivo,
+    importadoEm: row.importadoEm.toISOString(),
+    importadoPorNf: row.importadoPorNf ?? undefined,
+    atos: row.atos.map((a) => ({
+      data: a.data,
+      militarRaw: a.militarRaw,
+      militarNf: a.militarNf ?? undefined,
+      horario: a.horario,
+      funcao: a.funcao,
+    })),
+    avisos: (row.avisos as unknown as string[]) ?? [],
+  };
 }

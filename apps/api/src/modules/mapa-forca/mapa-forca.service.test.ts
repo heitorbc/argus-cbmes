@@ -8,6 +8,7 @@ import type {
 } from '@argus/shared-types';
 import { EscalasService } from '../escalas/escalas.service';
 import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.service';
+import { makeEscalasPrismaMock } from '../../common/prisma/prisma-test-mock';
 import { FiscaisService } from '../fiscais/fiscais.service';
 import { AtestadosService } from '../atestados/atestados.service';
 import { FeriasService } from '../ferias/ferias.service';
@@ -193,8 +194,9 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
   let viaturas: FakeViaturasService;
   let previa: MapaForcaService;
 
-  beforeEach(() => {
-    escalas = new EscalasService();
+  beforeEach(async () => {
+    const prismaMock = makeEscalasPrismaMock();
+    escalas = new EscalasService(prismaMock);
     fiscais = new FiscaisService();
     ideo = new IdeoService();
     efetivo = new FakeEfetivoService(EFETIVO_CHARLIE);
@@ -210,19 +212,19 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
       ideo,
       viaturas as unknown as never,
       new AjustesPreviaService(new ServicoService()),
-      new EscalasEspeciaisService(),
+      new EscalasEspeciaisService(prismaMock),
       new FakeChefesOperacoesService() as unknown as never,
       new ServicoService(),
       new IdeoStatusService(),
       new DispensasService(),
       new AtestadosService(),
-      new NotasServicoService(),
+      new NotasServicoService(prismaMock),
       new FakeTrocasAutorizadasService() as unknown as never,
       new FeriasService(),
       new FakeMapaForcaService() as unknown as never,
     );
 
-    escalas.save(escalaAbril2026);
+    await escalas.save(escalaAbril2026);
     ideo.upsert({ dia: 23, tipo: 'ABTS', itens: ['Mochila Costal', 'GPS'] });
     ideo.upsert({ dia: 23, tipo: 'RESGATE', itens: ['Maca rígida'] });
   });
@@ -502,7 +504,7 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
 
   it('Fix-Mergulho — sem override, MERGULHO 01 = equipe A (BARCELLOS), MERGULHO 02 = equipe B (KARINA)', async () => {
     // Substitui a escala de abril por uma com seção de mergulho preenchida.
-    escalas.save({
+    await escalas.save({
       ...escalaAbril2026,
       mergulho: {
         equipesPorQuinzena: {
@@ -547,7 +549,7 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
   });
 
   it('Fix-Mergulho — com override swap, M01 e M02 invertem suas equipes', async () => {
-    escalas.save({
+    await escalas.save({
       ...escalaAbril2026,
       mergulho: {
         equipesPorQuinzena: {
@@ -677,7 +679,7 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
   it('override de par RESGATE 01↔02 realoca a tripulação XLSX', async () => {
     // Substitui a escala default por uma que use o nome canônico
     // "RESGATE 01" (que é o que o parser do XLSX emite após normalização).
-    escalas.save({
+    await escalas.save({
       ...escalaAbril2026,
       composicaoPorQuinzena: {
         q1: [
@@ -784,6 +786,7 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
       fakeViatura('GUARDA'),
       fakeViatura('AR 044', 'baixada'),
     ]);
+    const prismaMockLocal = makeEscalasPrismaMock();
     previa = new MapaForcaService(
       escalas,
       efetivo as unknown as never,
@@ -791,13 +794,13 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
       ideo,
       viaturas as unknown as never,
       new AjustesPreviaService(new ServicoService()),
-      new EscalasEspeciaisService(),
+      new EscalasEspeciaisService(prismaMockLocal),
       new FakeChefesOperacoesService() as unknown as never,
       new ServicoService(),
       new IdeoStatusService(),
       new DispensasService(),
       new AtestadosService(),
-      new NotasServicoService(),
+      new NotasServicoService(prismaMockLocal),
       new FakeTrocasAutorizadasService() as unknown as never,
       new FeriasService(),
       new FakeMapaForcaService() as unknown as never,
@@ -834,7 +837,8 @@ describe('MapaForcaService — inconsistências', () => {
   let previa: MapaForcaService;
 
   beforeEach(() => {
-    escalas = new EscalasService();
+    const prismaMockLocal = makeEscalasPrismaMock();
+    escalas = new EscalasService(prismaMockLocal);
     fiscais = new FiscaisService();
     ideo = new IdeoService();
     efetivo = new FakeEfetivoService(EFETIVO_CHARLIE);
@@ -846,13 +850,13 @@ describe('MapaForcaService — inconsistências', () => {
       ideo,
       viaturas as unknown as never,
       new AjustesPreviaService(new ServicoService()),
-      new EscalasEspeciaisService(),
+      new EscalasEspeciaisService(prismaMockLocal),
       new FakeChefesOperacoesService() as unknown as never,
       new ServicoService(),
       new IdeoStatusService(),
       new DispensasService(),
       new AtestadosService(),
-      new NotasServicoService(),
+      new NotasServicoService(prismaMockLocal),
       new FakeTrocasAutorizadasService() as unknown as never,
       new FeriasService(),
       new FakeMapaForcaService() as unknown as never,
@@ -878,7 +882,7 @@ describe('MapaForcaService — inconsistências', () => {
   });
 
   it('EQUIPE_NAO_ESCALADA_NO_DIA quando mês existe mas dia sem equipe', async () => {
-    escalas.save({
+    await escalas.save({
       ...escalaAbril2026,
       diaEquipe: { '2026-04-23': 'C' }, // só dia 23
     });
@@ -896,7 +900,7 @@ describe('MapaForcaService — inconsistências', () => {
         militar: { raw: 'SD INEXISTENTE', postoAbreviado: 'SD', nomeGuerra: 'INEXISTENTE' },
       },
     ];
-    escalas.save({
+    await escalas.save({
       ...escalaAbril2026,
       composicaoPorQuinzena: {
         q1: composicaoQ,
@@ -910,7 +914,7 @@ describe('MapaForcaService — inconsistências', () => {
   });
 
   it('IDEO_NAO_CADASTRADO quando dia não tem IDEO', async () => {
-    escalas.save(escalaAbril2026);
+    await escalas.save(escalaAbril2026);
     const r = await previa.getMapaForcaDoDia('2026-04-23');
     const ideoMissing = r.inconsistencias.filter((i) => i.tipo === 'IDEO_NAO_CADASTRADO');
     // ABTS + RESGATE não cadastrados
@@ -926,7 +930,7 @@ describe('MapaForcaService — inconsistências', () => {
         militar: { raw: '2º SGT BARCELLOS', postoAbreviado: '2ºSGT', nomeGuerra: 'BARCELLOS' },
       },
     ];
-    escalas.save({
+    await escalas.save({
       ...escalaAbril2026,
       composicaoPorQuinzena: {
         q1: composicaoQ,
@@ -947,7 +951,7 @@ describe('MapaForcaService — inconsistências', () => {
       },
       'admin',
     );
-    escalas.save(escalaAbril2026);
+    await escalas.save(escalaAbril2026);
     const r = await previa.getMapaForcaDoDia('2026-04-23');
     expect(r.fiscal!.origem).toBe('cadastrado');
     expect(r.fiscal!.militarResolvido).toBeNull();

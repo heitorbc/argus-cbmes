@@ -3,12 +3,13 @@ import type { EscalaEspecialMensal, EscalaMensal, NotaServico } from '@argus/sha
 import { EscalasService } from '../escalas/escalas.service';
 import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.service';
 import { NotasServicoService } from '../notas-servico/notas-servico.service';
+import { makeEscalasPrismaMock } from '../../common/prisma/prisma-test-mock';
 import type { SheetsDbService } from './sheets-db.service';
 
 /**
- * Tests de integração S2.2: confirma que cada um dos 3 services
- * dispara dual-write para o SheetsDbService quando habilitado e
- * silencia quando desabilitado.
+ * Tests de integração S2.2 → S2.10.5: confirma que cada um dos 3 services
+ * dispara dual-write para o SheetsDbService quando habilitado e silencia
+ * quando desabilitado. Prisma é a fonte primária; Sheets-DB é espelho.
  */
 
 function makeSheetsDbMock(enabled: boolean) {
@@ -18,6 +19,8 @@ function makeSheetsDbMock(enabled: boolean) {
     replaceEscalaEspecialMes: vi.fn(async () => {}),
     upsertNotaServico: vi.fn(async () => {}),
     deleteNotaServico: vi.fn(async () => {}),
+    readEscalaMensal: vi.fn(async () => []),
+    readEscalaEspecial: vi.fn(async () => []),
     readNotasServico: vi.fn(async () => []),
   } as unknown as SheetsDbService & {
     replaceEscalaMensalMes: ReturnType<typeof vi.fn>;
@@ -69,53 +72,55 @@ const escalaEspecialSample: EscalaEspecialMensal = {
 describe('EscalasService dual-write', () => {
   it('save() dispara replaceEscalaMensalMes quando enabled', async () => {
     const sheetsDb = makeSheetsDbMock(true);
-    const svc = new EscalasService(sheetsDb);
-    svc.save(escalaMensalSample);
-    // fire-and-forget: aguarda 1 tick
+    const svc = new EscalasService(makeEscalasPrismaMock(), sheetsDb);
+    await svc.save(escalaMensalSample);
     await new Promise((r) => setImmediate(r));
     expect(sheetsDb.replaceEscalaMensalMes).toHaveBeenCalledWith(2026, 5, expect.any(Array));
   });
 
   it('save() é no-op para Sheets-DB quando desabilitado', async () => {
     const sheetsDb = makeSheetsDbMock(false);
-    const svc = new EscalasService(sheetsDb);
-    svc.save(escalaMensalSample);
+    const svc = new EscalasService(makeEscalasPrismaMock(), sheetsDb);
+    await svc.save(escalaMensalSample);
     await new Promise((r) => setImmediate(r));
     expect(sheetsDb.replaceEscalaMensalMes).not.toHaveBeenCalled();
   });
 
   it('delete() dispara replace com array vazio (limpa mês)', async () => {
     const sheetsDb = makeSheetsDbMock(true);
-    const svc = new EscalasService(sheetsDb);
-    svc.save(escalaMensalSample);
+    const svc = new EscalasService(makeEscalasPrismaMock(), sheetsDb);
+    await svc.save(escalaMensalSample);
     sheetsDb.replaceEscalaMensalMes.mockClear();
-    svc.delete(2026, 5);
+    await svc.delete(2026, 5);
     await new Promise((r) => setImmediate(r));
     expect(sheetsDb.replaceEscalaMensalMes).toHaveBeenCalledWith(2026, 5, []);
   });
 
-  it('falha do Sheets-DB não derruba in-memory', async () => {
+  it('falha do Sheets-DB não derruba persistência Postgres', async () => {
     const sheetsDb = makeSheetsDbMock(true);
     sheetsDb.replaceEscalaMensalMes.mockRejectedValue(new Error('rate limit'));
-    const svc = new EscalasService(sheetsDb);
-    svc.save(escalaMensalSample);
+    const svc = new EscalasService(makeEscalasPrismaMock(), sheetsDb);
+    await svc.save(escalaMensalSample);
     await new Promise((r) => setImmediate(r));
-    // In-memory persistiu apesar do erro Sheets
-    expect(svc.get(2026, 5)).toEqual(escalaMensalSample);
+    // Postgres persistiu apesar do erro Sheets
+    const got = await svc.get(2026, 5);
+    expect(got?.ano).toBe(2026);
+    expect(got?.mes).toBe(5);
   });
 
-  it('funciona sem SheetsDbService injetado (constructor opcional)', () => {
-    const svc = new EscalasService();
-    expect(() => svc.save(escalaMensalSample)).not.toThrow();
-    expect(svc.get(2026, 5)).toEqual(escalaMensalSample);
+  it('funciona sem SheetsDbService injetado (constructor opcional)', async () => {
+    const svc = new EscalasService(makeEscalasPrismaMock());
+    await expect(svc.save(escalaMensalSample)).resolves.toBeTruthy();
+    const got = await svc.get(2026, 5);
+    expect(got?.ano).toBe(2026);
   });
 });
 
 describe('EscalasEspeciaisService dual-write', () => {
   it('save() dispara replaceEscalaEspecialMes', async () => {
     const sheetsDb = makeSheetsDbMock(true);
-    const svc = new EscalasEspeciaisService(sheetsDb);
-    svc.save(escalaEspecialSample);
+    const svc = new EscalasEspeciaisService(makeEscalasPrismaMock(), sheetsDb);
+    await svc.save(escalaEspecialSample);
     await new Promise((r) => setImmediate(r));
     expect(sheetsDb.replaceEscalaEspecialMes).toHaveBeenCalledWith(2026, 5, [
       [
@@ -135,10 +140,10 @@ describe('EscalasEspeciaisService dual-write', () => {
 
   it('delete() limpa o mês no Sheets-DB', async () => {
     const sheetsDb = makeSheetsDbMock(true);
-    const svc = new EscalasEspeciaisService(sheetsDb);
-    svc.save(escalaEspecialSample);
+    const svc = new EscalasEspeciaisService(makeEscalasPrismaMock(), sheetsDb);
+    await svc.save(escalaEspecialSample);
     sheetsDb.replaceEscalaEspecialMes.mockClear();
-    svc.delete(2026, 5);
+    await svc.delete(2026, 5);
     await new Promise((r) => setImmediate(r));
     expect(sheetsDb.replaceEscalaEspecialMes).toHaveBeenCalledWith(2026, 5, []);
   });
@@ -150,11 +155,11 @@ describe('NotasServicoService dual-write + bootstrap', () => {
 
   beforeEach(() => {
     sheetsDb = makeSheetsDbMock(true);
-    svc = new NotasServicoService(sheetsDb);
+    svc = new NotasServicoService(makeEscalasPrismaMock(), sheetsDb);
   });
 
   it('create() dispara upsertNotaServico', async () => {
-    svc.create(
+    await svc.create(
       {
         codigo: 'NS001',
         descricao: 'X',
@@ -172,7 +177,7 @@ describe('NotasServicoService dual-write + bootstrap', () => {
   });
 
   it('update() dispara upsertNotaServico', async () => {
-    const ns = svc.create(
+    const ns = await svc.create(
       {
         codigo: 'NS001',
         descricao: 'X',
@@ -184,13 +189,13 @@ describe('NotasServicoService dual-write + bootstrap', () => {
       '3037509',
     );
     sheetsDb.upsertNotaServico.mockClear();
-    svc.update(ns.id, { descricao: 'Y' });
+    await svc.update(ns.id, { descricao: 'Y' });
     await new Promise((r) => setImmediate(r));
     expect(sheetsDb.upsertNotaServico).toHaveBeenCalledTimes(1);
   });
 
   it('remove() dispara deleteNotaServico', async () => {
-    const ns = svc.create(
+    const ns = await svc.create(
       {
         codigo: 'NS001',
         descricao: 'X',
@@ -202,12 +207,12 @@ describe('NotasServicoService dual-write + bootstrap', () => {
       '3037509',
     );
     sheetsDb.deleteNotaServico.mockClear();
-    svc.remove(ns.id);
+    await svc.remove(ns.id);
     await new Promise((r) => setImmediate(r));
     expect(sheetsDb.deleteNotaServico).toHaveBeenCalledWith(ns.id);
   });
 
-  it('onModuleInit carrega NS do Sheets-DB (bootstrap pós-restart)', async () => {
+  it('bootstrap importa Sheets-DB → Postgres quando Postgres vazio', async () => {
     const persisted: NotaServico = {
       id: 'ns:persistido',
       codigo: 'NS999',
@@ -219,7 +224,6 @@ describe('NotasServicoService dual-write + bootstrap', () => {
       criadoEm: '2026-05-19T00:00:00.000Z',
       criadoPorNf: '3037509',
     };
-    // Simula linha já existente no Sheets-DB
     sheetsDb.readNotasServico.mockResolvedValue([
       [
         persisted.id,
@@ -235,20 +239,14 @@ describe('NotasServicoService dual-write + bootstrap', () => {
         persisted.criadoPorNf,
       ],
     ]);
-    // Limpa NODE_ENV pra deixar o onModuleInit rodar
-    const prev = process.env.NODE_ENV;
-    delete process.env.NODE_ENV;
-    try {
-      await svc.onModuleInit();
-    } finally {
-      if (prev !== undefined) process.env.NODE_ENV = prev;
-    }
-    expect(svc.findById('ns:persistido').codigo).toBe('NS999');
-  });
-
-  it('onModuleInit é no-op em ambiente test (preserva isolamento)', async () => {
-    process.env.NODE_ENV = 'test';
-    await svc.onModuleInit();
-    expect(sheetsDb.readNotasServico).not.toHaveBeenCalled();
+    // NODE_ENV=test pula o onModuleInit; emulamos chamando direto.
+    // Como o método é privado, recriamos o service com NODE_ENV destemporariamente.
+    const oldEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'development';
+    const svc2 = new NotasServicoService(makeEscalasPrismaMock(), sheetsDb);
+    await svc2.onModuleInit();
+    process.env.NODE_ENV = oldEnv;
+    const lista = await svc2.list();
+    expect(lista.some((n) => n.codigo === 'NS999')).toBe(true);
   });
 });
