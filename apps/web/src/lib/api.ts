@@ -76,6 +76,8 @@ import type {
   UpdateUnidadeInput,
   TipoIdeo,
   TrocaEscalaEspecial,
+  EscalaEspecialEmpenho,
+  StatusAprovacao,
   UpdateViaturaInput,
   UpsertConferenciaEquipeInput,
   UpsertConferenciaViaturaInput,
@@ -436,6 +438,50 @@ export const api = {
     request<void>(
       `/mapa-forca/${data}/ajustes/escala-especial/trocas/${encodeURIComponent(atoKey)}`,
       { method: 'DELETE' },
+    ),
+
+  /** S2.10.7b/Parte F — Registra empenho de Escala Especial em recurso ativo. */
+  mapaForcaAddEmpenhoEscalaEspecial: (
+    data: string,
+    input: {
+      atoOriginal: { data: string; militarRaw: string; horario: string; funcao: string };
+      recursoAlvo: string;
+      funcaoAlvo: string;
+      periodoInicio: string;
+      periodoFim: string;
+      substituidoNf?: string;
+      substituidoRaw?: string;
+      destinoSubstituido?: string;
+    },
+  ) =>
+    request<EscalaEspecialEmpenho>(`/mapa-forca/${data}/ajustes/escala-especial/empenhos`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  /** S2.10.7b/Parte F — Remove empenho de Escala Especial. */
+  mapaForcaRemoveEmpenhoEscalaEspecial: (data: string, empenhoKey: string) =>
+    request<void>(
+      `/mapa-forca/${data}/ajustes/escala-especial/empenhos/${encodeURIComponent(empenhoKey)}`,
+      { method: 'DELETE' },
+    ),
+
+  /**
+   * S2.10.7b/Partes C+G — Aprovação individual de item da Prévia
+   * (troca, dispensa ou atestado). Decisão: 'aprovar' | 'rejeitar'.
+   */
+  mapaForcaAprovarItem: (
+    data: string,
+    tipo: 'troca' | 'dispensa' | 'atestado',
+    id: string,
+    decisao: 'aprovar' | 'rejeitar',
+  ) =>
+    request<{ statusAprovacao: StatusAprovacao }>(
+      `/mapa-forca/${data}/aprovacoes/${tipo}/${encodeURIComponent(id)}`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ decisao }),
+      },
     ),
 
   // Servico — estado do dia (S6b/F1 + S0.x/rename-mapa-forca)

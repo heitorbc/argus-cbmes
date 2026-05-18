@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   ESTADO_SERVICO_LABEL,
+  STATUS_APROVACAO_LABEL,
   TIPO_DISPENSA,
   TIPO_DISPENSA_LABEL,
   type AjustesPrevia,
@@ -15,6 +16,7 @@ import {
   type PreviaDispensa,
   type MapaForcaDoDia,
   type PreviaNotaServico,
+  type StatusAprovacao,
   type Viatura,
   type TipoDispensa,
   type TipoInconsistencia,
@@ -801,6 +803,8 @@ export function MapaForcaDetalhePage() {
               data={data}
               atos={previa.escalaEspecialAtos}
               trocas={previa.trocasEscalaEspecial}
+              empenhos={previa.empenhosEscalaEspecial ?? []}
+              recursosDisponiveis={previa.composicaoMf.map((c) => c.recurso)}
               isReadOnly={isReadOnly}
               onSaved={reload}
             />
@@ -900,7 +904,12 @@ export function MapaForcaDetalhePage() {
               </section>
             )}
 
-            <TrocasAutorizadasReadOnly trocas={previa.trocas.filter((t) => t.origemAutorizada)} />
+            <TrocasAutorizadasReadOnly
+              data={data}
+              trocas={previa.trocas.filter((t) => t.origemAutorizada)}
+              editavel={!isReadOnly}
+              onChanged={reload}
+            />
 
             <AjustesPreTurno
               data={data}
@@ -943,6 +952,7 @@ function extractAjustes(previa: MapaForcaDoDia): AjustesPrevia {
     notasServico: previa.notasServico,
     dispensas: previa.dispensas,
     trocasEscalaEspecial: previa.trocasEscalaEspecial,
+    empenhosEscalaEspecial: previa.empenhosEscalaEspecial ?? [],
     swapsMilitares: previa.swapsMilitares,
     overridesMergulho: previa.overridesMergulho,
     overridesParesRecursos: previa.overridesParesRecursos,
@@ -1024,20 +1034,33 @@ function EscalaEspecialBox({
   data,
   atos,
   trocas,
+  empenhos,
+  recursosDisponiveis,
   isReadOnly,
   onSaved,
 }: {
   data: string;
   atos: EscalaEspecialAtoLight[];
   trocas: TrocaEscalaEspecial[];
+  empenhos: import('@argus/shared-types').EscalaEspecialEmpenho[];
+  recursosDisponiveis: string[];
   isReadOnly: boolean;
   onSaved: () => void;
 }) {
   const [modalAto, setModalAto] = useState<EscalaEspecialAtoLight | null>(null);
+  const [empenhoModalAto, setEmpenhoModalAto] = useState<EscalaEspecialAtoLight | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const trocasPorAto = new Map<string, TrocaEscalaEspecial>();
   for (const t of trocas) trocasPorAto.set(atoKey(t.atoOriginal), t);
+
+  const empenhosPorAto = new Map<string, typeof empenhos>();
+  for (const e of empenhos) {
+    const k = atoKey(e.atoOriginal);
+    const arr = empenhosPorAto.get(k) ?? [];
+    arr.push(e);
+    empenhosPorAto.set(k, arr);
+  }
 
   const removerTrocaEspecial = async (ato: EscalaEspecialAtoLight) => {
     try {
@@ -1045,6 +1068,16 @@ function EscalaEspecialBox({
       onSaved();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Erro ao remover troca');
+    }
+  };
+
+  const removerEmpenho = async (e: import('@argus/shared-types').EscalaEspecialEmpenho) => {
+    try {
+      const key = `${atoKey(e.atoOriginal)}|${e.recursoAlvo}|${e.funcaoAlvo}`;
+      await api.mapaForcaRemoveEmpenhoEscalaEspecial(data, key);
+      onSaved();
+    } catch (er) {
+      setErr(er instanceof Error ? er.message : 'Erro ao remover empenho');
     }
   };
 
@@ -1075,6 +1108,7 @@ function EscalaEspecialBox({
             {atos.map((a) => {
               const key = atoKey(a);
               const troca = trocasPorAto.get(key);
+              const empenhosDoAto = empenhosPorAto.get(key) ?? [];
               return (
                 <li key={key} className="p-3 text-sm">
                   <div className="flex items-baseline justify-between gap-2">
@@ -1091,25 +1125,68 @@ function EscalaEspecialBox({
                         {a.horario} · {a.funcao}
                       </span>
                     </span>
-                    {!isReadOnly &&
-                      (troca ? (
+                    {!isReadOnly && (
+                      <span className="flex flex-wrap gap-1">
+                        {troca ? (
+                          <button
+                            type="button"
+                            onClick={() => void removerTrocaEspecial(a)}
+                            className="rounded border border-feedback-error px-2 py-1 text-xs text-feedback-error"
+                          >
+                            Desfazer troca
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setModalAto(a)}
+                            className="rounded border border-cbmes-blue px-2 py-1 text-xs text-cbmes-blue"
+                          >
+                            Registrar Troca
+                          </button>
+                        )}
+                        {/* S2.10.7b/Parte F — empenho em recurso ativo */}
                         <button
                           type="button"
-                          onClick={() => void removerTrocaEspecial(a)}
-                          className="rounded border border-feedback-error px-2 py-1 text-xs text-feedback-error"
-                        >
-                          Desfazer troca
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setModalAto(a)}
+                          onClick={() => setEmpenhoModalAto(a)}
                           className="rounded border border-cbmes-blue px-2 py-1 text-xs text-cbmes-blue"
+                          title="Registrar empenho deste militar em recurso operacional ativo"
                         >
-                          Registrar Troca
+                          + Empenho em recurso
                         </button>
-                      ))}
+                      </span>
+                    )}
                   </div>
+                  {empenhosDoAto.length > 0 && (
+                    <ul className="mt-1.5 space-y-1 border-l-2 border-cbmes-blue/40 pl-2">
+                      {empenhosDoAto.map((e) => (
+                        <li
+                          key={`${key}|${e.recursoAlvo}|${e.funcaoAlvo}`}
+                          className="flex items-start justify-between gap-2 rounded bg-cbmes-blue/5 p-2 text-xs"
+                        >
+                          <span>
+                            🎯 Empenhado em <strong>{e.recursoAlvo}</strong> ({e.funcaoAlvo}) ·{' '}
+                            {e.periodoInicio}–{e.periodoFim}
+                            {e.substituidoRaw && (
+                              <span className="text-slate-600">
+                                {' '}
+                                — substitui <em>{e.substituidoRaw}</em>
+                                {e.destinoSubstituido && <> (→ {e.destinoSubstituido})</>}
+                              </span>
+                            )}
+                          </span>
+                          {!isReadOnly && (
+                            <button
+                              type="button"
+                              onClick={() => void removerEmpenho(e)}
+                              className="rounded border border-feedback-error px-2 py-0.5 text-[11px] text-feedback-error"
+                            >
+                              Remover
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </li>
               );
             })}
@@ -1126,6 +1203,18 @@ function EscalaEspecialBox({
             onSaved();
           }}
           onCancel={() => setModalAto(null)}
+        />
+      )}
+      {empenhoModalAto && (
+        <ModalEmpenhoEscalaEspecial
+          ato={empenhoModalAto}
+          data={data}
+          recursosDisponiveis={recursosDisponiveis}
+          onSaved={() => {
+            setEmpenhoModalAto(null);
+            onSaved();
+          }}
+          onCancel={() => setEmpenhoModalAto(null)}
         />
       )}
     </>
@@ -1296,8 +1385,18 @@ function AjustesPreTurno({
 
           <NotasServicoFieldset dataIso={data} existentes={state.notasServico} onSaved={onSaved} />
 
-          <DispensasFieldset dataIso={data} existentes={state.dispensas} onSaved={onSaved} />
-          <AtestadosFieldset dataIso={data} existentes={atestadosAtivos} onSaved={onSaved} />
+          <DispensasFieldset
+            dataIso={data}
+            existentes={state.dispensas}
+            onSaved={onSaved}
+            editavel={!isReadOnly}
+          />
+          <AtestadosFieldset
+            dataIso={data}
+            existentes={atestadosAtivos}
+            onSaved={onSaved}
+            editavel={!isReadOnly}
+          />
           {/* `state.dispensas` e `atestadosAtivos` vêm read-only do backend
               (DispensasService / AtestadosService). UI de criação está em
               DispensasFieldset (S6j) e AtestadosFieldset (S6k). */}
@@ -1399,6 +1498,219 @@ function ModalTrocaEscalaEspecial({
         )}
 
         <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={submit}
+            disabled={saving}
+            className="flex-1 rounded-button bg-cbmes-red py-2 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {saving ? 'Salvando…' : 'Salvar'}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={saving}
+            className="flex-1 rounded-button border border-slate-300 bg-white py-2 text-sm text-slate-700"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * S2.10.7b/Parte F — Modal para registrar empenho de um militar da Escala
+ * Especial em um recurso operacional ativo. Permite informar período (dentro
+ * do horário do ato), militar substituído (opcional) e destino do
+ * substituído (texto livre).
+ */
+function ModalEmpenhoEscalaEspecial({
+  ato,
+  data,
+  recursosDisponiveis,
+  onSaved,
+  onCancel,
+}: {
+  ato: EscalaEspecialAtoLight;
+  data: string;
+  recursosDisponiveis: string[];
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  // S2.10.7b — Pré-extrai início/fim do ato (ex.: "07:10 às 13:10").
+  const [recursoAlvo, setRecursoAlvo] = useState<string>('');
+  const [funcaoAlvo, setFuncaoAlvo] = useState<string>('');
+  const [periodoInicio, setPeriodoInicio] = useState<string>('');
+  const [periodoFim, setPeriodoFim] = useState<string>('');
+  const [substituidoNf, setSubstituidoNf] = useState<string | undefined>();
+  const [substituidoRaw, setSubstituidoRaw] = useState<string>('');
+  const [destinoSubstituido, setDestinoSubstituido] = useState<string>('');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    const match = ato.horario.match(/(\d{2}:\d{2}).+?(\d{2}:\d{2})/);
+    if (match) {
+      setPeriodoInicio((p) => p || match[1]!);
+      setPeriodoFim((p) => p || match[2]!);
+    }
+  }, [ato.horario]);
+
+  const submit = async () => {
+    if (!recursoAlvo || !funcaoAlvo) {
+      setErr('Recurso e função são obrigatórios.');
+      return;
+    }
+    if (!/^\d{2}:\d{2}$/.test(periodoInicio) || !/^\d{2}:\d{2}$/.test(periodoFim)) {
+      setErr('Períodos devem estar no formato HH:MM.');
+      return;
+    }
+    if (periodoFim <= periodoInicio) {
+      setErr('Fim deve ser maior que início.');
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    try {
+      await api.mapaForcaAddEmpenhoEscalaEspecial(data, {
+        atoOriginal: ato,
+        recursoAlvo: recursoAlvo.trim(),
+        funcaoAlvo: funcaoAlvo.trim(),
+        periodoInicio,
+        periodoFim,
+        substituidoNf,
+        substituidoRaw: substituidoRaw.trim() || undefined,
+        destinoSubstituido: destinoSubstituido.trim() || undefined,
+      });
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Erro ao registrar empenho');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-empenho-titulo"
+    >
+      <div className="w-full max-w-lg space-y-3 rounded border border-slate-200 bg-white p-4 shadow-xl">
+        <h3 id="modal-empenho-titulo" className="text-base font-bold text-cbmes-blue">
+          Registrar Empenho em Recurso
+        </h3>
+
+        <div className="rounded bg-slate-50 p-3 text-xs">
+          <p className="font-semibold text-slate-700">Ato original (Escala Especial)</p>
+          <p className="mt-1">
+            <strong>{ato.militarRaw}</strong> — {ato.horario} · <em>{ato.funcao}</em>
+          </p>
+          <p className="text-slate-500">{ato.data}</p>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-slate-700" htmlFor="empenho-recurso">
+            Recurso alvo
+          </label>
+          <input
+            id="empenho-recurso"
+            list="empenho-recursos-list"
+            value={recursoAlvo}
+            onChange={(e) => setRecursoAlvo(e.target.value)}
+            placeholder="Ex.: SENTINELA 1"
+            className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+          />
+          <datalist id="empenho-recursos-list">
+            {recursosDisponiveis.map((r) => (
+              <option key={r} value={r} />
+            ))}
+          </datalist>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-slate-700" htmlFor="empenho-funcao">
+            Função alvo
+          </label>
+          <input
+            id="empenho-funcao"
+            value={funcaoAlvo}
+            onChange={(e) => setFuncaoAlvo(e.target.value)}
+            placeholder="Ex.: Sent. 1, Op 2"
+            className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs font-medium text-slate-700" htmlFor="empenho-inicio">
+              Início (HH:MM)
+            </label>
+            <input
+              id="empenho-inicio"
+              type="time"
+              value={periodoInicio}
+              onChange={(e) => setPeriodoInicio(e.target.value)}
+              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-700" htmlFor="empenho-fim">
+              Fim (HH:MM)
+            </label>
+            <input
+              id="empenho-fim"
+              type="time"
+              value={periodoFim}
+              onChange={(e) => setPeriodoFim(e.target.value)}
+              className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-slate-700">
+            Militar substituído (opcional)
+          </label>
+          <div className="mt-1">
+            <MilitarSelect
+              value={substituidoNf}
+              valueRaw={substituidoRaw}
+              onChange={(nf, m) => {
+                setSubstituidoNf(nf ?? undefined);
+                setSubstituidoRaw(m ? `${m.posto} ${m.nomeGuerra ?? m.nome.split(' ')[0]}` : '');
+              }}
+              placeholder="Quem ficou de fora (se aplicável)"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-slate-700" htmlFor="empenho-destino">
+            Destino do substituído (opcional)
+          </label>
+          <input
+            id="empenho-destino"
+            value={destinoSubstituido}
+            onChange={(e) => setDestinoSubstituido(e.target.value)}
+            placeholder='Ex.: "operador 2 do ABTS_01"'
+            className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+          />
+        </div>
+
+        {err && (
+          <p
+            role="alert"
+            className="rounded border border-feedback-error/30 bg-feedback-error/10 p-2 text-xs text-feedback-error"
+          >
+            {err}
+          </p>
+        )}
+
+        <div className="flex gap-2">
           <button
             type="button"
             onClick={submit}
@@ -2333,6 +2645,95 @@ function PeriodoTrocaPicker({
 }
 
 /**
+ * S2.10.7b — Badge visual do status de aprovação de um item da Prévia
+ * (troca, dispensa ou atestado). Pendente = âmbar; Aprovada = verde;
+ * Rejeitada = vermelha.
+ */
+function StatusAprovacaoBadge({ status }: { status: StatusAprovacao }) {
+  const styles: Record<StatusAprovacao, { className: string; icon: string }> = {
+    pendente: {
+      className: 'bg-amber-100 text-amber-800 border-amber-300',
+      icon: '⏳',
+    },
+    aprovada: {
+      className: 'bg-emerald-100 text-emerald-800 border-emerald-400',
+      icon: '✓',
+    },
+    rejeitada: {
+      className: 'bg-rose-100 text-rose-800 border-rose-400',
+      icon: '✗',
+    },
+  };
+  const s = styles[status];
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${s.className}`}
+    >
+      <span aria-hidden>{s.icon}</span>
+      {STATUS_APROVACAO_LABEL[status]}
+    </span>
+  );
+}
+
+/**
+ * S2.10.7b — Botões "Aprovar / Rejeitar / Reverter" para itens da Prévia.
+ * Renderiza o conjunto apropriado conforme o status atual.
+ *
+ * Read-only quando `editavel=false` (estado do serviço não permite mais
+ * mudanças). Em estado pendente, mostra dois botões; em aprovada/rejeitada
+ * mostra apenas "Reverter para pendente" (re-aprovar inverte direto).
+ */
+function BotoesAprovacao({
+  status,
+  editavel,
+  onAprovar,
+  onRejeitar,
+  pending,
+}: {
+  status: StatusAprovacao;
+  editavel: boolean;
+  onAprovar: () => void;
+  onRejeitar: () => void;
+  pending: boolean;
+}) {
+  if (!editavel) return null;
+  if (status === 'pendente') {
+    return (
+      <span className="flex flex-wrap gap-1">
+        <button
+          type="button"
+          onClick={onAprovar}
+          disabled={pending}
+          className="rounded border border-emerald-500 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+        >
+          ✓ Aprovar
+        </button>
+        <button
+          type="button"
+          onClick={onRejeitar}
+          disabled={pending}
+          className="rounded border border-rose-500 bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-800 hover:bg-rose-100 disabled:opacity-50"
+        >
+          ✗ Rejeitar
+        </button>
+      </span>
+    );
+  }
+  // Aprovada ou rejeitada → permite inverter ou voltar (admin reset não exposto).
+  const acaoOposta = status === 'aprovada' ? 'rejeitar' : 'aprovar';
+  return (
+    <button
+      type="button"
+      onClick={status === 'aprovada' ? onRejeitar : onAprovar}
+      disabled={pending}
+      className="rounded border border-slate-400 bg-white px-2 py-0.5 text-[11px] text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+    >
+      ↺ {acaoOposta === 'aprovar' ? 'Aprovar' : 'Rejeitar'}
+    </button>
+  );
+}
+
+/**
  * S6j — Fieldset de Dispensas dentro do Ajustes Pré-turno.
  *
  * Lista as dispensas ativas no dia (vindas de `previa.dispensas`, que o
@@ -2344,10 +2745,12 @@ function DispensasFieldset({
   dataIso,
   existentes,
   onSaved,
+  editavel,
 }: {
   dataIso: string;
   existentes: PreviaDispensa[];
   onSaved: () => void;
+  editavel: boolean;
 }) {
   const [showForm, setShowForm] = useState(false);
   const [militarNf, setMilitarNf] = useState<string | undefined>(undefined);
@@ -2359,6 +2762,20 @@ function DispensasFieldset({
   const [obs, setObs] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [pendingAprov, setPendingAprov] = useState<string | null>(null);
+
+  const decidirAprovacao = async (id: string, decisao: 'aprovar' | 'rejeitar') => {
+    setPendingAprov(id);
+    setErr(null);
+    try {
+      await api.mapaForcaAprovarItem(dataIso, 'dispensa', id, decisao);
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : `Erro ao ${decisao} dispensa`);
+    } finally {
+      setPendingAprov(null);
+    }
+  };
 
   const cancelar = () => {
     setShowForm(false);
@@ -2419,34 +2836,51 @@ function DispensasFieldset({
       {existentes.length === 0 && !showForm && (
         <p className="mt-1 text-xs text-slate-500">Nenhuma dispensa ativa hoje.</p>
       )}
-      {existentes.map((d) => (
-        <div
-          key={d.dispensaId ?? `${d.militarNf}-${d.dataInicio}`}
-          className="mt-2 flex items-start justify-between gap-2 rounded border border-slate-200 bg-slate-50 p-2 text-xs"
-        >
-          <div>
-            <p className="font-medium text-cbmes-blue">{d.militarRaw}</p>
-            <p className="text-slate-700">
-              {d.tipo
-                ? `${d.tipo} — ${d.tipoLabel ?? TIPO_DISPENSA_LABEL[d.tipo]}`
-                : 'Tipo não informado'}
-            </p>
-            <p className="text-slate-500">
-              {d.dataInicio ?? '?'} · {d.dias ?? '?'} dia(s)
-              {d.numeroEdocs && <> · E-Docs {d.numeroEdocs}</>}
-            </p>
+      {existentes.map((d) => {
+        const status: StatusAprovacao = d.statusAprovacao ?? 'pendente';
+        return (
+          <div
+            key={d.dispensaId ?? `${d.militarNf}-${d.dataInicio}`}
+            className="mt-2 flex items-start justify-between gap-2 rounded border border-slate-200 bg-slate-50 p-2 text-xs"
+          >
+            <div className="flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-medium text-cbmes-blue">{d.militarRaw}</p>
+                <StatusAprovacaoBadge status={status} />
+              </div>
+              <p className="text-slate-700">
+                {d.tipo
+                  ? `${d.tipo} — ${d.tipoLabel ?? TIPO_DISPENSA_LABEL[d.tipo]}`
+                  : 'Tipo não informado'}
+              </p>
+              <p className="text-slate-500">
+                {d.dataInicio ?? '?'} · {d.dias ?? '?'} dia(s)
+                {d.numeroEdocs && <> · E-Docs {d.numeroEdocs}</>}
+              </p>
+              {d.dispensaId && (
+                <div className="mt-1.5">
+                  <BotoesAprovacao
+                    status={status}
+                    editavel={editavel}
+                    pending={pendingAprov === d.dispensaId}
+                    onAprovar={() => void decidirAprovacao(d.dispensaId!, 'aprovar')}
+                    onRejeitar={() => void decidirAprovacao(d.dispensaId!, 'rejeitar')}
+                  />
+                </div>
+              )}
+            </div>
+            {d.dispensaId && (
+              <button
+                type="button"
+                onClick={() => void remover(d)}
+                className="rounded border border-feedback-error px-2 py-1 text-feedback-error"
+              >
+                Remover
+              </button>
+            )}
           </div>
-          {d.dispensaId && (
-            <button
-              type="button"
-              onClick={() => void remover(d)}
-              className="rounded border border-feedback-error px-2 py-1 text-feedback-error"
-            >
-              Remover
-            </button>
-          )}
-        </div>
-      ))}
+        );
+      })}
 
       {showForm ? (
         <div className="mt-3 space-y-2 rounded border border-cbmes-blue/30 bg-white p-3">
@@ -2546,10 +2980,12 @@ function AtestadosFieldset({
   dataIso,
   existentes,
   onSaved,
+  editavel,
 }: {
   dataIso: string;
   existentes: PreviaAtestado[];
   onSaved: () => void;
+  editavel: boolean;
 }) {
   const [showForm, setShowForm] = useState(false);
   const [militarNf, setMilitarNf] = useState<string | undefined>(undefined);
@@ -2561,6 +2997,20 @@ function AtestadosFieldset({
   const [obs, setObs] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [pendingAprov, setPendingAprov] = useState<string | null>(null);
+
+  const decidirAprovacao = async (id: string, decisao: 'aprovar' | 'rejeitar') => {
+    setPendingAprov(id);
+    setErr(null);
+    try {
+      await api.mapaForcaAprovarItem(dataIso, 'atestado', id, decisao);
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : `Erro ao ${decisao} atestado`);
+    } finally {
+      setPendingAprov(null);
+    }
+  };
 
   const cancelar = () => {
     setShowForm(false);
@@ -2624,33 +3074,48 @@ function AtestadosFieldset({
       {existentes.length === 0 && !showForm && (
         <p className="mt-1 text-xs text-slate-500">Nenhum atestado ativo hoje.</p>
       )}
-      {existentes.map((a) => (
-        <div
-          key={a.atestadoId}
-          className="mt-2 flex items-start justify-between gap-2 rounded border border-slate-200 bg-slate-50 p-2 text-xs"
-        >
-          <div>
-            <p className="font-medium text-cbmes-blue">{a.militarRaw}</p>
-            <p className="text-slate-700">
-              <span className="mr-1 rounded-full bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-700">
-                {a.cid10}
-              </span>
-              CRM {a.crmMedico}
-            </p>
-            <p className="text-slate-500">
-              {a.dataInicio} · {a.dias} dia(s)
-            </p>
-            {a.observacoes && <p className="italic text-slate-500">{a.observacoes}</p>}
-          </div>
-          <button
-            type="button"
-            onClick={() => void remover(a)}
-            className="rounded border border-feedback-error px-2 py-1 text-feedback-error"
+      {existentes.map((a) => {
+        const status: StatusAprovacao = a.statusAprovacao ?? 'pendente';
+        return (
+          <div
+            key={a.atestadoId}
+            className="mt-2 flex items-start justify-between gap-2 rounded border border-slate-200 bg-slate-50 p-2 text-xs"
           >
-            Remover
-          </button>
-        </div>
-      ))}
+            <div className="flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-medium text-cbmes-blue">{a.militarRaw}</p>
+                <StatusAprovacaoBadge status={status} />
+              </div>
+              <p className="text-slate-700">
+                <span className="mr-1 rounded-full bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-700">
+                  {a.cid10}
+                </span>
+                CRM {a.crmMedico}
+              </p>
+              <p className="text-slate-500">
+                {a.dataInicio} · {a.dias} dia(s)
+              </p>
+              {a.observacoes && <p className="italic text-slate-500">{a.observacoes}</p>}
+              <div className="mt-1.5">
+                <BotoesAprovacao
+                  status={status}
+                  editavel={editavel}
+                  pending={pendingAprov === a.atestadoId}
+                  onAprovar={() => void decidirAprovacao(a.atestadoId, 'aprovar')}
+                  onRejeitar={() => void decidirAprovacao(a.atestadoId, 'rejeitar')}
+                />
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void remover(a)}
+              className="rounded border border-feedback-error px-2 py-1 text-feedback-error"
+            >
+              Remover
+            </button>
+          </div>
+        );
+      })}
 
       {showForm ? (
         <div className="mt-3 space-y-2 rounded border border-cbmes-blue/30 bg-white p-3">
@@ -3431,67 +3896,113 @@ function PreviaEstadoBanner({
  * manuais no `state.trocas`, e cada save duplicava (loop infinito de
  * concatenação). Agora ficam isoladas aqui, fora do estado editável.
  */
-function TrocasAutorizadasReadOnly({ trocas }: { trocas: MapaForcaDoDia['trocas'] }) {
+function TrocasAutorizadasReadOnly({
+  data,
+  trocas,
+  editavel,
+  onChanged,
+}: {
+  data: string;
+  trocas: MapaForcaDoDia['trocas'];
+  editavel: boolean;
+  onChanged: () => void;
+}) {
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   if (trocas.length === 0) return null;
+
+  const decidir = async (trocaId: string, decisao: 'aprovar' | 'rejeitar') => {
+    setPendingId(trocaId);
+    setErr(null);
+    try {
+      await api.mapaForcaAprovarItem(data, 'troca', trocaId, decisao);
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : `Erro ao ${decisao} troca`);
+    } finally {
+      setPendingId(null);
+    }
+  };
+
   return (
     <details className="mt-4 rounded border border-cbmes-blue/30 bg-cbmes-blue/5 p-3">
       <summary className="cursor-pointer text-sm font-semibold text-cbmes-blue">
         📜 Trocas Autorizadas (planilha) — {trocas.length} ato(s)
       </summary>
       <p className="mt-1 text-[11px] italic text-slate-600">
-        Trocas vindas da planilha externa de Trocas Autorizadas. Read-only — para alterar, edite a
-        planilha. Não duplicam ao salvar ajustes.
+        Trocas vindas da planilha externa de Trocas Autorizadas. Aprovação individual pelo Fiscal;
+        rejeitada = NÃO aplica a troca à composição.
       </p>
+      {err && (
+        <p className="mt-2 rounded border border-feedback-error/30 bg-feedback-error/10 p-2 text-xs text-feedback-error">
+          {err}
+        </p>
+      )}
       <ul className="mt-2 space-y-1">
-        {trocas.map((t, i) => (
-          <li
-            key={`autorizada-${i}-${t.substituidoNf ?? t.substituidoRaw}`}
-            className="rounded border border-cbmes-blue/20 bg-white p-2 text-xs"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span>
-                <strong>{t.substituidoRaw}</strong>
-                {t.substituidoNf && (
-                  <span className="ml-1 text-slate-500">(NF {t.substituidoNf})</span>
-                )}
-                {' → '}
-                <strong>{t.substitutoRaw}</strong>
-                {t.substitutoNf && (
-                  <span className="ml-1 text-slate-500">(NF {t.substitutoNf})</span>
-                )}
-              </span>
-              <span className="flex items-center gap-1">
-                {/* S2.8.3 — badge VERIFICADO/PENDENTE para o Fiscal */}
-                {t.statusTroca === 'VERIFICADO' && (
-                  <span
-                    className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800"
-                    title="Ambos militares preencheram o formulário institucional"
-                  >
-                    🟢 VERIFICADO
-                  </span>
-                )}
-                {t.statusTroca === 'PENDENTE' && (
-                  <span
-                    className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800"
-                    title="Apenas um lado preencheu o formulário — confirme com o militar"
-                  >
-                    🟡 PENDENTE
-                  </span>
-                )}
-                <span className="rounded-full bg-cbmes-blue/15 px-2 py-0.5 text-[10px] font-bold uppercase text-cbmes-blue">
-                  Autorizada
+        {trocas.map((t, i) => {
+          const trocaId = t.trocaId ?? `autorizada-${i}`;
+          const status: StatusAprovacao = t.statusAprovacao ?? 'pendente';
+          return (
+            <li
+              key={`autorizada-${i}-${t.substituidoNf ?? t.substituidoRaw}`}
+              className="rounded border border-cbmes-blue/20 bg-white p-2 text-xs"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span>
+                  <strong>{t.substituidoRaw}</strong>
+                  {t.substituidoNf && (
+                    <span className="ml-1 text-slate-500">(NF {t.substituidoNf})</span>
+                  )}
+                  {' → '}
+                  <strong>{t.substitutoRaw}</strong>
+                  {t.substitutoNf && (
+                    <span className="ml-1 text-slate-500">(NF {t.substitutoNf})</span>
+                  )}
                 </span>
-              </span>
-            </div>
-            {(t.funcao || t.numeroEdocs) && (
-              <p className="mt-0.5 text-[10px] text-slate-500">
-                {t.funcao && <>Função: {t.funcao}</>}
-                {t.funcao && t.numeroEdocs && ' · '}
-                {t.numeroEdocs && <>E-Docs: {t.numeroEdocs}</>}
-              </p>
-            )}
-          </li>
-        ))}
+                <span className="flex flex-wrap items-center gap-1">
+                  {/* S2.8.3 — badge VERIFICADO/PENDENTE da planilha (lado militares) */}
+                  {t.statusTroca === 'VERIFICADO' && (
+                    <span
+                      className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800"
+                      title="Ambos militares preencheram o formulário institucional"
+                    >
+                      🟢 VERIFICADO
+                    </span>
+                  )}
+                  {t.statusTroca === 'PENDENTE' && (
+                    <span
+                      className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800"
+                      title="Apenas um lado preencheu o formulário — confirme com o militar"
+                    >
+                      🟡 PENDENTE
+                    </span>
+                  )}
+                  <span className="rounded-full bg-cbmes-blue/15 px-2 py-0.5 text-[10px] font-bold uppercase text-cbmes-blue">
+                    Autorizada
+                  </span>
+                  {/* S2.10.7b — status de aprovação pelo Fiscal */}
+                  <StatusAprovacaoBadge status={status} />
+                </span>
+              </div>
+              {(t.funcao || t.numeroEdocs) && (
+                <p className="mt-0.5 text-[10px] text-slate-500">
+                  {t.funcao && <>Função: {t.funcao}</>}
+                  {t.funcao && t.numeroEdocs && ' · '}
+                  {t.numeroEdocs && <>E-Docs: {t.numeroEdocs}</>}
+                </p>
+              )}
+              <div className="mt-1.5">
+                <BotoesAprovacao
+                  status={status}
+                  editavel={editavel}
+                  pending={pendingId === trocaId}
+                  onAprovar={() => void decidir(trocaId, 'aprovar')}
+                  onRejeitar={() => void decidir(trocaId, 'rejeitar')}
+                />
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </details>
   );

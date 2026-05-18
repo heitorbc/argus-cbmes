@@ -139,6 +139,20 @@ export const PERIODO_TROCA_PREDEFINIDO_LABEL: Record<PeriodoTrocaPredefinido, st
 };
 
 const horaRegex = /^\d{2}:\d{2}$/;
+
+/**
+ * S2.10.7b — Status de aprovação individual de itens da Prévia
+ * (trocas, dispensas, atestados). Fiscal de Serviço aprova/rejeita
+ * antes do início do turno; pendente é o estado default.
+ */
+export const STATUS_APROVACAO = ['pendente', 'aprovada', 'rejeitada'] as const;
+export type StatusAprovacao = (typeof STATUS_APROVACAO)[number];
+
+export const STATUS_APROVACAO_LABEL: Record<StatusAprovacao, string> = {
+  pendente: 'Pendente',
+  aprovada: 'Aprovada',
+  rejeitada: 'Rejeitada',
+};
 export const periodoTrocaSchema = z.discriminatedUnion('tipo', [
   z.object({
     tipo: z.literal('predefinido'),
@@ -184,6 +198,14 @@ export const previaTrocaSchema = z.object({
   funcao: z.string().optional(),
   /** Nº E-Docs da autorização (opcional). */
   numeroEdocs: z.string().optional(),
+  /**
+   * S2.10.7b — Status de aprovação do Fiscal. Default `pendente` em trocas
+   * autorizadas; trocas manuais (ajustes.trocas) entram diretamente como
+   * `aprovada` (já é o Fiscal que cria).
+   */
+  statusAprovacao: z.enum(STATUS_APROVACAO).optional(),
+  /** S2.10.7b — Identificador estável para POST de aprovação (hash da troca). */
+  trocaId: z.string().optional(),
 });
 export type PreviaTroca = z.infer<typeof previaTrocaSchema>;
 
@@ -238,6 +260,8 @@ export const previaAtestadoSchema = z.object({
   cid10: z.string(),
   crmMedico: z.string(),
   observacoes: z.string().optional(),
+  /** S2.10.7b — Aprovação individual pelo Fiscal. Default `pendente`. */
+  statusAprovacao: z.enum(STATUS_APROVACAO).optional(),
 });
 export type PreviaAtestado = z.infer<typeof previaAtestadoSchema>;
 
@@ -264,6 +288,8 @@ export const previaDispensaSchema = z.object({
   dispensaId: z.string().optional(),
   /** @deprecated S5 — usar `tipo` + `numeroEdocs` + `observacoes`. */
   motivo: z.string().optional(),
+  /** S2.10.7b — Aprovação individual pelo Fiscal. Default `pendente`. */
+  statusAprovacao: z.enum(STATUS_APROVACAO).optional(),
 });
 export type PreviaDispensa = z.infer<typeof previaDispensaSchema>;
 
@@ -313,6 +339,38 @@ export const trocaEscalaEspecialSchema = z.object({
   registradoPorNf: z.string(),
 });
 export type TrocaEscalaEspecial = z.infer<typeof trocaEscalaEspecialSchema>;
+
+/**
+ * S2.10.7b — Empenho de um militar de Escala Especial em um recurso ativo
+ * por um período dentro do horário do ato. Substitui (temporariamente) o
+ * militar previsto na composição do recurso.
+ *
+ * Exemplo institucional:
+ *   - Ato XLSM: "CB HENRIQUE LOPES — APOIO — 07:10 às 13:10"
+ *   - Empenho: recurso "SENTINELA 1", período 07:10 a 09:10
+ *   - Se SENTINELA 1 tinha SD MARTINELLI no XLSX, ele é substituído por
+ *     CB HENRIQUE durante 07:10-09:10 e retorna depois
+ *   - Se SENTINELA 1 está vazio, apenas insere CB HENRIQUE (sem destino)
+ */
+export const escalaEspecialEmpenhoSchema = z.object({
+  atoOriginal: escalaEspecialAtoLightSchema,
+  recursoAlvo: z.string().min(1),
+  funcaoAlvo: z.string().min(1),
+  /** Período dentro do horário do ato (HH:MM). */
+  periodoInicio: z.string().regex(horaRegex),
+  periodoFim: z.string().regex(horaRegex),
+  /** Militar substituído (opcional — pode ser vazio se recurso estava ocioso). */
+  substituidoNf: z.string().optional(),
+  substituidoRaw: z.string().optional(),
+  /**
+   * Para onde o militar substituído foi realocado (texto livre, opcional).
+   * Ex.: "operador 2 do ABTS_01". Apenas anotativo — não modifica composição.
+   */
+  destinoSubstituido: z.string().optional(),
+  registradoEm: z.string(),
+  registradoPorNf: z.string(),
+});
+export type EscalaEspecialEmpenho = z.infer<typeof escalaEspecialEmpenhoSchema>;
 
 /** Chefe de Operações escalado num dia (S6a-fix item 6). Vem da planilha ChOp. */
 export const chefeOperacoesSchema = z.object({
@@ -421,6 +479,8 @@ export const ajustesPreviaSchema = z.object({
   notasServico: z.array(previaNotaServicoSchema),
   dispensas: z.array(previaDispensaSchema),
   trocasEscalaEspecial: z.array(trocaEscalaEspecialSchema).default([]),
+  /** S2.10.7b — Empenhos de Escala Especial em recursos ativos. */
+  empenhosEscalaEspecial: z.array(escalaEspecialEmpenhoSchema).optional().default([]),
   swapsMilitares: z.array(previaSwapMilitarSchema).default([]),
   /** S0.x/Fix-Mergulho — Por dia, troca M01↔M02. */
   overridesMergulho: z.array(overrideMergulhoSchema).default([]),
@@ -450,6 +510,28 @@ export const addTrocaEscalaEspecialSchema = z.object({
   substitutoNf: z.string().optional(),
 });
 export type AddTrocaEscalaEspecialInput = z.infer<typeof addTrocaEscalaEspecialSchema>;
+
+/** S2.10.7b — Input para registrar empenho de Escala Especial em recurso. */
+export const addEscalaEspecialEmpenhoSchema = z.object({
+  atoOriginal: escalaEspecialAtoLightSchema,
+  recursoAlvo: z.string().min(1),
+  funcaoAlvo: z.string().min(1),
+  periodoInicio: z.string().regex(horaRegex),
+  periodoFim: z.string().regex(horaRegex),
+  substituidoNf: z.string().optional(),
+  substituidoRaw: z.string().optional(),
+  destinoSubstituido: z.string().optional(),
+});
+export type AddEscalaEspecialEmpenhoInput = z.infer<typeof addEscalaEspecialEmpenhoSchema>;
+
+/**
+ * S2.10.7b — Input para aprovação/rejeição individual. Usado por trocas,
+ * dispensas e atestados (mesmo shape, endpoints diferentes).
+ */
+export const aprovarItemInputSchema = z.object({
+  decisao: z.enum(['aprovar', 'rejeitar']),
+});
+export type AprovarItemInput = z.infer<typeof aprovarItemInputSchema>;
 
 export const mapaForcaDoDiaSchema = z.object({
   /** Data ISO `YYYY-MM-DD`. */
@@ -519,6 +601,8 @@ export const mapaForcaDoDiaSchema = z.object({
   /** S6a-fix item 4 — atos da Escala Especial do dia (read-only) + trocas registradas. */
   escalaEspecialAtos: z.array(escalaEspecialAtoLightSchema).default([]),
   trocasEscalaEspecial: z.array(trocaEscalaEspecialSchema).default([]),
+  /** S2.10.7b — Empenhos de Escala Especial em recursos ativos (read-only). */
+  empenhosEscalaEspecial: z.array(escalaEspecialEmpenhoSchema).optional().default([]),
 
   /** S0.5 — Swaps de militares aplicados pelo Fiscal (UX troca entre posições da mesma equipe). */
   swapsMilitares: z.array(previaSwapMilitarSchema).default([]),

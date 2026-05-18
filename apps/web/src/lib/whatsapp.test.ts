@@ -76,6 +76,7 @@ const previaCharlie: MapaForcaDoDia = {
   dispensas: [{ militarRaw: '2° SGT HOFFMAM' }],
   escalaEspecialAtos: [],
   trocasEscalaEspecial: [],
+  empenhosEscalaEspecial: [],
   swapsMilitares: [],
   overridesMergulho: [],
   overridesParesRecursos: [],

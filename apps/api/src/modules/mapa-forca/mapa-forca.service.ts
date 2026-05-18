@@ -28,7 +28,9 @@ import {
   type PreviaDispensa,
   type PreviaFerias,
   type PreviaNotaServico,
+  type StatusAprovacao,
 } from '@argus/shared-types';
+import { AjustesPreviaService, trocaApprovalId } from './ajustes-previa.service';
 import { AtestadosService } from '../atestados/atestados.service';
 import { FeriasService } from '../ferias/ferias.service';
 import { ChefesOperacoesService } from '../chefes-operacoes/chefes-operacoes.service';
@@ -46,7 +48,6 @@ import { forwardRef, Inject } from '@nestjs/common';
 import { TrocasAutorizadasService } from '../trocas-autorizadas/trocas-autorizadas.service';
 import { ViaturasService } from '../viaturas/viaturas.service';
 import { parseMilitarCell } from '../escalas/escala-xlsx-parser';
-import { AjustesPreviaService } from './ajustes-previa.service';
 import { NomeMatcher } from './nome-matching';
 
 /**
@@ -189,6 +190,14 @@ export class MapaForcaService {
 
     // F7a — Ajustes pré-turno (trocas/escala especial/NS/dispensas) persistidos por data.
     const ajustes = this.ajustes.get(dataIso);
+    // S2.10.7b — Decisões de aprovação individual do Fiscal por item.
+    const aprovacoes = this.ajustes.getAprovacoes(dataIso);
+    const statusAprovacaoDispensa = (id: string): StatusAprovacao =>
+      aprovacoes.get(`dispensa:${id}`) ?? 'pendente';
+    const statusAprovacaoAtestado = (id: string): StatusAprovacao =>
+      aprovacoes.get(`atestado:${id}`) ?? 'pendente';
+    const statusAprovacaoTroca = (trocaIdStr: string): StatusAprovacao =>
+      aprovacoes.get(`troca:${trocaIdStr}`) ?? 'pendente';
 
     // S6a-fix item 4 — atos da Escala Especial do dia (read-only injetado).
     const atosEspeciais = (await this.escalasEspeciais.getAtosDoDia(ano, mes, dataIso)).map(
@@ -352,6 +361,7 @@ export class MapaForcaService {
         numeroEdocs: d.numeroEdocs,
         dispensaId: d.id,
         motivo: d.observacoes,
+        statusAprovacao: statusAprovacaoDispensa(d.id),
       };
     });
 
@@ -402,6 +412,7 @@ export class MapaForcaService {
         cid10: a.cid10,
         crmMedico: a.crmMedico,
         observacoes: a.observacoes,
+        statusAprovacao: statusAprovacaoAtestado(a.id),
       };
     });
 
@@ -434,8 +445,21 @@ export class MapaForcaService {
       trocasAutorizadasDoDia.map((t) =>
         converterTrocaAutorizadaEmPrevia(t, dataIso, matcher, inconsistencias, chopHabilitados),
       ),
-    );
-    const trocasFinalDoDia = [...trocasAutComoPrevia, ...ajustes.trocas];
+    ).map((t) => {
+      // S2.10.7b — Identificador estável + status de aprovação por troca.
+      const id = trocaApprovalId(t);
+      return {
+        ...t,
+        trocaId: id,
+        statusAprovacao: statusAprovacaoTroca(id),
+      };
+    });
+    // Trocas manuais do Fiscal entram já como aprovadas (foi o próprio Fiscal).
+    const trocasManuaisAprovadas = ajustes.trocas.map((t) => ({
+      ...t,
+      statusAprovacao: t.statusAprovacao ?? ('aprovada' as StatusAprovacao),
+    }));
+    const trocasFinalDoDia = [...trocasAutComoPrevia, ...trocasManuaisAprovadas];
 
     return {
       data: dataIso,
@@ -460,6 +484,7 @@ export class MapaForcaService {
       ferias: feriasPrevia,
       escalaEspecialAtos: atosEspeciais,
       trocasEscalaEspecial: ajustes.trocasEscalaEspecial,
+      empenhosEscalaEspecial: ajustes.empenhosEscalaEspecial ?? [],
       swapsMilitares: ajustes.swapsMilitares,
       overridesMergulho: ajustes.overridesMergulho,
       overridesParesRecursos: ajustes.overridesParesRecursos,

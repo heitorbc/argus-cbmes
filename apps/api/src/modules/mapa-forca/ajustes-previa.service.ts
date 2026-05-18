@@ -6,13 +6,30 @@ import {
   Injectable,
 } from '@nestjs/common';
 import type {
+  AddEscalaEspecialEmpenhoInput,
   AddTrocaEscalaEspecialInput,
   AjustesPrevia,
   EscalaEspecialAtoLight,
+  EscalaEspecialEmpenho,
+  StatusAprovacao,
   TrocaEscalaEspecial,
   UpsertAjustesPreviaInput,
 } from '@argus/shared-types';
 import { ServicoService } from '../servico/servico.service';
+
+/**
+ * S2.10.7b — Tipo de item sujeito a aprovação individual pelo Fiscal.
+ * Cada tipo usa um identificador estável distinto:
+ *  - `troca`     → trocaId = `${substitutoNf ?? substitutoRaw}|${periodo}` (mesma dedup key)
+ *  - `dispensa`  → dispensaId (UUID do cadastro)
+ *  - `atestado`  → atestadoId (UUID do cadastro)
+ */
+export type TipoItemAprovavel = 'troca' | 'dispensa' | 'atestado';
+
+/** S2.10.7b — Chave canônica do item no map de aprovações. */
+function aprovacaoKey(tipo: TipoItemAprovavel, id: string): string {
+  return `${tipo}:${id}`;
+}
 
 const VAZIO: AjustesPrevia = {
   trocas: [],
@@ -20,6 +37,7 @@ const VAZIO: AjustesPrevia = {
   notasServico: [],
   dispensas: [],
   trocasEscalaEspecial: [],
+  empenhosEscalaEspecial: [],
   swapsMilitares: [],
   overridesMergulho: [],
   overridesParesRecursos: [],
@@ -43,6 +61,13 @@ const VAZIO: AjustesPrevia = {
 @Injectable()
 export class AjustesPreviaService {
   private readonly byData: Map<string, AjustesPrevia> = new Map();
+  /**
+   * S2.10.7b — Decisões de aprovação individual armazenadas separadamente
+   * dos ajustes pré-turno. Permite aprovar/rejeitar itens derivados (trocas
+   * autorizadas, dispensas, atestados) sem mexer no contrato `AjustesPrevia`.
+   * Chave externa: data ISO; chave interna: `${tipo}:${id}`.
+   */
+  private readonly aprovacoesByData: Map<string, Map<string, StatusAprovacao>> = new Map();
 
   constructor(
     @Inject(forwardRef(() => ServicoService))
@@ -51,6 +76,11 @@ export class AjustesPreviaService {
 
   get(dataIso: string): AjustesPrevia {
     return this.byData.get(dataIso) ?? VAZIO;
+  }
+
+  /** S2.10.7b — Lê todas as decisões de aprovação para o dia. */
+  getAprovacoes(dataIso: string): ReadonlyMap<string, StatusAprovacao> {
+    return this.aprovacoesByData.get(dataIso) ?? new Map();
   }
 
   /**
@@ -100,6 +130,9 @@ export class AjustesPreviaService {
       // upsert preserva trocasEscalaEspecial existentes — o cliente gerencia via add/remove dedicados
       trocasEscalaEspecial:
         this.byData.get(dataIso)?.trocasEscalaEspecial ?? input.trocasEscalaEspecial,
+      // S2.10.7b — empenhos gerenciados via add/remove dedicados (similar a trocasEscalaEspecial)
+      empenhosEscalaEspecial:
+        this.byData.get(dataIso)?.empenhosEscalaEspecial ?? input.empenhosEscalaEspecial ?? [],
       // S0.5 — cliente gerencia swapsMilitares via PUT inteiro (mesmo padrão de `trocas`).
       swapsMilitares: input.swapsMilitares,
       // S0.x/Fix-Mergulho — cliente gerencia overridesMergulho via PUT inteiro.
@@ -170,12 +203,126 @@ export class AjustesPreviaService {
     return true;
   }
 
+  /**
+   * S2.10.7b — Aprovação individual de um item da Prévia (troca, dispensa
+   * ou atestado). Idempotente: re-emitir a mesma decisão é no-op. Aplica o
+   * mesmo gate de edição da Prévia (PREVIA_INICIADA + Fiscal escalado, ou
+   * admin).
+   */
+  setAprovacaoItem(
+    dataIso: string,
+    tipo: TipoItemAprovavel,
+    id: string,
+    decisao: 'aprovar' | 'rejeitar',
+    nf: string,
+    isAdmin = false,
+  ): StatusAprovacao {
+    this.ensureEditable(dataIso, nf, isAdmin);
+    const status: StatusAprovacao = decisao === 'aprovar' ? 'aprovada' : 'rejeitada';
+    const map = this.aprovacoesByData.get(dataIso) ?? new Map<string, StatusAprovacao>();
+    map.set(aprovacaoKey(tipo, id), status);
+    this.aprovacoesByData.set(dataIso, map);
+    return status;
+  }
+
+  /**
+   * S2.10.7b — Registra um empenho de Escala Especial. Substitui se já existir
+   * empenho para o mesmo (ato|recursoAlvo|funcaoAlvo).
+   */
+  addEmpenhoEscalaEspecial(
+    dataIso: string,
+    input: AddEscalaEspecialEmpenhoInput,
+    registradoPorNf: string,
+    isAdmin = false,
+  ): EscalaEspecialEmpenho {
+    this.ensureEditable(dataIso, registradoPorNf, isAdmin);
+    if (input.atoOriginal.data !== dataIso) {
+      throw new BadRequestException(
+        `Ato é do dia ${input.atoOriginal.data} mas empenho está sendo registrado para ${dataIso}.`,
+      );
+    }
+    if (input.periodoFim <= input.periodoInicio) {
+      throw new BadRequestException(
+        `Período inválido: fim (${input.periodoFim}) deve ser maior que início (${input.periodoInicio}).`,
+      );
+    }
+    const current: AjustesPrevia = this.byData.get(dataIso) ?? { ...VAZIO };
+    const key = empenhoKey(input.atoOriginal, input.recursoAlvo, input.funcaoAlvo);
+    const existentes = current.empenhosEscalaEspecial ?? [];
+    const filtered = existentes.filter(
+      (e) => empenhoKey(e.atoOriginal, e.recursoAlvo, e.funcaoAlvo) !== key,
+    );
+    const novoEmpenho: EscalaEspecialEmpenho = {
+      atoOriginal: input.atoOriginal,
+      recursoAlvo: input.recursoAlvo,
+      funcaoAlvo: input.funcaoAlvo,
+      periodoInicio: input.periodoInicio,
+      periodoFim: input.periodoFim,
+      substituidoNf: input.substituidoNf,
+      substituidoRaw: input.substituidoRaw,
+      destinoSubstituido: input.destinoSubstituido,
+      registradoEm: new Date().toISOString(),
+      registradoPorNf,
+    };
+    const updated: AjustesPrevia = {
+      ...current,
+      empenhosEscalaEspecial: [...filtered, novoEmpenho],
+    };
+    this.byData.set(dataIso, updated);
+    return novoEmpenho;
+  }
+
+  /** S2.10.7b — Remove um empenho pelo identificador `ato|recurso|funcao`. */
+  removeEmpenhoEscalaEspecial(
+    dataIso: string,
+    empenhoKeyEncoded: string,
+    nf?: string,
+    isAdmin = false,
+  ): boolean {
+    this.ensureEditable(dataIso, nf, isAdmin);
+    const current = this.byData.get(dataIso);
+    if (!current?.empenhosEscalaEspecial) return false;
+    const before = current.empenhosEscalaEspecial.length;
+    const filtered = current.empenhosEscalaEspecial.filter(
+      (e) => empenhoKey(e.atoOriginal, e.recursoAlvo, e.funcaoAlvo) !== empenhoKeyEncoded,
+    );
+    if (filtered.length === before) return false;
+    this.byData.set(dataIso, { ...current, empenhosEscalaEspecial: filtered });
+    return true;
+  }
+
   reset(dataIso: string): void {
     this.byData.delete(dataIso);
+    this.aprovacoesByData.delete(dataIso);
   }
 }
 
 /** Chave canônica para um ato da Escala Especial. Usada no lookup de trocas. */
 export function atoKey(ato: EscalaEspecialAtoLight): string {
   return `${ato.data}|${ato.militarRaw}|${ato.horario}|${ato.funcao}`;
+}
+
+/**
+ * S2.10.7b — Chave canônica para um empenho de Escala Especial. Combina ato +
+ * recurso + função alvo (mesmo ato pode ter empenhos em recursos distintos).
+ */
+export function empenhoKey(
+  ato: EscalaEspecialAtoLight,
+  recursoAlvo: string,
+  funcaoAlvo: string,
+): string {
+  return `${atoKey(ato)}|${recursoAlvo}|${funcaoAlvo}`;
+}
+
+/**
+ * S2.10.7b — Identificador estável de uma troca derivada da planilha
+ * (combina substituto + período, mesma chave usada na dedup).
+ */
+export function trocaApprovalId(input: {
+  substitutoNf?: string;
+  substitutoRaw: string;
+  periodo: string;
+}): string {
+  const sub = input.substitutoNf ?? input.substitutoRaw.trim().toLowerCase();
+  return `${sub}|${input.periodo}`;
 }
