@@ -1,117 +1,144 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
 import {
   calcularSaldoMilitar,
   dispensaAtivaNoDia,
+  ORIGEM_DISPENSA,
   type CreateDispensaInput,
   type Dispensa,
   type DispensaSaldoMilitar,
+  type OrigemDispensa,
+  type TipoDispensa,
   type UpdateDispensaInput,
 } from '@argus/shared-types';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import type { Dispensa as PrismaDispensa } from '@prisma/client';
+import { DispensasImportService } from './dispensas-import.service';
 
 /**
- * S6j — CRUD de Dispensas + cálculo de saldo por militar/ano.
+ * S6j/S2.10.7d — CRUD de Dispensas em Prisma + sync transparente da
+ * planilha externa "Dispensas 2026".
  *
- * Persistência in-memory (Fase 1) keyed por `id`. Em S5b vira tabela com
- * índice por `militarNf` e `dataInicio`.
+ * Antes (S6j): persistência in-memory (Map). Agora (S2.10.7d) usa Prisma
+ * `dispensa` table. Toda chamada de `list()` ou `listAtivasNoDia()` dispara
+ * `syncIfStale()` fire-and-forget (cache TTL 5min no DispensasImportService).
  */
 @Injectable()
 export class DispensasService {
-  private readonly byId: Map<string, Dispensa> = new Map();
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly importSvc: DispensasImportService,
+  ) {}
 
-  list(filter: { militarNf?: string; ano?: number } = {}): Dispensa[] {
-    let result = Array.from(this.byId.values());
-    if (filter.militarNf) {
-      result = result.filter((d) => d.militarNf === filter.militarNf);
-    }
+  async list(filter: { militarNf?: string; ano?: number } = {}): Promise<Dispensa[]> {
+    // S2.10.7d — sync transparente (fire-and-forget; não bloqueia)
+    void this.importSvc.syncIfStale();
+
+    const where: Record<string, unknown> = { deletedAt: null };
+    if (filter.militarNf) where.militarNf = filter.militarNf;
     if (filter.ano !== undefined) {
-      result = result.filter((d) => Number(d.dataInicio.slice(0, 4)) === filter.ano);
+      where.dataInicio = {
+        gte: `${filter.ano}-01-01`,
+        lte: `${filter.ano}-12-31`,
+      };
     }
-    return result.sort((a, b) => b.dataInicio.localeCompare(a.dataInicio));
+    const rows = await this.prisma.dispensa.findMany({
+      where,
+      orderBy: [{ dataInicio: 'desc' }, { criadoEm: 'desc' }],
+    });
+    return rows.map(toDispensa);
   }
 
-  findById(id: string): Dispensa {
-    const d = this.byId.get(id);
-    if (!d) throw new NotFoundException(`Dispensa ${id} não encontrada`);
-    return d;
+  async findById(id: string): Promise<Dispensa> {
+    const row = await this.prisma.dispensa.findFirst({ where: { id, deletedAt: null } });
+    if (!row) throw new NotFoundException(`Dispensa ${id} não encontrada`);
+    return toDispensa(row);
   }
 
   /** Lista dispensas ativas em um dia específico (S6j integração Prévia). */
-  listAtivasNoDia(dataIso: string): Dispensa[] {
-    return Array.from(this.byId.values())
+  async listAtivasNoDia(dataIso: string): Promise<Dispensa[]> {
+    void this.importSvc.syncIfStale();
+    // Filtra dispensas onde dataIso ∈ [dataInicio, dataInicio + dias).
+    // Postgres não tem aritmética de data em string fácil, então pegamos
+    // todas as não-deletadas com dataInicio <= dataIso e filtramos em JS.
+    const candidatas = await this.prisma.dispensa.findMany({
+      where: { deletedAt: null, dataInicio: { lte: dataIso } },
+    });
+    return candidatas
+      .map(toDispensa)
       .filter((d) => dispensaAtivaNoDia(d, dataIso))
       .sort((a, b) => a.militarNf.localeCompare(b.militarNf));
   }
 
-  create(input: CreateDispensaInput, criadoPorNf: string): Dispensa {
-    const now = new Date().toISOString();
-    const dispensa: Dispensa = {
-      id: `disp:${randomUUID()}`,
-      militarNf: input.militarNf,
-      tipo: input.tipo,
-      dataInicio: input.dataInicio,
-      dias: input.dias,
-      numeroEdocs: input.numeroEdocs?.trim() || undefined,
-      observacoes: input.observacoes?.trim() || undefined,
-      criadoEm: now,
-      criadoPorNf,
-    };
-    this.byId.set(dispensa.id, dispensa);
-    return dispensa;
+  async create(input: CreateDispensaInput, criadoPorNf: string): Promise<Dispensa> {
+    const row = await this.prisma.dispensa.create({
+      data: {
+        militarNf: input.militarNf,
+        tipo: input.tipo,
+        dataInicio: input.dataInicio,
+        dias: input.dias,
+        numeroEdocs: input.numeroEdocs?.trim() || null,
+        observacoes: input.observacoes?.trim() || null,
+        minuta: input.minuta?.trim() || null,
+        equipe: input.equipe?.trim() || null,
+        origem: 'manual',
+        criadoPorNf,
+      },
+    });
+    return toDispensa(row);
   }
 
-  update(id: string, input: UpdateDispensaInput): Dispensa {
-    const current = this.findById(id);
-    const updated: Dispensa = {
-      ...current,
-      tipo: input.tipo ?? current.tipo,
-      dataInicio: input.dataInicio ?? current.dataInicio,
-      dias: input.dias ?? current.dias,
-      numeroEdocs: input.numeroEdocs?.trim() ?? current.numeroEdocs,
-      observacoes: input.observacoes?.trim() ?? current.observacoes,
-    };
-    this.byId.set(id, updated);
-    return updated;
+  async update(id: string, input: UpdateDispensaInput): Promise<Dispensa> {
+    const current = await this.findById(id);
+    const row = await this.prisma.dispensa.update({
+      where: { id },
+      data: {
+        tipo: input.tipo ?? current.tipo,
+        dataInicio: input.dataInicio ?? current.dataInicio,
+        dias: input.dias ?? current.dias,
+        numeroEdocs: input.numeroEdocs?.trim() ?? current.numeroEdocs ?? null,
+        observacoes: input.observacoes?.trim() ?? current.observacoes ?? null,
+        minuta: input.minuta?.trim() ?? current.minuta ?? null,
+        equipe: input.equipe?.trim() ?? current.equipe ?? null,
+      },
+    });
+    return toDispensa(row);
   }
 
-  remove(id: string): void {
-    if (!this.byId.has(id)) {
-      throw new NotFoundException(`Dispensa ${id} não encontrada`);
-    }
-    this.byId.delete(id);
+  async remove(id: string): Promise<void> {
+    const found = await this.prisma.dispensa.findFirst({ where: { id, deletedAt: null } });
+    if (!found) throw new NotFoundException(`Dispensa ${id} não encontrada`);
+    await this.prisma.dispensa.update({ where: { id }, data: { deletedAt: new Date() } });
   }
 
   /** Saldo anual do militar (gozado, limite, restante por tipo). */
-  saldoMilitar(militarNf: string, ano: number): DispensaSaldoMilitar {
-    return calcularSaldoMilitar(this.list({ militarNf }), militarNf, ano);
+  async saldoMilitar(militarNf: string, ano: number): Promise<DispensaSaldoMilitar> {
+    const dispensas = await this.list({ militarNf });
+    return calcularSaldoMilitar(dispensas, militarNf, ano);
   }
 
   /** Atalho: total de dias gozados no ano por todos os tipos. */
-  totalDiasGozadosNoAno(militarNf: string, ano: number): number {
-    return this.saldoMilitar(militarNf, ano).totalGozado;
-  }
-
-  /** Atalho operacional para tests / debug. */
-  reset(): void {
-    this.byId.clear();
+  async totalDiasGozadosNoAno(militarNf: string, ano: number): Promise<number> {
+    const saldo = await this.saldoMilitar(militarNf, ano);
+    return saldo.totalGozado;
   }
 
   /**
    * S6j — usado pela criação via ajuste pré-turno: previne duplicata exata
    * de (militar+tipo+dataInicio). Retorna a dispensa existente se já houver.
    */
-  findByMilitarTipoDataInicio(
+  async findByMilitarTipoDataInicio(
     militarNf: string,
     tipo: string,
     dataInicio: string,
-  ): Dispensa | undefined {
-    return Array.from(this.byId.values()).find(
-      (d) => d.militarNf === militarNf && d.tipo === tipo && d.dataInicio === dataInicio,
-    );
+  ): Promise<Dispensa | undefined> {
+    const row = await this.prisma.dispensa.findFirst({
+      where: { militarNf, tipo, dataInicio, deletedAt: null },
+    });
+    return row ? toDispensa(row) : undefined;
   }
 
-  createOrConflict(input: CreateDispensaInput, criadoPorNf: string): Dispensa {
-    const existing = this.findByMilitarTipoDataInicio(
+  async createOrConflict(input: CreateDispensaInput, criadoPorNf: string): Promise<Dispensa> {
+    const existing = await this.findByMilitarTipoDataInicio(
       input.militarNf,
       input.tipo,
       input.dataInicio,
@@ -123,4 +150,26 @@ export class DispensasService {
     }
     return this.create(input, criadoPorNf);
   }
+}
+
+/** Conversão PrismaDispensa → shared-types Dispensa. */
+function toDispensa(row: PrismaDispensa): Dispensa {
+  const origem: OrigemDispensa = ORIGEM_DISPENSA.includes(row.origem as OrigemDispensa)
+    ? (row.origem as OrigemDispensa)
+    : 'manual';
+  return {
+    id: row.id,
+    militarNf: row.militarNf,
+    tipo: row.tipo as TipoDispensa,
+    dataInicio: row.dataInicio,
+    dias: row.dias,
+    numeroEdocs: row.numeroEdocs ?? undefined,
+    observacoes: row.observacoes ?? undefined,
+    minuta: row.minuta ?? undefined,
+    equipe: row.equipe ?? undefined,
+    origem,
+    criadoEm: row.criadoEm.toISOString(),
+    // S2.10.7d — criadoPorNf agora é nullable (sync sem User). Mapeia null → 'SYNC'.
+    criadoPorNf: row.criadoPorNf ?? 'SYNC',
+  };
 }

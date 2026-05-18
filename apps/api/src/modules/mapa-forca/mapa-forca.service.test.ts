@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type {
   ComposicaoEntry,
   EscalaMensal,
@@ -10,8 +10,10 @@ import { EscalasService } from '../escalas/escalas.service';
 import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.service';
 import {
   makeAprovacoesPrismaMock,
+  makeDispensasPrismaMock,
   makeEscalasPrismaMock,
 } from '../../common/prisma/prisma-test-mock';
+import { DispensasImportService } from '../dispensas/dispensas-import.service';
 import { FiscaisService } from '../fiscais/fiscais.service';
 import { AtestadosService } from '../atestados/atestados.service';
 import { FeriasService } from '../ferias/ferias.service';
@@ -22,6 +24,17 @@ import { IdeoService } from '../ideo/ideo.service';
 import { ServicoService } from '../servico/servico.service';
 import { AjustesPreviaService } from './ajustes-previa.service';
 import { MapaForcaService } from './mapa-forca.service';
+
+/**
+ * S2.10.7d — Helper para instanciar DispensasService com Prisma+Import mockados.
+ * Substitui `new DispensasService()` antigo (era in-memory sem deps).
+ */
+function makeDispensasService(): DispensasService {
+  const importStub = {
+    syncIfStale: vi.fn().mockResolvedValue(undefined),
+  } as unknown as DispensasImportService;
+  return new DispensasService(makeDispensasPrismaMock(), importStub);
+}
 
 function militar(p: Partial<Militar> & { nf: string; nome: string }): Militar {
   return {
@@ -219,7 +232,7 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
       new FakeChefesOperacoesService() as unknown as never,
       new ServicoService(),
       new IdeoStatusService(),
-      new DispensasService(),
+      makeDispensasService(),
       new AtestadosService(),
       new NotasServicoService(prismaMock),
       new FakeTrocasAutorizadasService() as unknown as never,
@@ -801,7 +814,7 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
       new FakeChefesOperacoesService() as unknown as never,
       new ServicoService(),
       new IdeoStatusService(),
-      new DispensasService(),
+      makeDispensasService(),
       new AtestadosService(),
       new NotasServicoService(prismaMockLocal),
       new FakeTrocasAutorizadasService() as unknown as never,
@@ -867,7 +880,7 @@ describe('MapaForcaService — aprovação de troca aplica swap (S2.10.7c)', () 
       new FakeChefesOperacoesService() as unknown as never,
       servico,
       new IdeoStatusService(),
-      new DispensasService(),
+      makeDispensasService(),
       new AtestadosService(),
       new NotasServicoService(prismaMock),
       new FakeTrocasAutorizadasService() as unknown as never,
@@ -979,7 +992,7 @@ describe('MapaForcaService — inconsistências', () => {
       new FakeChefesOperacoesService() as unknown as never,
       new ServicoService(),
       new IdeoStatusService(),
-      new DispensasService(),
+      makeDispensasService(),
       new AtestadosService(),
       new NotasServicoService(prismaMockLocal),
       new FakeTrocasAutorizadasService() as unknown as never,

@@ -373,18 +373,25 @@ model Dispensa {
   militarNf String
   militar   Militar @relation(fields: [militarNf], references: [nf])
 
-  tipo        String // I_TAF | II_RECOMPENSA | ... | VIII_DIVERSAS
+  tipo        String // I_TAF | II_EXAME | ... | VIII_DIVERSAS | IX_OUTRAS (S2.10.7d)
   dataInicio  String // YYYY-MM-DD
   dias        Int
   numeroEdocs String?
   observacoes String?
 
+  // S2.10.7d — Integração com planilha "Dispensas 2026"
+  minuta String? // Nº BG (Boletim do Geral)
+  equipe String? // A/B/C/D ou texto livre (MERGULHO/SAT)
+  origem String  @default("manual") // 'manual' | 'planilha'
+
   criadoEm     DateTime  @default(now())
-  criadoPorNf  String
-  criadoPor    User      @relation("DispensaCriadaPor", fields: [criadoPorNf], references: [nf])
+  /// S2.10.7d: nullable porque registros vindos da sync não têm User humano associado.
+  criadoPorNf  String?
+  criadoPor    User?     @relation("DispensaCriadaPor", fields: [criadoPorNf], references: [nf])
   atualizadoEm DateTime  @updatedAt
   deletedAt    DateTime?
 
+  @@unique([militarNf, dataInicio, tipo], map: "dispensas_militarNf_dataInicio_tipo_key") // S2.10.7d — idempotência sync
   @@index([militarNf, dataInicio])
   @@index([deletedAt])
   @@map("dispensas")

@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { IntegracaoStatus } from '@argus/shared-types';
 import { ChefesOperacoesService } from '../chefes-operacoes/chefes-operacoes.service';
+import { DispensasImportService } from '../dispensas/dispensas-import.service';
 import { DispensasSheetService } from '../dispensas/dispensas-sheet.service';
 import { TrocasAutorizadasService } from '../trocas-autorizadas/trocas-autorizadas.service';
 import { ViaturasQdvService } from '../viaturas/viaturas-qdv.service';
@@ -30,6 +31,7 @@ export class IntegracoesService {
     private readonly trocasAut: TrocasAutorizadasService,
     private readonly chefesOp: ChefesOperacoesService,
     private readonly dispensasSheet: DispensasSheetService,
+    private readonly dispensasImport: DispensasImportService,
     private readonly viaturasQdv: ViaturasQdvService,
     private readonly viaturasQdvExtras: ViaturasQdvExtrasService,
   ) {}
@@ -74,14 +76,34 @@ export class IntegracoesService {
       },
       {
         id: 'dispensas-sheet',
-        nome: 'Dispensas 2026 (Efetivo)',
+        nome: 'Dispensas 2026 (Efetivo) — leitura read-only',
         descricao:
-          'Aba "Dispensas 2026" da planilha Efetivo - Dados Gerais. Histórico institucional de dispensas concedidas.',
+          'Aba "Dispensas 2026" da planilha Efetivo - Dados Gerais. Leitura raw (sem upsert no banco).',
         sheetIdEnv: 'DISPENSAS_SHEET_ID',
         sheetIdDefault: '1gA17VKQNV8xlnqIhAJfu57TW1GS6VH2YDrcJZk405do',
         sheetGidOrName: 'Dispensas%202026',
         getStatus: () => this.dispensasSheet.getSyncStatus(),
         forceSync: () => this.dispensasSheet.forceSync(),
+      },
+      {
+        // S2.10.7d — Sync que persiste em Postgres (upsert por militar/data/tipo).
+        // Dispara automaticamente em GET /dispensas (cache TTL 5min).
+        id: 'dispensas-import',
+        nome: 'Dispensas 2026 → Postgres (upsert)',
+        descricao:
+          'Importa dispensas da aba "Dispensas 2026" e persiste em Postgres via upsert idempotente. Auto-sync a cada GET /dispensas (cache 5min).',
+        sheetIdEnv: 'DISPENSAS_PLANILHA_SHEET_ID',
+        sheetIdDefault: '1gA17VKQNV8xlnqIhAJfu57TW1GS6VH2YDrcJZk405do',
+        sheetGidOrName: 'gid=1986271842',
+        getStatus: () => {
+          const s = this.dispensasImport.getSyncStatus();
+          const total = s.counts ? s.counts.created + s.counts.updated : 0;
+          return { syncedAt: s.syncedAt, count: total, stale: s.stale };
+        },
+        forceSync: async () => {
+          const r = await this.dispensasImport.forceSync();
+          return { syncedAt: r.syncedAt, count: r.created + r.updated };
+        },
       },
       {
         id: 'viaturas-qdv',
