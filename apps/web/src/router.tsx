@@ -8,6 +8,8 @@ import {
 import { AuthProvider, useAuth } from '@/lib/auth-context';
 import { canAccessRoute } from '@/lib/permissions';
 import { LoginPage } from '@/pages/login';
+import { EsqueciASenhaPage } from '@/pages/esqueci-a-senha';
+import { ResetPasswordPage } from '@/pages/reset-password';
 import { PersonaPickerPage } from '@/pages/persona-picker';
 import { TrocarSenhaPage } from '@/pages/trocar-senha';
 import { HomePage } from '@/pages/home';
@@ -102,7 +104,11 @@ export const router = createBrowserRouter([
     children: [
       {
         element: <PublicOnlyRoute />,
-        children: [{ path: '/login', element: <LoginEntryPoint /> }],
+        children: [
+          { path: '/login', element: <LoginEntryPoint /> },
+          { path: '/esqueci-a-senha', element: <EsqueciASenhaPage /> },
+          { path: '/reset-password', element: <ResetPasswordPage /> },
+        ],
       },
       {
         element: <ProtectedRoute />,

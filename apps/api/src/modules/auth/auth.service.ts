@@ -21,6 +21,7 @@ import type {
   UserSession,
 } from '@argus/shared-types';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { EfetivoService } from '../efetivo/efetivo.service';
 import { LoginRateLimiter } from './login-rate-limiter';
 
 /** S2.7 — Senha default para usuários criados via admin. */
@@ -36,6 +37,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly rateLimiter: LoginRateLimiter,
+    private readonly efetivo: EfetivoService,
   ) {}
 
   async login(input: LoginInput): Promise<{ user: UserSession; token: string }> {
@@ -48,7 +50,12 @@ export class AuthService {
       );
     }
 
-    const user = await this.findActiveByNf(input.nf);
+    // S2.10.4 — auto-provision: se o NF existe no Efetivo mas não há User,
+    // cria com senha padrão + primeiroAcesso=true. Continua o fluxo normal.
+    let user = await this.findActiveByNf(input.nf);
+    if (!user) {
+      user = await this.tryProvisionFromEfetivo(input.nf);
+    }
     if (!user) {
       this.rateLimiter.registerFailure(input.nf);
       throw new UnauthorizedException('NF ou senha inválidos');
@@ -83,11 +90,29 @@ export class AuthService {
       throw new UnauthorizedException('Senha atual incorreta');
     }
 
+    // S2.10.4 — email obrigatório no 1º acesso (validado pelo frontend).
+    // Backend confia: se vier, persiste; se não vier e já tem, mantém.
+    if (user.primeiroAcesso && !input.email && !user.email) {
+      throw new ConflictException('E-mail é obrigatório no primeiro acesso');
+    }
+
+    // Email único: se vier um e já existir em outro user, rejeita 409.
+    if (input.email && input.email !== user.email) {
+      const conflict = await this.prisma.user.findUnique({ where: { email: input.email } });
+      if (conflict && conflict.nf !== nf) {
+        throw new ConflictException('E-mail já está em uso por outro usuário');
+      }
+    }
+
     const cost = this.bcryptCost();
     const senhaHash = await bcrypt.hash(input.novaSenha, cost);
     const updated = await this.prisma.user.update({
       where: { nf },
-      data: { senhaHash, primeiroAcesso: false },
+      data: {
+        senhaHash,
+        primeiroAcesso: false,
+        ...(input.email ? { email: input.email } : {}),
+      },
     });
     return this.toSession(updated);
   }
@@ -96,8 +121,7 @@ export class AuthService {
    * Login sem senha — usado pelo persona-picker de homologação.
    *
    * **Gated por env flag `ARGUS_PERSONA_PICKER=true`** no controller.
-   * Não chamar em produção. Emite JWT com `primeiroAcesso=false` sempre
-   * (não há senha pra trocar nesse modo).
+   * Não chamar em produção.
    */
   async loginAsPersona(nf: string): Promise<{ user: UserSession; token: string }> {
     const user = await this.findActiveByNf(nf);
@@ -109,10 +133,6 @@ export class AuthService {
     return { user: session, token };
   }
 
-  /**
-   * Lista personas disponíveis para o picker (apenas campos públicos —
-   * NUNCA expõe `senhaHash`).
-   */
   async listPersonas(): Promise<
     Array<{ nf: string; nome: string; posto: string; papeis: UserSession['papeis'] }>
   > {
@@ -145,10 +165,12 @@ export class AuthService {
     return {
       nf: user.nf,
       nome: user.nome,
+      nomeGuerra: user.nomeGuerra ?? undefined,
       posto: user.posto,
       ant: user.ant,
       papeis: user.papeis as Papel[],
       primeiroAcesso: user.primeiroAcesso,
+      email: user.email ?? undefined,
     };
   }
 
@@ -160,9 +182,42 @@ export class AuthService {
     return Number(this.config.get<string>('BCRYPT_COST') ?? 12);
   }
 
+  /**
+   * S2.10.4 — Cria User para militar do Efetivo que tenta login pela 1ª vez.
+   * Tolerante a falha do EfetivoService (cache stale ou serviço externo down)
+   * — retorna null se não conseguir confirmar o militar.
+   */
+  private async tryProvisionFromEfetivo(nf: string): Promise<User | null> {
+    let militar;
+    try {
+      militar = await this.efetivo.findByNf(nf);
+    } catch {
+      return null;
+    }
+    if (!militar) return null;
+
+    const senhaHash = await bcrypt.hash(DEFAULT_SENHA, this.bcryptCost());
+    try {
+      return await this.prisma.user.create({
+        data: {
+          nf: militar.nf,
+          nome: militar.nome,
+          nomeGuerra: militar.nomeGuerra ?? null,
+          posto: militar.posto,
+          ant: militar.ant,
+          papeis: ['militar'],
+          senhaHash,
+          primeiroAcesso: true,
+        },
+      });
+    } catch {
+      // Race condition: outro request criou primeiro — busca o que existe.
+      return this.findActiveByNf(nf);
+    }
+  }
+
   // ── S2.7 — Admin CRUD de usuários ───────────────────────────────
 
-  /** Lista todos os usuários (sem campos sensíveis), ordenados por nome. */
   async listUsuarios(): Promise<UserSession[]> {
     const users = await this.prisma.user.findMany({
       where: { deletedAt: null },
@@ -171,10 +226,6 @@ export class AuthService {
     return users.map((u) => this.toSession(u));
   }
 
-  /**
-   * Cria novo usuário. NF é única — colisão rejeita com 409. Senha inicial:
-   * `senhaInicial` ou DEFAULT_SENHA. `primeiroAcesso` sempre true.
-   */
   async createUsuario(input: CreateUsuarioInput): Promise<UserSession> {
     const existing = await this.prisma.user.findUnique({ where: { nf: input.nf } });
     if (existing && !existing.deletedAt) {
@@ -192,17 +243,12 @@ export class AuthService {
       primeiroAcesso: true,
       deletedAt: null,
     };
-    // Se existia soft-deleted, ressuscita; caso contrário cria.
     const user = existing
       ? await this.prisma.user.update({ where: { nf: input.nf }, data })
       : await this.prisma.user.create({ data });
     return this.toSession(user);
   }
 
-  /**
-   * Atualiza usuário existente. NF é imutável. `resetSenha=true` reseta
-   * para DEFAULT_SENHA e marca primeiroAcesso=true.
-   */
   async updateUsuario(nf: string, input: UpdateUsuarioInput): Promise<UserSession> {
     const user = await this.findActiveByNf(nf);
     if (!user) {
@@ -228,7 +274,6 @@ export class AuthService {
     return this.toSession(updated);
   }
 
-  /** Soft delete. Não permite auto-deleção (admin não pode deletar a si mesmo). */
   async removeUsuario(nf: string, currentUserNf: string): Promise<void> {
     if (nf === currentUserNf) {
       throw new ConflictException('Você não pode remover sua própria conta');
@@ -238,5 +283,24 @@ export class AuthService {
       throw new NotFoundException(`Usuário NF ${nf} não encontrado`);
     }
     await this.prisma.user.update({ where: { nf }, data: { deletedAt: new Date() } });
+  }
+
+  /**
+   * S2.10.4 — Troca senha via reset token Supabase (sem precisar de
+   * senha atual). Caller (`AuthController`) já validou o token via
+   * `AuthSupabaseService.validateResetToken()` e passa o email aqui.
+   */
+  async resetPasswordByEmail(email: string, novaSenha: string): Promise<UserSession> {
+    const user = await this.prisma.user.findFirst({ where: { email, deletedAt: null } });
+    if (!user) {
+      throw new UnauthorizedException('Usuário não encontrado para o email informado');
+    }
+    const cost = this.bcryptCost();
+    const senhaHash = await bcrypt.hash(novaSenha, cost);
+    const updated = await this.prisma.user.update({
+      where: { nf: user.nf },
+      data: { senhaHash, primeiroAcesso: false },
+    });
+    return this.toSession(updated);
   }
 }

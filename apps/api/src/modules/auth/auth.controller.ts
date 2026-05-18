@@ -18,16 +18,24 @@ import { z } from 'zod';
 import {
   changePasswordInputSchema,
   createUsuarioInputSchema,
+  forgotPasswordInputSchema,
   loginInputSchema,
+  senhaForteSchema,
   updateUsuarioInputSchema,
   type ChangePasswordResponse,
   type LoginResponse,
   type UserSession,
 } from '@argus/shared-types';
 import { AuthService, JWT_TTL_SECONDS } from './auth.service';
+import { AuthSupabaseService } from './auth-supabase.service';
 import { Public } from './decorators/public.decorator';
 import { Roles } from './decorators/roles.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
+
+const resetPasswordInputSchema = z.object({
+  accessToken: z.string().min(1, 'Token obrigatório'),
+  novaSenha: senhaForteSchema,
+});
 
 const personaLoginSchema = z.object({ nf: z.string().min(1) });
 
@@ -37,6 +45,7 @@ const COOKIE_NAME = 'argus_session';
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
+    private readonly authSupabase: AuthSupabaseService,
     private readonly config: ConfigService,
   ) {}
 
@@ -63,6 +72,51 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   logout(@Res({ passthrough: true }) res: Response): void {
     res.clearCookie(COOKIE_NAME, { path: '/' });
+  }
+
+  /**
+   * S2.10.4 — Solicita envio de email de recuperação. Sem email cadastrado
+   * retorna 400 explícito ("Contate o administrador"); demais erros viram
+   * 503 ("Recuperação por email não configurada / indisponível").
+   */
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async forgotPassword(@Body() body: unknown): Promise<void> {
+    const parsed = forgotPasswordInputSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.errors.map((e) => e.message));
+    }
+    await this.authSupabase.requestPasswordReset(parsed.data.nf);
+  }
+
+  /**
+   * S2.10.4 — Troca senha via token Supabase recebido pelo magic link.
+   * Frontend extrai `access_token` do fragment da URL de retorno do email
+   * e envia aqui para validação + troca atômica.
+   */
+  @Public()
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(
+    @Body() body: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<LoginResponse> {
+    const parsed = resetPasswordInputSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.errors.map((e) => e.message));
+    }
+    const validated = await this.authSupabase.validateResetToken(parsed.data.accessToken);
+    if (!validated) {
+      throw new BadRequestException('Token de recuperação inválido ou expirado.');
+    }
+    const updated = await this.authService.resetPasswordByEmail(
+      validated.email,
+      parsed.data.novaSenha,
+    );
+    const token = await this.authService.signToken(updated);
+    this.setSessionCookie(res, token);
+    return { user: updated, token };
   }
 
   @Get('me')

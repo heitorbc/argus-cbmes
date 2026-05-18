@@ -196,6 +196,19 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
+  // S2.10.4 — Recuperação de senha por email
+  forgotPassword: (nf: string) =>
+    request<void>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ nf }),
+    }),
+
+  resetPassword: (accessToken: string, novaSenha: string) =>
+    request<LoginResponse>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ accessToken, novaSenha }),
+    }),
+
   // Persona Picker (homologação, env-gated)
   listPersonas: () => request<PersonaSummary[]>('/auth/dev/personas'),
 

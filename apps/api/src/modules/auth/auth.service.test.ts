@@ -22,8 +22,12 @@ function makePrismaMock(seed: User[]): PrismaService {
       if (!u || u.deletedAt) return null;
       return u;
     },
-    findUnique: async ({ where }: { where: { nf: string } }) => {
-      return store.get(where.nf) ?? null;
+    findUnique: async ({ where }: { where: { nf?: string; email?: string } }) => {
+      if (where.nf) return store.get(where.nf) ?? null;
+      if (where.email) {
+        for (const u of store.values()) if (u.email === where.email) return u;
+      }
+      return null;
     },
     findMany: async ({
       where,
@@ -66,11 +70,13 @@ async function seedUsers(): Promise<User[]> {
     id: `cuid-${u.nf}`,
     nf: u.nf,
     nome: u.nome,
+    nomeGuerra: null,
     posto: u.posto,
     ant: u.ant,
     papeis: u.papeis,
     senhaHash: hash,
     primeiroAcesso: true,
+    email: null,
     ultimoLoginEm: null,
     criadoEm: new Date(),
     atualizadoEm: new Date(),
@@ -93,7 +99,11 @@ async function makeService(): Promise<AuthService> {
 
   const jwt = new JwtService({ secret: 'test-secret-with-enough-bytes-for-hs256-please' });
   const prisma = makePrismaMock(await seedUsers());
-  return new AuthService(prisma, jwt, config, new LoginRateLimiter());
+  // Mock minimal do EfetivoService — auto-provision tests configuram override.
+  const efetivo = {
+    findByNf: async (_nf: string) => null,
+  } as unknown as import('../efetivo/efetivo.service').EfetivoService;
+  return new AuthService(prisma, jwt, config, new LoginRateLimiter(), efetivo);
 }
 
 const HEITOR = MOCK_USERS[0]!; // 3037509 — admin/fiscal
@@ -166,18 +176,31 @@ describe('AuthService.changePassword', () => {
   it('troca senha com sucesso e marca primeiroAcesso=false', async () => {
     const updated = await service.changePassword(HEITOR.nf, {
       senhaAtual: SENHA_DEFAULT,
-      novaSenha: 'NovaSenhaForte123',
-      confirmacao: 'NovaSenhaForte123',
+      novaSenha: 'NovaSenhaForte123!',
+      confirmacao: 'NovaSenhaForte123!',
+      // S2.10.4 — email obrigatório no 1º acesso
+      email: 'heitor@cbmes.es.gov.br',
     });
     expect(updated.primeiroAcesso).toBe(false);
+    expect(updated.email).toBe('heitor@cbmes.es.gov.br');
 
-    const loginNovo = await service.login({ nf: HEITOR.nf, senha: 'NovaSenhaForte123' });
+    const loginNovo = await service.login({ nf: HEITOR.nf, senha: 'NovaSenhaForte123!' });
     expect(loginNovo.user.nf).toBe(HEITOR.nf);
     expect(loginNovo.user.primeiroAcesso).toBe(false);
 
     await expect(service.login({ nf: HEITOR.nf, senha: SENHA_DEFAULT })).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
+  });
+
+  it('S2.10.4 — rejeita troca de senha no 1º acesso sem email', async () => {
+    await expect(
+      service.changePassword(HEITOR.nf, {
+        senhaAtual: SENHA_DEFAULT,
+        novaSenha: 'NovaSenhaForte123!',
+        confirmacao: 'NovaSenhaForte123!',
+      }),
+    ).rejects.toThrow(/E-mail é obrigatório/);
   });
 
   it('rejeita troca quando senhaAtual está incorreta', async () => {
@@ -329,6 +352,7 @@ describe('AuthService — Admin CRUD (S2.7)', () => {
       senhaAtual: 'outrasenha',
       novaSenha: 'novaSenha123!',
       confirmacao: 'novaSenha123!',
+      email: 'user9999996@cbmes.es.gov.br',
     });
     const updated = await service.updateUsuario('9999996', { resetSenha: true });
     expect(updated.primeiroAcesso).toBe(true);

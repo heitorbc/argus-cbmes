@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { useForm, type UseFormRegisterReturn } from 'react-hook-form';
+import { Controller, useForm, type UseFormRegisterReturn } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { changePasswordInputSchema, type ChangePasswordInput } from '@argus/shared-types';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError, api, setSessionToken } from '@/lib/api';
+import { PasswordInput } from '@/components/PasswordInput';
 
 export function TrocarSenhaPage() {
   const { user, setUser } = useAuth();
@@ -17,13 +18,30 @@ export function TrocarSenhaPage() {
   // (transportada via location.state quando primeiroAcesso=true).
   const senhaAtualPreenchida = (location.state as { senhaAtual?: string } | null)?.senhaAtual ?? '';
 
+  // S2.10.4 — Email obrigatório no 1º acesso, opcional nas trocas seguintes.
+  const isPrimeiroAcesso = user?.primeiroAcesso === true;
+  const emailJaCadastrado = user?.email ?? '';
+
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors },
   } = useForm<ChangePasswordInput>({
-    resolver: zodResolver(changePasswordInputSchema),
-    defaultValues: { senhaAtual: senhaAtualPreenchida, novaSenha: '', confirmacao: '' },
+    resolver: zodResolver(
+      isPrimeiroAcesso
+        ? changePasswordInputSchema.refine((d) => !!d.email && d.email.length > 0, {
+            message: 'E-mail obrigatório no primeiro acesso',
+            path: ['email'],
+          })
+        : changePasswordInputSchema,
+    ),
+    defaultValues: {
+      senhaAtual: senhaAtualPreenchida,
+      novaSenha: '',
+      confirmacao: '',
+      email: emailJaCadastrado,
+    },
   });
 
   const onSubmit = handleSubmit(async (data) => {
@@ -31,8 +49,6 @@ export function TrocarSenhaPage() {
     setSubmitting(true);
     try {
       const result = await api.changePassword(data);
-      // S2.4 — backend rotaciona o token após troca de senha; atualiza
-      // o storage Bearer para os próximos requests.
       if (result.token) setSessionToken(result.token);
       setUser(result.user);
       navigate('/', { replace: true });
@@ -52,9 +68,9 @@ export function TrocarSenhaPage() {
       <div className="w-full max-w-sm">
         <header className="mb-6 text-center">
           <h1 className="text-2xl font-bold text-cbmes-red">Trocar senha</h1>
-          {user?.primeiroAcesso && (
+          {isPrimeiroAcesso && (
             <p className="mt-2 text-sm text-slate-600">
-              Primeiro acesso: defina uma nova senha forte para continuar.
+              Primeiro acesso: defina uma nova senha forte e cadastre um e-mail para recuperação.
             </p>
           )}
         </header>
@@ -68,22 +84,46 @@ export function TrocarSenhaPage() {
             register={register('senhaAtual')}
             error={errors.senhaAtual?.message}
           />
-          <Field
-            id="novaSenha"
-            label="Nova senha"
-            type="password"
-            autoComplete="new-password"
-            hint="Mínimo 12 caracteres"
-            register={register('novaSenha')}
-            error={errors.novaSenha?.message}
+
+          <Controller
+            name="novaSenha"
+            control={control}
+            render={({ field }) => (
+              <PasswordInput
+                label="Nova senha"
+                value={field.value ?? ''}
+                onChange={field.onChange}
+                autoComplete="new-password"
+                required
+                error={errors.novaSenha?.message}
+              />
+            )}
           />
+
+          <Controller
+            name="confirmacao"
+            control={control}
+            render={({ field }) => (
+              <PasswordInput
+                label="Confirmação da nova senha"
+                value={field.value ?? ''}
+                onChange={field.onChange}
+                autoComplete="new-password"
+                showCriterios={false}
+                required
+                error={errors.confirmacao?.message}
+              />
+            )}
+          />
+
           <Field
-            id="confirmacao"
-            label="Confirmação da nova senha"
-            type="password"
-            autoComplete="new-password"
-            register={register('confirmacao')}
-            error={errors.confirmacao?.message}
+            id="email"
+            label={isPrimeiroAcesso ? 'E-mail (obrigatório no 1º acesso)' : 'E-mail (opcional)'}
+            type="email"
+            autoComplete="email"
+            hint="Usado para recuperação de senha e notificações."
+            register={register('email')}
+            error={errors.email?.message}
           />
 
           {serverError && (
