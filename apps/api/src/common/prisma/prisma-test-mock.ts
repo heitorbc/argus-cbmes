@@ -686,3 +686,131 @@ export function makeSyncLogPrismaMock(): PrismaService {
   };
   return prismaLike as unknown as PrismaService;
 }
+
+/**
+ * S2.10.8b — Mock in-memory para `trocaAutorizada` + `militar` para tests
+ * do `TrocasAutorizadasImportService`. Suporta findUnique/findMany/create/
+ * update por `id` (hash determinístico da linha).
+ */
+export function makeTrocasAutorizadasPrismaMock(): PrismaService {
+  type Row = {
+    id: string;
+    registradoEm: string;
+    emailRegistrante: string | null;
+    statusTroca: string | null;
+    statusNome: string | null;
+    dataEscala: string;
+    escaladoOriginal: string;
+    escaladoOriginalNf: string | null;
+    substituto: string;
+    substitutoNf: string | null;
+    funcao: string;
+    horario: string;
+    dataPagamento: string;
+    escaladoPagamento: string;
+    substitutoPagamento: string;
+    funcaoPagamento: string;
+    horarioPagamento: string;
+    isDobra48h: boolean;
+    numeroEdocs: string | null;
+    numeroRegistro: string | null;
+    sincronizadoEm: Date;
+  };
+  const rows = new Map<string, Row>();
+  const militares = new Map<string, Record<string, unknown> & { nf: string }>();
+
+  const trocaAutorizada = {
+    findUnique: async ({ where }: { where: { id: string }; select?: unknown }) =>
+      rows.get(where.id) ?? null,
+    findMany: async ({
+      where,
+      orderBy,
+    }: {
+      where?: { OR?: Array<{ dataEscala?: string; dataPagamento?: string }> };
+      orderBy?: unknown;
+    } = {}) => {
+      let out = Array.from(rows.values());
+      if (where?.OR) {
+        out = out.filter((r) =>
+          where.OR!.some(
+            (cond) =>
+              (cond.dataEscala !== undefined && r.dataEscala === cond.dataEscala) ||
+              (cond.dataPagamento !== undefined && r.dataPagamento === cond.dataPagamento),
+          ),
+        );
+      }
+      if (Array.isArray(orderBy)) {
+        out = out.sort(
+          (a, b) => a.dataEscala.localeCompare(b.dataEscala) || a.id.localeCompare(b.id),
+        );
+      }
+      return out;
+    },
+    create: async ({ data }: { data: Partial<Row> & { id: string } }) => {
+      const row: Row = {
+        id: data.id,
+        registradoEm: data.registradoEm ?? '',
+        emailRegistrante: (data.emailRegistrante as string | null) ?? null,
+        statusTroca: (data.statusTroca as string | null) ?? null,
+        statusNome: (data.statusNome as string | null) ?? null,
+        dataEscala: data.dataEscala ?? '',
+        escaladoOriginal: data.escaladoOriginal ?? '',
+        escaladoOriginalNf: (data.escaladoOriginalNf as string | null) ?? null,
+        substituto: data.substituto ?? '',
+        substitutoNf: (data.substitutoNf as string | null) ?? null,
+        funcao: data.funcao ?? '',
+        horario: data.horario ?? '',
+        dataPagamento: data.dataPagamento ?? '',
+        escaladoPagamento: data.escaladoPagamento ?? '',
+        substitutoPagamento: data.substitutoPagamento ?? '',
+        funcaoPagamento: data.funcaoPagamento ?? '',
+        horarioPagamento: data.horarioPagamento ?? '',
+        isDobra48h: data.isDobra48h ?? false,
+        numeroEdocs: (data.numeroEdocs as string | null) ?? null,
+        numeroRegistro: (data.numeroRegistro as string | null) ?? null,
+        sincronizadoEm: data.sincronizadoEm ?? new Date(),
+      };
+      rows.set(data.id, row);
+      return row;
+    },
+    update: async ({ where, data }: { where: { id: string }; data: Partial<Row> }) => {
+      const cur = rows.get(where.id);
+      if (!cur) throw new Error(`No troca ${where.id}`);
+      const next = { ...cur, ...data };
+      rows.set(where.id, next as Row);
+      return next as Row;
+    },
+  };
+
+  const militar = {
+    findUnique: async ({ where }: { where: { nf: string }; select?: unknown }) =>
+      militares.get(where.nf) ?? null,
+    upsert: async ({
+      where,
+      create,
+      update,
+    }: {
+      where: { nf: string };
+      create: Record<string, unknown> & { nf: string };
+      update: Record<string, unknown>;
+    }) => {
+      const existing = militares.get(where.nf);
+      if (existing) {
+        const merged = { ...existing, ...update };
+        militares.set(where.nf, merged);
+        return merged;
+      }
+      militares.set(where.nf, create);
+      return create;
+    },
+  };
+
+  const _seedMilitar = (nf: string) => militares.set(nf, { nf });
+
+  const prismaLike = {
+    trocaAutorizada,
+    militar,
+    _seedMilitar,
+  };
+  return prismaLike as unknown as PrismaService & { _seedMilitar: (nf: string) => void };
+}

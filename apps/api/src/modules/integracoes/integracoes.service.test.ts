@@ -181,13 +181,12 @@ describe('IntegracoesService (S2.10.8a — 13 sources)', () => {
     ]);
   });
 
-  it('S2.10.8a — todas as 13 sources são marcadas realtimeOnly EXCETO dispensas-import', () => {
+  it('S2.10.8b — sources persistidas (sem realtimeOnly): dispensas-import + trocas-autorizadas', () => {
     const result = svc.list();
     const realtime = result.filter((r) => r.realtimeOnly);
     const persisted = result.filter((r) => !r.realtimeOnly);
-    expect(persisted).toHaveLength(1);
-    expect(persisted[0]?.id).toBe('dispensas-import');
-    expect(realtime).toHaveLength(12);
+    expect(persisted.map((p) => p.id).sort()).toEqual(['dispensas-import', 'trocas-autorizadas']);
+    expect(realtime).toHaveLength(11);
   });
 
   it('S2.10.8a — MF CIODES está marcado como realtimeOnly + noScheduler (decisão D2)', () => {

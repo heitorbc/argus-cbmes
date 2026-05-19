@@ -111,15 +111,15 @@ export class IntegracoesService {
         forceSync: () => this.mapaForcaCiodes.forceSyncAsSource(),
       },
       {
+        // S2.10.8b — Trocas Autorizadas agora persistidas em Postgres + sync
+        // orchestrator. listAll/listByData lêem direto de prisma.trocaAutorizada.
         id: 'trocas-autorizadas',
-        nome: 'Trocas Autorizadas',
+        nome: 'Trocas Autorizadas → Postgres (upsert)',
         descricao:
-          'Planilha institucional de trocas autorizadas pelo Comando. Alimenta automaticamente as trocas de serviço da Prévia/PD.',
+          'Planilha institucional de trocas autorizadas pelo Comando. Sincronizada no startup, cron 00/06/12/18h e auto em cada GET (cache 5min). Persiste em Postgres via upsert idempotente por hash da linha.',
         sheetIdEnv: 'TROCAS_AUT_SHEET_ID',
         sheetIdDefault: '1IjD4XskscfL5w4bCw5lP5qTNIZi5307XJKc3yGWK4D8',
         sheetGidOrName: 'gid=1799360305',
-        realtimeOnly: true,
-        noScheduler: true,
         getStatus: () => this.trocasAut.getSyncStatus(),
         forceSync: () => this.trocasAut.forceSync(),
       },
