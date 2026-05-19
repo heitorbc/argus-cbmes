@@ -48,6 +48,7 @@ import type {
   HealthStatus,
   IncidenteBaon,
   IntegracaoStatus,
+  SyncLogEntry,
   IseoHospitalEntry,
   IseoHospitalSyncStatus,
   LocalFaxina,
@@ -744,6 +745,23 @@ export const api = {
     request<IntegracaoStatus>(`/integracoes/${encodeURIComponent(id)}/sync`, {
       method: 'POST',
     }),
+
+  /**
+   * S2.10.8a — Histórico de syncs (auditoria) opcionalmente filtrado por fonte.
+   */
+  integracoesHistorico: (fonte?: string, limit?: number) => {
+    const params = new URLSearchParams();
+    if (fonte) params.set('fonte', fonte);
+    if (limit !== undefined) params.set('limit', String(limit));
+    const qs = params.toString();
+    return request<SyncLogEntry[]>(`/integracoes/historico${qs ? `?${qs}` : ''}`);
+  },
+
+  /**
+   * S2.10.8a — Dispara sync de TODAS as sources registradas no orchestrator
+   * (admin). Retorna 1 log por source.
+   */
+  integracoesSyncAll: () => request<SyncLogEntry[]>('/integracoes/sync-all', { method: 'POST' }),
 
   // Férias (item 4)
   feriasList: (filter: { militarNf?: string; ano?: number } = {}) => {

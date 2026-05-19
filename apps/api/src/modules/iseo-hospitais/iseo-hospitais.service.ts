@@ -118,6 +118,37 @@ export class IseoHospitaisService {
     return this.getSyncStatus();
   }
 
+  /**
+   * S2.10.8a — Status agregado (soma counts de todas as abas) compatível com
+   * SourceConfig do IntegracoesService. `syncedAt` = a mais recente entre as
+   * abas; `stale` = qualquer aba com cache expirado.
+   */
+  getSyncStatusAgregado(): { syncedAt: string | null; count: number; stale: boolean } {
+    const statuses = this.getSyncStatus();
+    const populated = statuses.filter((s) => s.syncedAt !== null);
+    if (populated.length === 0) return { syncedAt: null, count: 0, stale: false };
+    const count = statuses.reduce((acc, s) => acc + s.count, 0);
+    const stale = statuses.some((s) => s.stale);
+    const syncedAt = populated
+      .map((s) => s.syncedAt as string)
+      .sort()
+      .pop() as string;
+    return { syncedAt, count, stale };
+  }
+
+  /**
+   * S2.10.8a — Adapter para SourceConfig: agrega todas as abas em
+   * `{syncedAt, count}` único após forceSync das múltiplas abas.
+   */
+  async forceSyncAsSource(): Promise<{ syncedAt: string; count: number }> {
+    await this.forceSync();
+    const agg = this.getSyncStatusAgregado();
+    return {
+      syncedAt: agg.syncedAt ?? new Date().toISOString(),
+      count: agg.count,
+    };
+  }
+
   private sheetNames(): string[] {
     const raw = this.config.get<string>('ISEO_SHEET_NAMES');
     if (raw && raw.trim()) {

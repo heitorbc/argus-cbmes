@@ -42,6 +42,33 @@ export class QdiService {
     };
   }
 
+  /**
+   * S2.10.8a — Status visível em `/configuracoes/integracoes`. Como QDI é
+   * real-time (não persiste em Postgres), o `count` reflete o tamanho do
+   * cache atual e `stale=true` quando TTL expirou.
+   */
+  getSyncStatus(): { syncedAt: string | null; count: number; stale: boolean } {
+    if (!this.cache) return { syncedAt: null, count: 0, stale: false };
+    const stale = Date.now() - this.cache.syncedAt >= CACHE_TTL_MS;
+    return {
+      syncedAt: new Date(this.cache.syncedAt).toISOString(),
+      count: this.cache.byNf.size,
+      stale,
+    };
+  }
+
+  /** S2.10.8a — Força resync (admin). Lança ServiceUnavailable se falhar. */
+  async forceSync(): Promise<{ syncedAt: string; count: number }> {
+    try {
+      const entry = await this.fetchAndParse();
+      this.cache = entry;
+      return { syncedAt: new Date(entry.syncedAt).toISOString(), count: entry.byNf.size };
+    } catch (err) {
+      this.logger.error(`forceSync QDI falhou: ${(err as Error).message}`);
+      throw new ServiceUnavailableException('Não foi possível sincronizar com a planilha QDI.');
+    }
+  }
+
   private async getEntry(): Promise<{ entry: CacheEntry; stale: boolean }> {
     const now = Date.now();
 

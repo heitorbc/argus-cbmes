@@ -38,6 +38,11 @@ export interface SyncResult {
  */
 @Injectable()
 export class DispensasImportService {
+  /** S2.10.8a — Identifier estável para o SyncOrchestrator. */
+  readonly id = 'dispensas-import';
+  /** S2.10.8a — Nome amigável exibido em /configuracoes/integracoes. */
+  readonly nome = 'Dispensas 2026 → Postgres (upsert)';
+
   private readonly logger = new Logger(DispensasImportService.name);
   private lastSync: SyncResult | null = null;
   private lastSyncAtMs: number | null = null;

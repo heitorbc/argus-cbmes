@@ -63,6 +63,30 @@ export class MapaForcaCiodesService {
     return recursos.find((r) => r.recurso === recurso) ?? null;
   }
 
+  /**
+   * S2.10.8a — Status visível em `/configuracoes/integracoes`. Mapa Força
+   * CIODES é REAL-TIME ONLY por decisão D2 do plano (não persiste em Postgres
+   * pois sofre edições frequentes diretamente na planilha).
+   */
+  getSyncStatus(): { syncedAt: string | null; count: number; stale: boolean } {
+    if (!this.cache) return { syncedAt: null, count: 0, stale: false };
+    const stale = Date.now() - this.cache.syncedAt >= CACHE_TTL_MS;
+    return {
+      syncedAt: new Date(this.cache.syncedAt).toISOString(),
+      count: this.cache.recursos.length,
+      stale,
+    };
+  }
+
+  /**
+   * S2.10.8a — Adapter para SourceConfig do IntegracoesService. Devolve
+   * `{syncedAt, count}` em vez de `MapaForcaSnapshot` para uniformidade.
+   */
+  async forceSyncAsSource(): Promise<{ syncedAt: string; count: number }> {
+    const snapshot = await this.forceSync();
+    return { syncedAt: snapshot.syncedAt, count: snapshot.recursos.length };
+  }
+
   /** Força resync, ignorando cache. */
   async forceSync(): Promise<MapaForcaSnapshot> {
     const previous = this.cache;

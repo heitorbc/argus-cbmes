@@ -57,7 +57,44 @@ function makeFakeExtras(): FakeExtrasService {
   };
 }
 
-describe('IntegracoesService', () => {
+/** S2.10.8a — Fakes para os novos services real-time-only adicionados ao menu. */
+function makeFakeQdi(): FakeSheetService {
+  return makeFakeService({ syncedAt: null, count: 0, stale: false });
+}
+
+function makeFakeIseo() {
+  let status: SyncStatus = { syncedAt: null, count: 0, stale: false };
+  return {
+    getSyncStatusAgregado: () => status,
+    forceSyncAsSource: vi.fn(async () => {
+      status = { syncedAt: '2026-05-13T12:00:00.000Z', count: 50, stale: false };
+      return { syncedAt: status.syncedAt!, count: status.count };
+    }),
+  };
+}
+
+function makeFakeMfCiodes() {
+  let status: SyncStatus = { syncedAt: null, count: 0, stale: false };
+  return {
+    getSyncStatus: () => status,
+    forceSyncAsSource: vi.fn(async () => {
+      status = { syncedAt: '2026-05-13T12:00:00.000Z', count: 25, stale: false };
+      return { syncedAt: status.syncedAt!, count: status.count };
+    }),
+  };
+}
+
+function makeFakeSheetsDb() {
+  return {
+    getSyncStatusAsSource: () => ({ syncedAt: null, count: 0, stale: false }),
+    forceSyncAsSource: vi.fn(async () => ({
+      syncedAt: '2026-05-13T12:00:00.000Z',
+      count: 3,
+    })),
+  };
+}
+
+describe('IntegracoesService (S2.10.8a — 13 sources)', () => {
   let svc: IntegracoesService;
   let trocasAut: FakeSheetService;
   let chefesOp: FakeSheetService;
@@ -79,6 +116,11 @@ describe('IntegracoesService', () => {
   };
   let viaturasQdv: FakeSheetService;
   let viaturasQdvExtras: FakeExtrasService;
+  let qdi: FakeSheetService;
+  let qdiDados: FakeSheetService;
+  let iseo: ReturnType<typeof makeFakeIseo>;
+  let mfCiodes: ReturnType<typeof makeFakeMfCiodes>;
+  let sheetsDb: ReturnType<typeof makeFakeSheetsDb>;
 
   beforeEach(() => {
     trocasAut = makeFakeService({ syncedAt: null, count: 0, stale: false });
@@ -96,6 +138,11 @@ describe('IntegracoesService', () => {
     };
     viaturasQdv = makeFakeService({ syncedAt: null, count: 0, stale: false });
     viaturasQdvExtras = makeFakeExtras();
+    qdi = makeFakeQdi();
+    qdiDados = makeFakeQdi();
+    iseo = makeFakeIseo();
+    mfCiodes = makeFakeMfCiodes();
+    sheetsDb = makeFakeSheetsDb();
 
     const config = new ConfigService({});
     svc = new IntegracoesService(
@@ -106,22 +153,47 @@ describe('IntegracoesService', () => {
       dispensasImport as unknown as import('../dispensas/dispensas-import.service').DispensasImportService,
       viaturasQdv as unknown as ViaturasQdvService,
       viaturasQdvExtras as unknown as ViaturasQdvExtrasService,
+      qdi as unknown as import('../efetivo/qdi.service').QdiService,
+      qdiDados as unknown as import('../efetivo/qdi-dados.service').QdiDadosService,
+      mfCiodes as unknown as import('../mapa-forca-ciodes/mapa-forca-ciodes.service').MapaForcaCiodesService,
+      iseo as unknown as import('../iseo-hospitais/iseo-hospitais.service').IseoHospitaisService,
+      sheetsDb as unknown as import('../sheets-db/sheets-db.service').SheetsDbService,
     );
   });
 
-  it('lista as 8 integrações cadastradas (S2.10.7d: +dispensas-import)', () => {
+  it('S2.10.8a — lista as 13 integrações cadastradas (todas as planilhas mapeadas)', () => {
     const result = svc.list();
-    expect(result).toHaveLength(8);
+    expect(result).toHaveLength(13);
     expect(result.map((r) => r.id).sort()).toEqual([
       'chefes-operacoes',
       'dispensas-import',
       'dispensas-sheet',
+      'iseo-hospitais',
+      'mapa-forca-ciodes',
+      'qdi-1a1o',
+      'qdi-dados',
+      'sheets-db',
       'trocas-autorizadas',
       'viaturas-qdv',
       'viaturas-qdv-base-lista',
       'viaturas-qdv-cbmes',
       'viaturas-qdv-contatos',
     ]);
+  });
+
+  it('S2.10.8a — todas as 13 sources são marcadas realtimeOnly EXCETO dispensas-import', () => {
+    const result = svc.list();
+    const realtime = result.filter((r) => r.realtimeOnly);
+    const persisted = result.filter((r) => !r.realtimeOnly);
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]?.id).toBe('dispensas-import');
+    expect(realtime).toHaveLength(12);
+  });
+
+  it('S2.10.8a — MF CIODES está marcado como realtimeOnly + noScheduler (decisão D2)', () => {
+    const mf = svc.list().find((r) => r.id === 'mapa-forca-ciodes');
+    expect(mf?.realtimeOnly).toBe(true);
+    expect(mf?.noScheduler).toBe(true);
   });
 
   it('mapeia status "nunca" quando o cache ainda está vazio', () => {
@@ -170,6 +242,18 @@ describe('IntegracoesService', () => {
     it('lança NotFoundException para id desconhecido', async () => {
       await expect(svc.sync('inexistente')).rejects.toBeInstanceOf(NotFoundException);
     });
+
+    it('S2.10.8a — sync de iseo-hospitais usa adapter agregador', async () => {
+      const result = await svc.sync('iseo-hospitais');
+      expect(iseo.forceSyncAsSource).toHaveBeenCalledTimes(1);
+      expect(result.qtdRegistros).toBe(50);
+    });
+
+    it('S2.10.8a — sync de mapa-forca-ciodes usa adapter', async () => {
+      const result = await svc.sync('mapa-forca-ciodes');
+      expect(mfCiodes.forceSyncAsSource).toHaveBeenCalledTimes(1);
+      expect(result.qtdRegistros).toBe(25);
+    });
   });
 
   it('gera URL pública apontando para a planilha + aba correta', () => {
@@ -180,5 +264,16 @@ describe('IntegracoesService', () => {
 
     const dispensas = result.find((r) => r.id === 'dispensas-sheet');
     expect(dispensas?.url).toContain('Dispensas%202026');
+  });
+
+  it('S2.10.8a — URL do MF CIODES aponta para spreadsheet conhecido', () => {
+    const mf = svc.list().find((r) => r.id === 'mapa-forca-ciodes');
+    expect(mf?.url).toContain('1EWuQwuPBkihzrNQ4OGo9AIibbdBK-el1KHMHo71BVCc');
+    expect(mf?.url).toContain('gid=1468029336');
+  });
+
+  it('S2.10.8a — URL do ISEO Hospitais aponta para spreadsheet correto', () => {
+    const iseoStatus = svc.list().find((r) => r.id === 'iseo-hospitais');
+    expect(iseoStatus?.url).toContain('1wmFOEsrU219fGMfksoSY5dvQu0UN7HdQ558UUiWRXuw');
   });
 });
