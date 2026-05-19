@@ -814,3 +814,105 @@ export function makeTrocasAutorizadasPrismaMock(): PrismaService {
   };
   return prismaLike as unknown as PrismaService & { _seedMilitar: (nf: string) => void };
 }
+
+/**
+ * S2.10.8c — Mock in-memory para `iseoHospitalEntry`. Suporta findFirst
+ * com filtro composto (unidade/dataIso/turno/nf), findMany com where +
+ * orderBy, create, update, count.
+ */
+export function makeIseoHospitaisPrismaMock(): PrismaService {
+  type Row = {
+    id: string;
+    unidade: string;
+    posto: string;
+    nome: string;
+    nf: string | null;
+    dataIso: string;
+    turno: string;
+    funcao: string | null;
+    contato: string | null;
+    cargaHoraria: string | null;
+    obm: string | null;
+    lotacao: string | null;
+    sincronizadoEm: Date;
+  };
+  const rows = new Map<string, Row>();
+  let counter = 1;
+
+  const iseoHospitalEntry = {
+    findFirst: async ({
+      where,
+      select,
+    }: {
+      where: {
+        unidade?: string;
+        dataIso?: string;
+        turno?: string;
+        nf?: string | null;
+      };
+      select?: unknown;
+    }) => {
+      for (const r of rows.values()) {
+        if (where.unidade !== undefined && r.unidade !== where.unidade) continue;
+        if (where.dataIso !== undefined && r.dataIso !== where.dataIso) continue;
+        if (where.turno !== undefined && r.turno !== where.turno) continue;
+        if (where.nf !== undefined && r.nf !== where.nf) continue;
+        return select ? { id: r.id } : r;
+      }
+      return null;
+    },
+    findMany: async ({
+      where,
+      orderBy: _orderBy,
+    }: {
+      where?: { unidade?: string; dataIso?: string; nf?: string };
+      orderBy?: unknown;
+    } = {}) => {
+      let out = Array.from(rows.values());
+      if (where?.unidade !== undefined) out = out.filter((r) => r.unidade === where.unidade);
+      if (where?.dataIso !== undefined) out = out.filter((r) => r.dataIso === where.dataIso);
+      if (where?.nf !== undefined) out = out.filter((r) => r.nf === where.nf);
+      return out.sort(
+        (a, b) =>
+          a.dataIso.localeCompare(b.dataIso) ||
+          a.unidade.localeCompare(b.unidade) ||
+          a.turno.localeCompare(b.turno),
+      );
+    },
+    count: async ({ where }: { where?: { unidade?: string } } = {}) => {
+      let out = Array.from(rows.values());
+      if (where?.unidade !== undefined) out = out.filter((r) => r.unidade === where.unidade);
+      return out.length;
+    },
+    create: async ({ data }: { data: Partial<Row> }) => {
+      const id = `iseo-${counter++}`;
+      const row: Row = {
+        id,
+        unidade: data.unidade ?? '',
+        posto: data.posto ?? '',
+        nome: data.nome ?? '',
+        nf: (data.nf as string | null) ?? null,
+        dataIso: data.dataIso ?? '',
+        turno: data.turno ?? '',
+        funcao: (data.funcao as string | null) ?? null,
+        contato: (data.contato as string | null) ?? null,
+        cargaHoraria: (data.cargaHoraria as string | null) ?? null,
+        obm: (data.obm as string | null) ?? null,
+        lotacao: (data.lotacao as string | null) ?? null,
+        sincronizadoEm: data.sincronizadoEm ?? new Date(),
+      };
+      rows.set(id, row);
+      return row;
+    },
+    update: async ({ where, data }: { where: { id: string }; data: Partial<Row> }) => {
+      const cur = rows.get(where.id);
+      if (!cur) throw new Error(`No iseo ${where.id}`);
+      const next = { ...cur, ...data };
+      rows.set(where.id, next as Row);
+      return next as Row;
+    },
+  };
+
+  const prismaLike = { iseoHospitalEntry };
+  return prismaLike as unknown as PrismaService;
+}

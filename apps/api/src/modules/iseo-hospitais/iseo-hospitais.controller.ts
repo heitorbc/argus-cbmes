@@ -41,7 +41,7 @@ export class IseoHospitaisController {
 
   @Get('sync-status')
   @Roles('admin', 'sargenteante')
-  getSyncStatus(): IseoHospitalSyncStatus[] {
+  async getSyncStatus(): Promise<IseoHospitalSyncStatus[]> {
     return this.svc.getSyncStatus();
   }
 

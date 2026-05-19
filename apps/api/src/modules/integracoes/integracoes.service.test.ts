@@ -65,7 +65,8 @@ function makeFakeQdi(): FakeSheetService {
 function makeFakeIseo() {
   let status: SyncStatus = { syncedAt: null, count: 0, stale: false };
   return {
-    getSyncStatusAgregado: () => status,
+    // S2.10.8c: agora async (Prisma queries)
+    getSyncStatusAgregado: async () => status,
     forceSyncAsSource: vi.fn(async () => {
       status = { syncedAt: '2026-05-13T12:00:00.000Z', count: 50, stale: false };
       return { syncedAt: status.syncedAt!, count: status.count };
@@ -161,8 +162,8 @@ describe('IntegracoesService (S2.10.8a — 13 sources)', () => {
     );
   });
 
-  it('S2.10.8a — lista as 13 integrações cadastradas (todas as planilhas mapeadas)', () => {
-    const result = svc.list();
+  it('S2.10.8a — lista as 13 integrações cadastradas (todas as planilhas mapeadas)', async () => {
+    const result = await svc.list();
     expect(result).toHaveLength(13);
     expect(result.map((r) => r.id).sort()).toEqual([
       'chefes-operacoes',
@@ -181,22 +182,26 @@ describe('IntegracoesService (S2.10.8a — 13 sources)', () => {
     ]);
   });
 
-  it('S2.10.8b — sources persistidas (sem realtimeOnly): dispensas-import + trocas-autorizadas', () => {
-    const result = svc.list();
+  it('S2.10.8c — sources persistidas: dispensas-import + trocas-autorizadas + iseo-hospitais', async () => {
+    const result = await svc.list();
     const realtime = result.filter((r) => r.realtimeOnly);
     const persisted = result.filter((r) => !r.realtimeOnly);
-    expect(persisted.map((p) => p.id).sort()).toEqual(['dispensas-import', 'trocas-autorizadas']);
-    expect(realtime).toHaveLength(11);
+    expect(persisted.map((p) => p.id).sort()).toEqual([
+      'dispensas-import',
+      'iseo-hospitais',
+      'trocas-autorizadas',
+    ]);
+    expect(realtime).toHaveLength(10);
   });
 
-  it('S2.10.8a — MF CIODES está marcado como realtimeOnly + noScheduler (decisão D2)', () => {
-    const mf = svc.list().find((r) => r.id === 'mapa-forca-ciodes');
+  it('S2.10.8a — MF CIODES está marcado como realtimeOnly + noScheduler (decisão D2)', async () => {
+    const mf = (await svc.list()).find((r) => r.id === 'mapa-forca-ciodes');
     expect(mf?.realtimeOnly).toBe(true);
     expect(mf?.noScheduler).toBe(true);
   });
 
-  it('mapeia status "nunca" quando o cache ainda está vazio', () => {
-    const result = svc.list();
+  it('mapeia status "nunca" quando o cache ainda está vazio', async () => {
+    const result = await svc.list();
     for (const item of result) {
       expect(item.status).toBe('nunca');
       expect(item.ultimoSyncEm).toBeNull();
@@ -204,11 +209,11 @@ describe('IntegracoesService (S2.10.8a — 13 sources)', () => {
     }
   });
 
-  it('mapeia status "ok" quando há cache fresco e "stale" quando expirado', () => {
+  it('mapeia status "ok" quando há cache fresco e "stale" quando expirado', async () => {
     trocasAut.status = { syncedAt: '2026-05-13T12:00:00.000Z', count: 42, stale: false };
     chefesOp.status = { syncedAt: '2026-05-13T08:00:00.000Z', count: 30, stale: true };
 
-    const result = svc.list();
+    const result = await svc.list();
     const trocas = result.find((r) => r.id === 'trocas-autorizadas');
     const chefes = result.find((r) => r.id === 'chefes-operacoes');
 
@@ -255,8 +260,8 @@ describe('IntegracoesService (S2.10.8a — 13 sources)', () => {
     });
   });
 
-  it('gera URL pública apontando para a planilha + aba correta', () => {
-    const result = svc.list();
+  it('gera URL pública apontando para a planilha + aba correta', async () => {
+    const result = await svc.list();
     const trocas = result.find((r) => r.id === 'trocas-autorizadas');
     expect(trocas?.url).toContain('docs.google.com/spreadsheets/d/');
     expect(trocas?.url).toContain('gid=1799360305');
@@ -265,14 +270,14 @@ describe('IntegracoesService (S2.10.8a — 13 sources)', () => {
     expect(dispensas?.url).toContain('Dispensas%202026');
   });
 
-  it('S2.10.8a — URL do MF CIODES aponta para spreadsheet conhecido', () => {
-    const mf = svc.list().find((r) => r.id === 'mapa-forca-ciodes');
+  it('S2.10.8a — URL do MF CIODES aponta para spreadsheet conhecido', async () => {
+    const mf = (await svc.list()).find((r) => r.id === 'mapa-forca-ciodes');
     expect(mf?.url).toContain('1EWuQwuPBkihzrNQ4OGo9AIibbdBK-el1KHMHo71BVCc');
     expect(mf?.url).toContain('gid=1468029336');
   });
 
-  it('S2.10.8a — URL do ISEO Hospitais aponta para spreadsheet correto', () => {
-    const iseoStatus = svc.list().find((r) => r.id === 'iseo-hospitais');
+  it('S2.10.8a — URL do ISEO Hospitais aponta para spreadsheet correto', async () => {
+    const iseoStatus = (await svc.list()).find((r) => r.id === 'iseo-hospitais');
     expect(iseoStatus?.url).toContain('1wmFOEsrU219fGMfksoSY5dvQu0UN7HdQ558UUiWRXuw');
   });
 });

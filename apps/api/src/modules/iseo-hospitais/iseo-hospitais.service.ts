@@ -1,246 +1,142 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable } from '@nestjs/common';
 import type {
   IseoHospitalEntry,
   IseoHospitalSyncStatus,
+  IseoHospitalTurno,
   IseoHospitalUnidade,
 } from '@argus/shared-types';
-import { parseIseoHospitaisCsv, parseUnidadeFromSheetName } from './iseo-hospitais-csv-parser';
-
-const CACHE_TTL_MS = 5 * 60 * 1000;
-const FETCH_TIMEOUT_MS = 15_000;
-
-const DEFAULT_SHEET_ID = '1wmFOEsrU219fGMfksoSY5dvQu0UN7HdQ558UUiWRXuw';
+import type { IseoHospitalEntry as PrismaIseoHospitalEntry } from '@prisma/client';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { IseoHospitaisImportService } from './iseo-hospitais-import.service';
 
 /**
- * Lista padrão de abas conhecidas (estado em 2026-05). Pode ser sobrescrita
- * via env `ISEO_SHEET_NAMES` (CSV separado por vírgula). Quando a planilha
- * ganhar novos meses, basta atualizar a env (ou esta lista).
+ * S2.10.8c — ISEO Hospitais (multi-sheet HPM + HIMABA × meses) agora em
+ * Postgres. Antes (S0.5/S2.8.1): cache TTL 5min por aba in-memory, fetch
+ * em cada request. Agora: leitura direta de `prisma.iseoHospitalEntry`
+ * com sync transparente fire-and-forget.
  *
- * Aba `HIMABA DEZEMBRO 2025` é legacy (estrutura diferente, sem TURNO/FUNÇÃO)
- * e está fora do default. Para incluir histórico de 2025, sobrescreva via env.
- */
-const DEFAULT_SHEET_NAMES = [
-  'HPM JANEIRO 2026',
-  'HIMABA JANEIRO 2026',
-  'HPM FEVEREIRO 2026',
-  'HIMABA FEVEREIRO 2026',
-  'HPM MARÇO 2026',
-  'HIMABA MARÇO 2026',
-  'ABRIL 2026',
-  'MAIO 2026',
-];
-
-interface CacheEntry {
-  parsed: IseoHospitalEntry[];
-  syncedAt: number;
-}
-
-/**
- * Lê a planilha "Escala ISEO Hospitais" via CSV público (`gviz/tq?sheet=`).
- * Cada aba representa um período (mês ou mês×unidade). O service combina
- * todas as abas configuradas e dedupa entries.
- *
- * Configurável via env:
- *   `ISEO_HOSPITAIS_SHEET_ID` (default acima)
- *   `ISEO_SHEET_NAMES` (CSV — default lista conhecida)
+ * Pattern espelha `DispensasService` (S2.10.7d) e
+ * `TrocasAutorizadasService` (S2.10.8b).
  */
 @Injectable()
 export class IseoHospitaisService {
-  private readonly logger = new Logger(IseoHospitaisService.name);
-  private readonly cache = new Map<string, CacheEntry>();
-  private readonly inflight = new Map<string, Promise<CacheEntry>>();
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly importSvc: IseoHospitaisImportService,
+  ) {}
 
-  constructor(private readonly config: ConfigService) {}
-
-  /** Lista deduplicada de todos os registros (todas as abas combinadas). */
+  /** Lista todas as entradas (todas as unidades + meses combinados). */
   async list(): Promise<IseoHospitalEntry[]> {
-    const all: IseoHospitalEntry[] = [];
-    const results = await Promise.all(
-      this.sheetNames().map(async (sheet) => {
-        try {
-          const { entry } = await this.getEntry(sheet);
-          return entry.parsed;
-        } catch (err) {
-          this.logger.warn(`ISEO: falha em "${sheet}": ${(err as Error).message}. Pulando.`);
-          return [] as IseoHospitalEntry[];
-        }
-      }),
-    );
-    for (const arr of results) all.push(...arr);
-    return dedupe(all);
+    void this.importSvc.syncIfStale();
+    const rows = await this.prisma.iseoHospitalEntry.findMany({
+      orderBy: [{ dataIso: 'asc' }, { unidade: 'asc' }, { turno: 'asc' }],
+    });
+    return rows.map(toEntry).filter((e): e is IseoHospitalEntry => e !== null);
   }
 
   async listByUnidade(unidade: IseoHospitalUnidade): Promise<IseoHospitalEntry[]> {
-    const all = await this.list();
-    return all.filter((e) => e.unidade === unidade);
+    void this.importSvc.syncIfStale();
+    const rows = await this.prisma.iseoHospitalEntry.findMany({
+      where: { unidade },
+      orderBy: [{ dataIso: 'asc' }, { turno: 'asc' }],
+    });
+    return rows.map(toEntry).filter((e): e is IseoHospitalEntry => e !== null);
   }
 
   async listDoDia(dataIso: string): Promise<IseoHospitalEntry[]> {
-    const all = await this.list();
-    return all.filter((e) => e.dataIso === dataIso);
+    void this.importSvc.syncIfStale();
+    const rows = await this.prisma.iseoHospitalEntry.findMany({
+      where: { dataIso },
+      orderBy: [{ unidade: 'asc' }, { turno: 'asc' }],
+    });
+    return rows.map(toEntry).filter((e): e is IseoHospitalEntry => e !== null);
   }
 
   async listByMilitar(nf: string): Promise<IseoHospitalEntry[]> {
-    const all = await this.list();
-    return all.filter((e) => e.nf === nf);
+    void this.importSvc.syncIfStale();
+    const rows = await this.prisma.iseoHospitalEntry.findMany({
+      where: { nf },
+      orderBy: [{ dataIso: 'asc' }],
+    });
+    return rows.map(toEntry).filter((e): e is IseoHospitalEntry => e !== null);
   }
 
-  /** Status por aba — usado em `/configuracoes/integracoes`. */
-  getSyncStatus(): IseoHospitalSyncStatus[] {
-    const out: IseoHospitalSyncStatus[] = [];
-    for (const sheet of this.sheetNames()) {
-      const c = this.cache.get(sheet);
-      const unidade = parseUnidadeFromSheetName(sheet) ?? 'HPM';
-      if (!c) {
-        out.push({ unidade, syncedAt: null, count: 0, stale: false });
-        continue;
-      }
-      out.push({
-        unidade,
-        syncedAt: new Date(c.syncedAt).toISOString(),
-        count: c.parsed.length,
-        stale: Date.now() - c.syncedAt >= CACHE_TTL_MS,
-      });
-    }
-    return out;
+  /**
+   * S0.5/PR2 — Status por unidade (HPM + HIMABA). Agora derivado das
+   * contagens em Postgres, não mais por aba. Mantém o shape antigo para
+   * compatibilidade com o controller existente.
+   */
+  async getSyncStatus(): Promise<IseoHospitalSyncStatus[]> {
+    const importStatus = this.importSvc.getSyncStatus();
+    const [hpmCount, himabaCount] = await Promise.all([
+      this.prisma.iseoHospitalEntry.count({ where: { unidade: 'HPM' } }),
+      this.prisma.iseoHospitalEntry.count({ where: { unidade: 'HIMABA' } }),
+    ]);
+    return [
+      {
+        unidade: 'HPM',
+        syncedAt: importStatus.syncedAt,
+        count: hpmCount,
+        stale: importStatus.stale,
+      },
+      {
+        unidade: 'HIMABA',
+        syncedAt: importStatus.syncedAt,
+        count: himabaCount,
+        stale: importStatus.stale,
+      },
+    ];
   }
 
+  /**
+   * S2.10.8a — Status agregado compatível com SourceConfig do
+   * IntegracoesService. Agora reflete total em Postgres + status do
+   * último sync.
+   */
+  async getSyncStatusAgregado(): Promise<{
+    syncedAt: string | null;
+    count: number;
+    stale: boolean;
+  }> {
+    const importStatus = this.importSvc.getSyncStatus();
+    const count = await this.prisma.iseoHospitalEntry.count();
+    return { syncedAt: importStatus.syncedAt, count, stale: importStatus.stale };
+  }
+
+  /** Força resync admin via /configuracoes/integracoes (delegado ao import). */
   async forceSync(): Promise<IseoHospitalSyncStatus[]> {
-    for (const sheet of this.sheetNames()) {
-      try {
-        const entry = await this.fetchAndParse(sheet);
-        this.cache.set(sheet, entry);
-      } catch (err) {
-        this.logger.error(`forceSync ISEO "${sheet}" falhou: ${(err as Error).message}.`);
-      }
-    }
+    await this.importSvc.forceSync();
     return this.getSyncStatus();
   }
 
   /**
-   * S2.10.8a — Status agregado (soma counts de todas as abas) compatível com
-   * SourceConfig do IntegracoesService. `syncedAt` = a mais recente entre as
-   * abas; `stale` = qualquer aba com cache expirado.
-   */
-  getSyncStatusAgregado(): { syncedAt: string | null; count: number; stale: boolean } {
-    const statuses = this.getSyncStatus();
-    const populated = statuses.filter((s) => s.syncedAt !== null);
-    if (populated.length === 0) return { syncedAt: null, count: 0, stale: false };
-    const count = statuses.reduce((acc, s) => acc + s.count, 0);
-    const stale = statuses.some((s) => s.stale);
-    const syncedAt = populated
-      .map((s) => s.syncedAt as string)
-      .sort()
-      .pop() as string;
-    return { syncedAt, count, stale };
-  }
-
-  /**
-   * S2.10.8a — Adapter para SourceConfig: agrega todas as abas em
-   * `{syncedAt, count}` único após forceSync das múltiplas abas.
+   * S2.10.8a — Adapter para SourceConfig: agrega total + syncedAt num
+   * `{syncedAt, count}` único após forceSync do orchestrator.
    */
   async forceSyncAsSource(): Promise<{ syncedAt: string; count: number }> {
-    await this.forceSync();
-    const agg = this.getSyncStatusAgregado();
-    return {
-      syncedAt: agg.syncedAt ?? new Date().toISOString(),
-      count: agg.count,
-    };
-  }
-
-  private sheetNames(): string[] {
-    const raw = this.config.get<string>('ISEO_SHEET_NAMES');
-    if (raw && raw.trim()) {
-      return raw
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-    return DEFAULT_SHEET_NAMES;
-  }
-
-  private async getEntry(sheet: string): Promise<{ entry: CacheEntry; stale: boolean }> {
-    const now = Date.now();
-    const cached = this.cache.get(sheet);
-    if (cached && now - cached.syncedAt < CACHE_TTL_MS) {
-      return { entry: cached, stale: false };
-    }
-    const existing = this.inflight.get(sheet);
-    if (existing) {
-      const entry = await existing;
-      return { entry, stale: false };
-    }
-    const promise = this.fetchAndParse(sheet).finally(() => {
-      this.inflight.delete(sheet);
-    });
-    this.inflight.set(sheet, promise);
-    try {
-      const entry = await promise;
-      this.cache.set(sheet, entry);
-      return { entry, stale: false };
-    } catch (err) {
-      this.logger.error(
-        `Falha ao sincronizar ISEO "${sheet}": ${(err as Error).message}. ${
-          cached ? 'Servindo último snapshot.' : 'Sem snapshot anterior.'
-        }`,
-      );
-      if (cached) return { entry: cached, stale: true };
-      throw new ServiceUnavailableException(
-        `Não foi possível sincronizar a aba ISEO Hospitais "${sheet}".`,
-      );
-    }
-  }
-
-  private async fetchAndParse(sheet: string): Promise<CacheEntry> {
-    const sheetId = this.config.get<string>('ISEO_HOSPITAIS_SHEET_ID') ?? DEFAULT_SHEET_ID;
-    const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(
-      sheet,
-    )}`;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-    let csv: string;
-    try {
-      const res = await fetch(url, { signal: controller.signal, redirect: 'follow' });
-      if (!res.ok) throw new Error(`HTTP ${res.status} ao baixar ISEO "${sheet}"`);
-      csv = await res.text();
-    } finally {
-      clearTimeout(timeoutId);
-    }
-
-    const unidadeFromSheet = parseUnidadeFromSheetName(sheet);
-    // S2.8.1 — Em abas unificadas (ABRIL/MAIO 2026 em diante), cada
-    // linha tem 2 pares de NF/NOME/CONTATO. Convenção institucional do
-    // XLSM original: 1º par (cols F-H) = HPM, 2º par (cols I-K) =
-    // HIMABA. Antes víamos só HPM porque o parser usava `unidadeDefault`
-    // único para ambos os pares.
-    //
-    // Em abas prefixadas (HPM JANEIRO 2026 etc.) o nome do arquivo já
-    // discrimina — usa o caminho legacy via `unidadeFromSheet`.
-    const parsed = parseIseoHospitaisCsv(
-      csv,
-      unidadeFromSheet
-        ? { unidadeFromSheet }
-        : { paredLayout: { unidadePrimeiroPar: 'HPM', unidadeSegundoPar: 'HIMABA' } },
-    );
-    return { parsed, syncedAt: Date.now() };
+    const r = await this.importSvc.forceSync();
+    const count = await this.prisma.iseoHospitalEntry.count();
+    return { syncedAt: r.syncedAt, count };
   }
 }
 
 /**
- * Dedupa entries por (unidade, dataIso, turno, nf). Necessário porque
- * abas duplicadas/repetidas podem produzir o mesmo registro mais de uma vez.
+ * Conversão PrismaIseoHospitalEntry → shared-types IseoHospitalEntry.
+ * Rows sem `nf` são filtradas no caller (shared-types exige nf não-nulo).
  */
-function dedupe(entries: IseoHospitalEntry[]): IseoHospitalEntry[] {
-  const seen = new Set<string>();
-  const out: IseoHospitalEntry[] = [];
-  for (const e of entries) {
-    const key = `${e.unidade}|${e.dataIso}|${e.turno}|${e.nf}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(e);
-  }
-  return out;
+function toEntry(row: PrismaIseoHospitalEntry): IseoHospitalEntry | null {
+  if (!row.nf) return null;
+  return {
+    unidade: row.unidade as IseoHospitalUnidade,
+    posto: row.posto,
+    nome: row.nome,
+    nf: row.nf,
+    dataIso: row.dataIso,
+    turno: row.turno as IseoHospitalTurno,
+    funcao: row.funcao ?? undefined,
+    contato: row.contato ?? undefined,
+    cargaHoraria: row.cargaHoraria ?? undefined,
+    obm: row.obm ?? undefined,
+    lotacao: row.lotacao ?? undefined,
+  };
 }

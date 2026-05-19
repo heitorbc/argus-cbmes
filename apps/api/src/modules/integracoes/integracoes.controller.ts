@@ -17,7 +17,7 @@ export class IntegracoesController {
   ) {}
 
   @Get()
-  list(): IntegracaoStatus[] {
+  async list(): Promise<IntegracaoStatus[]> {
     return this.svc.list();
   }
 
