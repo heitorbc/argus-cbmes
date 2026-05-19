@@ -118,14 +118,25 @@ export class DispensasImportService {
 
   private async executeSyncToDatabase(): Promise<SyncResult> {
     const linhas = await this.fetchAndParse();
-    const efetivoTotal = await this.efetivo.getAll({
-      somente1aCia: false,
-      incluirEfetivoOrfao: true,
-    });
+    this.logger.log(`Dispensas: parser retornou ${linhas.length} entries do CSV`);
+
+    let efetivoTotal: MilitarShared[];
+    try {
+      efetivoTotal = await this.efetivo.getAll({
+        somente1aCia: false,
+        incluirEfetivoOrfao: true,
+      });
+    } catch (err) {
+      this.logger.error(
+        `Dispensas: falha ao carregar efetivo (${(err as Error).message}). Sync abortada.`,
+      );
+      throw err;
+    }
     const matcher = new NomeMatcher(efetivoTotal);
     // S2.10.7e — index NF→Militar para auto-upsert quando Militar não existe
     // em Postgres mas existe no efetivo consolidado.
     const efetivoByNf = new Map(efetivoTotal.map((m) => [m.nf, m]));
+    this.logger.log(`Dispensas: efetivo consolidado com ${efetivoByNf.size} militares`);
 
     let created = 0;
     let updated = 0;
@@ -133,88 +144,93 @@ export class DispensasImportService {
     const inconsistencias: string[] = [];
 
     for (const linha of linhas) {
-      // Resolve NF: direto da col A ou via matcher
-      let militarNf: string | undefined = linha.nfRaw;
-      if (!militarNf) {
-        const ref = parseMilitarCell(linha.militarRaw);
-        const resolved = ref ? matcher.resolve(ref).resolved : null;
-        militarNf = resolved?.nf;
-      }
-      if (!militarNf) {
-        skipped++;
-        inconsistencias.push(
-          `Linha sem NF resolvida: "${linha.militarRaw}" em ${linha.data} (tipo ${linha.tipo})`,
-        );
-        continue;
-      }
-
-      // Verifica se o militar existe no banco (FK constraint)
-      const militarExiste = await this.prisma.militar.findUnique({
-        where: { nf: militarNf },
-        select: { nf: true },
-      });
-      if (!militarExiste) {
-        // S2.10.7e — Auto-upsert a partir do EfetivoService (decisão D2 do
-        // plano). Se o militar existe no efetivo consolidado em memória,
-        // persiste em Prisma antes de seguir. Caso contrário, registra
-        // inconsistência (NF realmente desconhecido).
-        const fromEfetivo = efetivoByNf.get(militarNf);
-        if (!fromEfetivo) {
+      // S2.10.8b-fix — try/catch por linha: erro em 1 não bloqueia outras
+      try {
+        // Resolve NF: direto da col A ou via matcher
+        let militarNf: string | undefined = linha.nfRaw;
+        if (!militarNf) {
+          const ref = parseMilitarCell(linha.militarRaw);
+          const resolved = ref ? matcher.resolve(ref).resolved : null;
+          militarNf = resolved?.nf;
+        }
+        if (!militarNf) {
           skipped++;
           inconsistencias.push(
-            `Militar NF ${militarNf} ("${linha.militarRaw}") não existe nem em Postgres nem no Efetivo consolidado`,
+            `Linha sem NF resolvida: "${linha.militarRaw}" em ${linha.data} (tipo ${linha.tipo})`,
           );
           continue;
         }
-        const data = militarToPrismaData(fromEfetivo);
-        await this.prisma.militar.upsert({
+
+        // Verifica se o militar existe no banco (FK constraint obrigatória).
+        const militarExiste = await this.prisma.militar.findUnique({
           where: { nf: militarNf },
-          create: data,
-          update: data,
+          select: { nf: true },
         });
-      }
+        if (!militarExiste) {
+          // S2.10.7e — Auto-upsert a partir do EfetivoService.
+          const fromEfetivo = efetivoByNf.get(militarNf);
+          if (!fromEfetivo) {
+            skipped++;
+            inconsistencias.push(
+              `Militar NF ${militarNf} ("${linha.militarRaw}") não existe nem em Postgres nem no Efetivo consolidado`,
+            );
+            continue;
+          }
+          const data = militarToPrismaData(fromEfetivo);
+          await this.prisma.militar.upsert({
+            where: { nf: militarNf },
+            create: data,
+            update: data,
+          });
+        }
 
-      // Upsert idempotente por (militarNf, dataInicio, tipo)
-      const existing = await this.prisma.dispensa.findUnique({
-        where: {
-          militarNf_dataInicio_tipo: {
-            militarNf,
-            dataInicio: linha.data,
-            tipo: linha.tipo,
+        // Upsert idempotente por (militarNf, dataInicio, tipo)
+        const existing = await this.prisma.dispensa.findUnique({
+          where: {
+            militarNf_dataInicio_tipo: {
+              militarNf,
+              dataInicio: linha.data,
+              tipo: linha.tipo,
+            },
           },
-        },
-      });
+        });
 
-      if (existing) {
-        // Reactivate soft-deleted se necessário + atualiza campos
-        await this.prisma.dispensa.update({
-          where: { id: existing.id },
-          data: {
-            dias: linha.dias,
-            numeroEdocs: linha.edocs ?? null,
-            observacoes: linha.observacoes ?? null,
-            minuta: linha.minuta ?? null,
-            equipe: linha.equipe ?? null,
-            deletedAt: null,
-          },
-        });
-        updated++;
-      } else {
-        await this.prisma.dispensa.create({
-          data: {
-            militarNf,
-            tipo: linha.tipo,
-            dataInicio: linha.data,
-            dias: linha.dias,
-            numeroEdocs: linha.edocs ?? null,
-            observacoes: linha.observacoes ?? null,
-            minuta: linha.minuta ?? null,
-            equipe: linha.equipe ?? null,
-            origem: 'planilha',
-            // criadoPorNf null = sync automática (sem User humano)
-          },
-        });
-        created++;
+        if (existing) {
+          // Reactivate soft-deleted se necessário + atualiza campos
+          await this.prisma.dispensa.update({
+            where: { id: existing.id },
+            data: {
+              dias: linha.dias,
+              numeroEdocs: linha.edocs ?? null,
+              observacoes: linha.observacoes ?? null,
+              minuta: linha.minuta ?? null,
+              equipe: linha.equipe ?? null,
+              deletedAt: null,
+            },
+          });
+          updated++;
+        } else {
+          await this.prisma.dispensa.create({
+            data: {
+              militarNf,
+              tipo: linha.tipo,
+              dataInicio: linha.data,
+              dias: linha.dias,
+              numeroEdocs: linha.edocs ?? null,
+              observacoes: linha.observacoes ?? null,
+              minuta: linha.minuta ?? null,
+              equipe: linha.equipe ?? null,
+              origem: 'planilha',
+              // criadoPorNf null = sync automática (sem User humano)
+            },
+          });
+          created++;
+        }
+      } catch (err) {
+        skipped++;
+        const msg = `Dispensa "${linha.militarRaw}" em ${linha.data} (${linha.tipo}) falhou: ${(err as Error).message}`;
+        this.logger.warn(`Dispensas: ${msg}`);
+        inconsistencias.push(msg);
       }
     }
 

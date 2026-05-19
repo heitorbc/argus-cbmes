@@ -110,62 +110,88 @@ export class TrocasAutorizadasImportService {
 
   private async executeSyncToDatabase(): Promise<SyncResult> {
     const trocas = await this.fetchAndParse();
-    const efetivoTotal = await this.efetivo.getAll({
-      somente1aCia: false,
-      incluirEfetivoOrfao: true,
-    });
-    const efetivoByNf = new Map(efetivoTotal.map((m) => [m.nf, m]));
+    this.logger.log(`Trocas Autorizadas: parser retornou ${trocas.length} entries do CSV`);
+
+    // Carrega efetivo para auto-upsert opcional de Militar. Se falhar, segue
+    // sem auto-upsert (TrocaAutorizada não tem FK para Militar — não bloqueia).
+    let efetivoByNf = new Map<string, MilitarShared>();
+    try {
+      const efetivoTotal = await this.efetivo.getAll({
+        somente1aCia: false,
+        incluirEfetivoOrfao: true,
+      });
+      efetivoByNf = new Map(efetivoTotal.map((m) => [m.nf, m]));
+      this.logger.log(`Trocas Autorizadas: efetivo consolidado com ${efetivoByNf.size} militares`);
+    } catch (err) {
+      this.logger.warn(
+        `Trocas Autorizadas: efetivo falhou (${(err as Error).message}). Seguindo sem auto-upsert Militar.`,
+      );
+    }
 
     let created = 0;
     let updated = 0;
-    const skipped = 0;
+    let skipped = 0;
     const inconsistencias: string[] = [];
 
+    // S2.10.8b-fix — Isolamento por troca: erro em uma não interrompe as
+    // demais. TrocaAutorizada NÃO tem FK obrigatória para Militar, então
+    // auto-upsert é best-effort (registra inconsistência, mas a troca é
+    // criada de qualquer forma).
     for (const t of trocas) {
-      // S2.10.8b — Auto-upsert Militar se NF presente e ainda não em Postgres
-      // (mantém coerência com S2.10.7e/dispensas; útil para análise cruzada).
-      await this.ensureMilitar(t.escaladoOriginalNf, efetivoByNf, inconsistencias);
-      await this.ensureMilitar(t.substitutoNf, efetivoByNf, inconsistencias);
+      try {
+        const data = {
+          registradoEm: t.registradoEm,
+          emailRegistrante: t.emailRegistrante ?? null,
+          statusTroca: t.statusTroca ?? null,
+          statusNome: t.statusNome ?? null,
+          dataEscala: t.dataEscala,
+          escaladoOriginal: t.escaladoOriginal,
+          escaladoOriginalNf: t.escaladoOriginalNf ?? null,
+          substituto: t.substituto,
+          substitutoNf: t.substitutoNf ?? null,
+          funcao: t.funcao,
+          horario: t.horario,
+          dataPagamento: t.dataPagamento,
+          escaladoPagamento: t.escaladoPagamento,
+          substitutoPagamento: t.substitutoPagamento,
+          funcaoPagamento: t.funcaoPagamento,
+          horarioPagamento: t.horarioPagamento,
+          isDobra48h: t.isDobra48h,
+          numeroEdocs: t.numeroEdocs ?? null,
+          numeroRegistro: t.numeroRegistro ?? null,
+          sincronizadoEm: new Date(),
+        };
 
-      const existing = await this.prisma.trocaAutorizada.findUnique({
-        where: { id: t.id },
-        select: { id: true },
-      });
-
-      const data = {
-        registradoEm: t.registradoEm,
-        emailRegistrante: t.emailRegistrante ?? null,
-        statusTroca: t.statusTroca ?? null,
-        statusNome: t.statusNome ?? null,
-        dataEscala: t.dataEscala,
-        escaladoOriginal: t.escaladoOriginal,
-        escaladoOriginalNf: t.escaladoOriginalNf ?? null,
-        substituto: t.substituto,
-        substitutoNf: t.substitutoNf ?? null,
-        funcao: t.funcao,
-        horario: t.horario,
-        dataPagamento: t.dataPagamento,
-        escaladoPagamento: t.escaladoPagamento,
-        substitutoPagamento: t.substitutoPagamento,
-        funcaoPagamento: t.funcaoPagamento,
-        horarioPagamento: t.horarioPagamento,
-        isDobra48h: t.isDobra48h,
-        numeroEdocs: t.numeroEdocs ?? null,
-        numeroRegistro: t.numeroRegistro ?? null,
-        sincronizadoEm: new Date(),
-      };
-
-      if (existing) {
-        await this.prisma.trocaAutorizada.update({
+        const existing = await this.prisma.trocaAutorizada.findUnique({
           where: { id: t.id },
-          data,
+          select: { id: true },
         });
-        updated++;
-      } else {
-        await this.prisma.trocaAutorizada.create({
-          data: { id: t.id, ...data },
-        });
-        created++;
+
+        if (existing) {
+          await this.prisma.trocaAutorizada.update({ where: { id: t.id }, data });
+          updated++;
+        } else {
+          await this.prisma.trocaAutorizada.create({ data: { id: t.id, ...data } });
+          created++;
+        }
+      } catch (err) {
+        skipped++;
+        const msg = `Troca id=${t.id} falhou: ${(err as Error).message}`;
+        this.logger.warn(`Trocas Autorizadas: ${msg}`);
+        inconsistencias.push(msg);
+      }
+    }
+
+    // S2.10.8b-fix — Auto-upsert Militar APÓS persistir trocas. Best-effort:
+    // erro em 1 militar não afeta o resultado das trocas já criadas.
+    if (efetivoByNf.size > 0) {
+      const nfsCitadas = new Set<string>();
+      for (const t of trocas) {
+        if (t.escaladoOriginalNf) nfsCitadas.add(t.escaladoOriginalNf);
+        if (t.substitutoNf) nfsCitadas.add(t.substitutoNf);
+      }
+      for (const nf of nfsCitadas) {
+        await this.ensureMilitarSafe(nf, efetivoByNf, inconsistencias);
       }
     }
 
@@ -179,39 +205,46 @@ export class TrocasAutorizadasImportService {
     this.lastSync = result;
     this.lastSyncAtMs = Date.now();
     this.logger.log(
-      `Trocas Autorizadas sync OK: created=${created}, updated=${updated}, skipped=${skipped}, inconsistencias=${inconsistencias.length}`,
+      `Trocas Autorizadas sync OK: parseadas=${trocas.length}, created=${created}, updated=${updated}, skipped=${skipped}, inconsistencias=${inconsistencias.length}`,
     );
     return result;
   }
 
   /**
-   * S2.10.8b — Garante que Militar com `nf` existe em Postgres (auto-upsert
-   * a partir do efetivo consolidado). No-op se nf vazio ou já presente.
+   * S2.10.8b-fix — Garante que Militar com `nf` existe em Postgres
+   * (auto-upsert best-effort). Erro NUNCA propaga: vira inconsistência.
+   *
+   * Justificativa: TrocaAutorizada NÃO tem FK obrigatória para Militar.
+   * Auto-upsert é apenas para coerência cruzada; falhar não deve
+   * interromper a sync.
    */
-  private async ensureMilitar(
-    nf: string | undefined,
+  private async ensureMilitarSafe(
+    nf: string,
     efetivoByNf: Map<string, MilitarShared>,
     inconsistencias: string[],
   ): Promise<void> {
-    if (!nf) return;
-    const existing = await this.prisma.militar.findUnique({
-      where: { nf },
-      select: { nf: true },
-    });
-    if (existing) return;
-    const fromEfetivo = efetivoByNf.get(nf);
-    if (!fromEfetivo) {
-      inconsistencias.push(
-        `Militar NF ${nf} (citado em troca) não existe nem em Postgres nem no Efetivo consolidado`,
-      );
-      return;
+    try {
+      const existing = await this.prisma.militar.findUnique({
+        where: { nf },
+        select: { nf: true },
+      });
+      if (existing) return;
+      const fromEfetivo = efetivoByNf.get(nf);
+      if (!fromEfetivo) {
+        inconsistencias.push(
+          `Militar NF ${nf} (citado em troca) não existe nem em Postgres nem no Efetivo consolidado`,
+        );
+        return;
+      }
+      const data = militarToPrismaData(fromEfetivo);
+      await this.prisma.militar.upsert({
+        where: { nf },
+        create: data,
+        update: data,
+      });
+    } catch (err) {
+      inconsistencias.push(`Auto-upsert Militar NF ${nf} falhou: ${(err as Error).message}`);
     }
-    const data = militarToPrismaData(fromEfetivo);
-    await this.prisma.militar.upsert({
-      where: { nf },
-      create: data,
-      update: data,
-    });
   }
 
   private async fetchAndParse() {

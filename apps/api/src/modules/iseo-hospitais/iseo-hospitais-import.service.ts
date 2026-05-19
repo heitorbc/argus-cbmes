@@ -157,45 +157,53 @@ export class IseoHospitaisImportService {
 
     let created = 0;
     let updated = 0;
-    const skipped = 0;
+    let skipped = 0;
 
     for (const e of flat) {
-      // findFirst em vez de findUnique pois `nf` é nullable (Postgres trata
-      // NULL como distinto em unique constraints).
-      const existing = await this.prisma.iseoHospitalEntry.findFirst({
-        where: {
+      // S2.10.8b-fix — try/catch por entry: erro em 1 não bloqueia outras.
+      try {
+        // findFirst em vez de findUnique pois `nf` é nullable (Postgres trata
+        // NULL como distinto em unique constraints).
+        const existing = await this.prisma.iseoHospitalEntry.findFirst({
+          where: {
+            unidade: e.unidade,
+            dataIso: e.dataIso,
+            turno: e.turno,
+            nf: e.nf ?? null,
+          },
+          select: { id: true },
+        });
+
+        const data = {
           unidade: e.unidade,
+          posto: e.posto,
+          nome: e.nome,
+          nf: e.nf ?? null,
           dataIso: e.dataIso,
           turno: e.turno,
-          nf: e.nf ?? null,
-        },
-        select: { id: true },
-      });
+          funcao: e.funcao ?? null,
+          contato: e.contato ?? null,
+          cargaHoraria: e.cargaHoraria ?? null,
+          obm: e.obm ?? null,
+          lotacao: e.lotacao ?? null,
+          sincronizadoEm: new Date(),
+        };
 
-      const data = {
-        unidade: e.unidade,
-        posto: e.posto,
-        nome: e.nome,
-        nf: e.nf ?? null,
-        dataIso: e.dataIso,
-        turno: e.turno,
-        funcao: e.funcao ?? null,
-        contato: e.contato ?? null,
-        cargaHoraria: e.cargaHoraria ?? null,
-        obm: e.obm ?? null,
-        lotacao: e.lotacao ?? null,
-        sincronizadoEm: new Date(),
-      };
-
-      if (existing) {
-        await this.prisma.iseoHospitalEntry.update({
-          where: { id: existing.id },
-          data,
-        });
-        updated++;
-      } else {
-        await this.prisma.iseoHospitalEntry.create({ data });
-        created++;
+        if (existing) {
+          await this.prisma.iseoHospitalEntry.update({
+            where: { id: existing.id },
+            data,
+          });
+          updated++;
+        } else {
+          await this.prisma.iseoHospitalEntry.create({ data });
+          created++;
+        }
+      } catch (err) {
+        skipped++;
+        const msg = `Entry ISEO "${e.nome}" em ${e.dataIso}/${e.unidade} falhou: ${(err as Error).message}`;
+        this.logger.warn(`ISEO sync: ${msg}`);
+        inconsistencias.push(msg);
       }
     }
 
@@ -209,7 +217,7 @@ export class IseoHospitaisImportService {
     this.lastSync = result;
     this.lastSyncAtMs = Date.now();
     this.logger.log(
-      `ISEO Hospitais sync OK: created=${created}, updated=${updated}, abas=${sheets.length}, falhas=${inconsistencias.length}`,
+      `ISEO Hospitais sync OK: parseadas=${flat.length}, created=${created}, updated=${updated}, skipped=${skipped}, abas=${sheets.length}, falhas=${inconsistencias.length}`,
     );
     return result;
   }

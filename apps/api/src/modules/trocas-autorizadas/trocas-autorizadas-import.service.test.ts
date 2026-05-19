@@ -117,6 +117,35 @@ describe('TrocasAutorizadasImportService (S2.10.8b)', () => {
     expect(s.stale).toBe(false);
   });
 
+  it('S2.10.8b-fix: erro no auto-upsert Militar NÃO bloqueia criação das trocas', async () => {
+    // Mock prisma.militar.upsert para lançar exceção em todas chamadas
+    const upsertOrig = prisma.militar.upsert;
+    prisma.militar.upsert = vi.fn().mockRejectedValue(new Error('FK violation simulada'));
+    try {
+      const r = await svc.syncToDatabase();
+      // Trocas DEVEM ser criadas mesmo com upsert Militar falhando
+      expect(r.created).toBe(2);
+      const all = await prisma.trocaAutorizada.findMany();
+      expect(all).toHaveLength(2);
+      // Inconsistências registradas mas sync não falhou
+      expect(r.inconsistencias.length).toBeGreaterThan(0);
+      expect(r.inconsistencias.some((m) => m.includes('FK violation'))).toBe(true);
+    } finally {
+      prisma.militar.upsert = upsertOrig;
+    }
+  });
+
+  it('S2.10.8b-fix: falha do EfetivoService NÃO impede sync das trocas', async () => {
+    // Recria service com efetivo que lança erro
+    const efetivoBroken = {
+      getAll: vi.fn().mockRejectedValue(new Error('Timeout efetivo')),
+    } as unknown as import('../efetivo/efetivo.service').EfetivoService;
+    svc = new TrocasAutorizadasImportService(makeConfigStub(), prisma, efetivoBroken);
+    const r = await svc.syncToDatabase();
+    // Trocas devem ser criadas mesmo sem efetivo
+    expect(r.created).toBe(2);
+  });
+
   it('atualiza row existente quando CSV muda (upsert por id)', async () => {
     await svc.syncToDatabase();
     // Simula planilha alterada: PENDENTE virou VERIFICADO na linha 1
