@@ -7,7 +7,9 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { Militar as PrismaMilitar } from '@prisma/client';
 import type { EfetivoListResponse, EfetivoQuery, Militar } from '@argus/shared-types';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import { ChefesOperacoesService } from '../chefes-operacoes/chefes-operacoes.service';
 import { parseEfetivoCsv } from './efetivo-csv-parser';
 import type { MilitarDados } from './qdi-dados-csv-parser';
@@ -45,6 +47,7 @@ export class EfetivoService {
     private readonly config: ConfigService,
     private readonly qdi: QdiService,
     private readonly qdiDados: QdiDadosService,
+    private readonly prisma: PrismaService,
     @Optional()
     @Inject(forwardRef(() => ChefesOperacoesService))
     private readonly chefesOperacoes?: ChefesOperacoesService,
@@ -53,7 +56,7 @@ export class EfetivoService {
   async list(query: EfetivoQuery): Promise<EfetivoListResponse> {
     // Página /cadastros/efetivo NÃO inclui órfãos (S6a-fix item 2):
     // só militares de DADOS (LOCAL=1ª1º) ou 1ª1º.
-    const consolidated = await this.consolidate();
+    const consolidated = await this.consolidateFromDbOrMemory();
 
     let items = consolidated.items;
 
@@ -95,7 +98,7 @@ export class EfetivoService {
     // findByNf inclui órfãos do EFETIVO (S6c/F1) — necessário para a página de
     // detalhe `/cadastros/efetivo/:nf` resolver militares que estão em escalas
     // mas ainda não foram lançados no QDI 1ª1º.
-    const consolidated = await this.consolidate({ incluirEfetivoOrfao: true });
+    const consolidated = await this.consolidateFromDbOrMemory({ incluirEfetivoOrfao: true });
     return consolidated.items.find((m) => m.nf === nf) ?? null;
   }
 
@@ -111,13 +114,69 @@ export class EfetivoService {
   async getAll(
     options: { somente1aCia?: boolean; incluirEfetivoOrfao?: boolean } = {},
   ): Promise<Militar[]> {
-    const consolidated = await this.consolidate({
+    const consolidated = await this.consolidateFromDbOrMemory({
       incluirEfetivoOrfao: options.incluirEfetivoOrfao,
     });
     if (options.somente1aCia) {
       return consolidated.items.filter((m) => m.subSecao !== undefined);
     }
     return consolidated.items;
+  }
+
+  /**
+   * S2.10.8d — Tenta ler consolidação de `prisma.militar` (populado pelo
+   * `MilitarConsolidatorService` via cron/manual sync). Fallback para
+   * consolidação em memória se Postgres ainda vazio (cold boot, antes do
+   * 1º sync rodar).
+   *
+   * Aplica `incluirEfetivoOrfao` em runtime: NFs com `origensFonte`
+   * contendo apenas `'EFETIVO'` são filtradas quando `incluirEfetivoOrfao=false`.
+   */
+  private async consolidateFromDbOrMemory(
+    options: { incluirEfetivoOrfao?: boolean } = {},
+  ): Promise<{ items: Militar[]; syncedAt: number; stale: boolean }> {
+    let count = 0;
+    try {
+      count = await this.prisma.militar.count();
+    } catch (err) {
+      this.logger.warn(
+        `prisma.militar.count() falhou: ${(err as Error).message}. Caindo para consolidação em memória.`,
+      );
+    }
+    if (count > 0) {
+      const rows = await this.prisma.militar.findMany({ orderBy: { ant: 'asc' } });
+      let items = rows.map(prismaMilitarToShared);
+      if (!options.incluirEfetivoOrfao) {
+        items = items.filter((m) => {
+          const so = m.origensFonte ?? [];
+          return so.includes('DADOS') || so.includes('1ª1º');
+        });
+      }
+      const syncedAt = rows.reduce((acc, r) => Math.max(acc, r.sincronizadoEm.getTime()), 0);
+      const stale = syncedAt > 0 && Date.now() - syncedAt >= CACHE_TTL_MS;
+      return { items, syncedAt, stale };
+    }
+    // Fallback: tabela vazia (cold boot antes do 1º sync) → consolidação em memória.
+    return this.consolidate({ incluirEfetivoOrfao: options.incluirEfetivoOrfao });
+  }
+
+  /**
+   * S2.10.8d — Expõe o cache RAW da planilha EFETIVO (sem consolidação com
+   * QDI/DADOS). Usado pelo `MilitarConsolidatorService` para evitar fetch
+   * duplicado. Força refresh se TTL expirou.
+   */
+  async getRawEfetivoByNf(): Promise<{
+    byNf: Map<string, Militar>;
+    syncedAt: number;
+    stale: boolean;
+  }> {
+    const { entry, stale } = await this.getEntry();
+    return { byNf: entry.byNf, syncedAt: entry.syncedAt, stale };
+  }
+
+  /** S2.10.8d — Invalida cache do EFETIVO (próximo fetch força refresh). */
+  invalidateRawCache(): void {
+    this.cache = null;
   }
 
   /** Força resync de ambas as fontes, ignorando cache. */
@@ -363,7 +422,46 @@ export class EfetivoService {
  *
  * Cada militar carrega `origensFonte: string[]` indicando quais fontes contribuíram.
  */
-function mergeThreeSources(
+/**
+ * S2.10.8d — Mapeia row do `prisma.militar` (null) para o shape do
+ * shared-types `Militar` (undefined). Inverso de `militarToPrismaData` em
+ * `militar-consolidator.service.ts`.
+ */
+function prismaMilitarToShared(row: PrismaMilitar): Militar {
+  return {
+    nf: row.nf,
+    ant: row.ant,
+    posto: row.posto,
+    nome: row.nome,
+    nomeGuerra: row.nomeGuerra ?? undefined,
+    funcao: row.funcao ?? undefined,
+    unidade: row.unidade ?? undefined,
+    subSecao: (row.subSecao as 'staff' | 'sos' | 'guarda' | 'aquaticas' | null) ?? undefined,
+    postoPrevisto: row.postoPrevisto ?? undefined,
+    municipio: row.municipio ?? undefined,
+    idade: row.idade ?? undefined,
+    servico: row.servico ?? undefined,
+    situacao: row.situacao ?? undefined,
+    lotacao: row.lotacao ?? undefined,
+    classe: row.classe ?? undefined,
+    conceitoDisciplinar: row.conceitoDisciplinar ?? undefined,
+    pontos: row.pontos ?? undefined,
+    cnh: row.cnh ?? undefined,
+    cnhValidade: row.cnhValidade ?? undefined,
+    incorporacao: row.incorporacao ?? undefined,
+    planoFerias: row.planoFerias ?? undefined,
+    mergulho: row.mergulho ?? undefined,
+    ftba: row.ftba ?? undefined,
+    etsp: row.etsp ?? undefined,
+    ccve: row.ccve ?? undefined,
+    ccveValidade: row.ccveValidade ?? undefined,
+    censo: row.censo ?? undefined,
+    origensFonte: row.origensFonte as ('DADOS' | '1ª1º' | 'EFETIVO')[],
+    papelEspecial: row.papelEspecial ?? undefined,
+  };
+}
+
+export function mergeThreeSources(
   dadosByNf: Map<string, MilitarDados>,
   qdiByNf: Map<string, MilitarQdi>,
   efetivoByNf: Map<string, Militar>,

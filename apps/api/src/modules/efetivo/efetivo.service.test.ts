@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ConfigService } from '@nestjs/config';
+import type { PrismaService } from '../../common/prisma/prisma.service';
 import { EfetivoService } from './efetivo.service';
 import { QdiService } from './qdi.service';
 import { QdiDadosService } from './qdi-dados.service';
@@ -51,7 +52,16 @@ function makeService(opts?: {
           }),
   } as unknown as QdiDadosService;
 
-  return new EfetivoService(config, qdi, qdiDados);
+  // S2.10.8d — Stub Prisma com count=0 força fallback à consolidação em memória
+  // (comportamento pré-S2.10.8d, que os tests originais validam).
+  const prisma = {
+    militar: {
+      count: vi.fn().mockResolvedValue(0),
+      findMany: vi.fn().mockResolvedValue([]),
+    },
+  } as unknown as PrismaService;
+
+  return new EfetivoService(config, qdi, qdiDados, prisma);
 }
 
 function makeQdiEntry(opts: {

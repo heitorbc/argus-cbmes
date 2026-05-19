@@ -42,6 +42,11 @@ export class QdiDadosService {
     };
   }
 
+  /** S2.10.8d — Invalida cache (próximo `getByNf()` força refresh). */
+  invalidateCache(): void {
+    this.cache = null;
+  }
+
   /**
    * S2.10.8a — Status visível em `/configuracoes/integracoes`. Real-time
    * only (não persiste em Postgres).
