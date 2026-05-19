@@ -622,3 +622,67 @@ export function makeDispensasPrismaMock(): PrismaService {
   };
   return prismaLike as unknown as PrismaService & { _seedMilitar: (nf: string) => void };
 }
+
+/**
+ * S2.10.8a — Mock in-memory mínimo de `PrismaService.syncLog` para tests do
+ * SyncOrchestratorService. Suporta create + findMany ordenado por
+ * finalizadoEm DESC com filtro opcional por `fonte`.
+ */
+export function makeSyncLogPrismaMock(): PrismaService {
+  type Row = {
+    id: string;
+    fonte: string;
+    status: string;
+    created: number;
+    updated: number;
+    skipped: number;
+    erros: string[];
+    trigger: string;
+    duracaoMs: number;
+    iniciadoEm: Date;
+    finalizadoEm: Date;
+  };
+  const rows: Row[] = [];
+  let counter = 1;
+
+  const syncLog = {
+    create: async ({ data }: { data: Partial<Row> }) => {
+      const row: Row = {
+        id: `log-${counter++}`,
+        fonte: data.fonte ?? '',
+        status: data.status ?? 'success',
+        created: data.created ?? 0,
+        updated: data.updated ?? 0,
+        skipped: data.skipped ?? 0,
+        erros: data.erros ?? [],
+        trigger: data.trigger ?? 'manual',
+        duracaoMs: data.duracaoMs ?? 0,
+        iniciadoEm: data.iniciadoEm ?? new Date(),
+        finalizadoEm: data.finalizadoEm ?? new Date(),
+      };
+      rows.push(row);
+      return row;
+    },
+    findMany: async ({
+      where,
+      orderBy,
+      take,
+    }: {
+      where?: { fonte?: string };
+      orderBy?: { finalizadoEm?: 'asc' | 'desc' };
+      take?: number;
+    } = {}) => {
+      let out = where?.fonte ? rows.filter((r) => r.fonte === where.fonte) : [...rows];
+      if (orderBy?.finalizadoEm === 'desc') {
+        out = out.sort((a, b) => b.finalizadoEm.getTime() - a.finalizadoEm.getTime());
+      }
+      if (take && out.length > take) out = out.slice(0, take);
+      return out;
+    },
+  };
+
+  const prismaLike = {
+    syncLog,
+  };
+  return prismaLike as unknown as PrismaService;
+}

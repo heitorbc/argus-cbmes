@@ -137,6 +137,30 @@ export class SheetsDbService implements OnModuleInit {
   }
 
   /**
+   * S2.10.8a — Adapter para SourceConfig do IntegracoesService. Sheets-DB é
+   * DUAL-WRITE (não tem fetch periódico), então `syncedAt` é o timestamp do
+   * bootstrap inicial e `count` é o número de abas existentes confirmadas.
+   * `stale=false` sempre (não há TTL — é write-through pelo dual-write).
+   */
+  getSyncStatusAsSource(): { syncedAt: string | null; count: number; stale: boolean } {
+    return {
+      syncedAt: this.bootstrappedAt,
+      count: this.abasExistentes.size,
+      stale: false,
+    };
+  }
+
+  /**
+   * S2.10.8a — Re-executa bootstrap (admin via /configuracoes/integracoes).
+   * Lança ServiceUnavailable se falhar.
+   */
+  async forceSyncAsSource(): Promise<{ syncedAt: string; count: number }> {
+    await this.bootstrap();
+    this.bootstrappedAt = new Date().toISOString();
+    return { syncedAt: this.bootstrappedAt, count: this.abasExistentes.size };
+  }
+
+  /**
    * Cria as 3 abas com headers se não existirem. Idempotente — em
    * rodadas subsequentes apenas confirma a presença.
    */

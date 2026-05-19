@@ -43,6 +43,32 @@ export class QdiDadosService {
   }
 
   /**
+   * S2.10.8a — Status visível em `/configuracoes/integracoes`. Real-time
+   * only (não persiste em Postgres).
+   */
+  getSyncStatus(): { syncedAt: string | null; count: number; stale: boolean } {
+    if (!this.cache) return { syncedAt: null, count: 0, stale: false };
+    const stale = Date.now() - this.cache.syncedAt >= CACHE_TTL_MS;
+    return {
+      syncedAt: new Date(this.cache.syncedAt).toISOString(),
+      count: this.cache.byNf.size,
+      stale,
+    };
+  }
+
+  /** S2.10.8a — Força resync (admin). Lança ServiceUnavailable se falhar. */
+  async forceSync(): Promise<{ syncedAt: string; count: number }> {
+    try {
+      const entry = await this.fetchAndParse();
+      this.cache = entry;
+      return { syncedAt: new Date(entry.syncedAt).toISOString(), count: entry.byNf.size };
+    } catch (err) {
+      this.logger.error(`forceSync QDI DADOS falhou: ${(err as Error).message}`);
+      throw new ServiceUnavailableException('Não foi possível sincronizar com a aba DADOS do QDI.');
+    }
+  }
+
+  /**
    * S0.x/dev-fixes — Busca militares por NF na aba DADOS sem filtro de
    * LOCAL. Usado para resolver dados de ChOps que estão em outras Cias do
    * BBM (não 1ª Cia) e não passariam pelo filtro padrão.

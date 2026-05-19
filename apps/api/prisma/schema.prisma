@@ -584,3 +584,28 @@ model AprovacaoPreviaItem {
   @@index([data])
   @@map("aprovacoes_previa_itens")
 }
+
+/// S2.10.8a — Histórico de sincronizações com planilhas externas.
+/// Cada execução de sync (startup, cron 00/06/12/18h, ou manual via admin)
+/// grava uma row aqui com counts + duração + erros, para auditoria e
+/// diagnóstico via `/configuracoes/integracoes`.
+model SyncLog {
+  id           String   @id @default(cuid())
+  /// ID estável do source (kebab-case): 'dispensas-import', 'trocas-autorizadas', ...
+  fonte        String
+  /// 'success' | 'failed' | 'partial' (success com inconsistências)
+  status       String
+  created      Int      @default(0)
+  updated      Int      @default(0)
+  skipped      Int      @default(0)
+  /// Mensagens de inconsistência (NF não resolvido, militar ausente, etc.)
+  erros        String[] @default([])
+  /// Origem do trigger: 'startup' | 'cron' | 'manual'
+  trigger      String
+  duracaoMs    Int      @default(0)
+  iniciadoEm   DateTime
+  finalizadoEm DateTime @default(now())
+
+  @@index([fonte, finalizadoEm])
+  @@map("sync_logs")
+}

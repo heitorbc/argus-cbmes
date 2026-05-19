@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AgendaModule } from './modules/agenda/agenda.module';
@@ -29,6 +30,7 @@ import { ParteDiariaModule } from './modules/parte-diaria/parte-diaria.module';
 import { RecursosModule } from './modules/recursos/recursos.module';
 import { ServicoModule } from './modules/servico/servico.module';
 import { SheetsDbModule } from './modules/sheets-db/sheets-db.module';
+import { SyncOrchestratorModule } from './modules/sync-orchestrator/sync-orchestrator.module';
 import { TrocasAutorizadasModule } from './modules/trocas-autorizadas/trocas-autorizadas.module';
 import { UnidadesModule } from './modules/unidades/unidades.module';
 import { ViaturasModule } from './modules/viaturas/viaturas.module';
@@ -45,6 +47,8 @@ import { ViaturasModule } from './modules/viaturas/viaturas.module';
       // não existem e o ConfigModule cai no `process.env`.
       envFilePath: ['.env.local', '../../.env.local', '.env', '../../.env'],
     }),
+    // S2.10.8a — Scheduler global para o SyncOrchestratorService (cron 00/06/12/18h).
+    ScheduleModule.forRoot(),
     PrismaModule,
     AtestadosModule,
     AuthModule,
@@ -74,6 +78,7 @@ import { ViaturasModule } from './modules/viaturas/viaturas.module';
     RecursosModule,
     ServicoModule,
     SheetsDbModule,
+    SyncOrchestratorModule,
     TrocasAutorizadasModule,
     UnidadesModule,
     ViaturasModule,

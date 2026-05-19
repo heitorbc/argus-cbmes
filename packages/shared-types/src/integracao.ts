@@ -27,5 +27,31 @@ export const integracaoStatusSchema = z.object({
   /** Quantidade de registros lidos no último sync. */
   qtdRegistros: z.number().int().min(0),
   status: z.enum(STATUS_INTEGRACAO),
+  /**
+   * S2.10.8a — Quando `true`, a fonte NÃO persiste em Postgres; lê em
+   * tempo real (cache 5min). Exemplo: Mapa Força CIODES (alta frequência
+   * de atualização direta na planilha).
+   */
+  realtimeOnly: z.boolean().default(false),
+  /** S2.10.8a — Quando `true`, faz parte do scheduler central (cron + startup). */
+  noScheduler: z.boolean().default(false),
 });
 export type IntegracaoStatus = z.infer<typeof integracaoStatusSchema>;
+
+/**
+ * S2.10.8a — Histórico de syncs (admin / auditoria).
+ */
+export const syncLogEntrySchema = z.object({
+  id: z.string(),
+  fonte: z.string(),
+  status: z.enum(['success', 'partial', 'failed']),
+  created: z.number().int().nonnegative(),
+  updated: z.number().int().nonnegative(),
+  skipped: z.number().int().nonnegative(),
+  erros: z.array(z.string()),
+  trigger: z.string(),
+  duracaoMs: z.number().int().nonnegative(),
+  iniciadoEm: z.string(),
+  finalizadoEm: z.string(),
+});
+export type SyncLogEntry = z.infer<typeof syncLogEntrySchema>;
