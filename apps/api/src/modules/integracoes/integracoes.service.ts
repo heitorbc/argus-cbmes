@@ -30,7 +30,9 @@ interface SourceConfig {
    * sync no startup). Frontend mostra ícone do scheduler.
    */
   noScheduler?: boolean;
-  getStatus: () => { syncedAt: string | null; count: number; stale: boolean };
+  getStatus: () =>
+    | { syncedAt: string | null; count: number; stale: boolean }
+    | Promise<{ syncedAt: string | null; count: number; stale: boolean }>;
   forceSync: () => Promise<{ syncedAt: string; count: number }>;
 }
 
@@ -59,8 +61,11 @@ export class IntegracoesService {
     private readonly sheetsDb: SheetsDbService,
   ) {}
 
-  list(): IntegracaoStatus[] {
-    return this.sources().map((s) => this.buildStatus(s));
+  /**
+   * S2.10.8c — async para suportar getStatus assíncrono (multi-sheet ISEO).
+   */
+  async list(): Promise<IntegracaoStatus[]> {
+    return Promise.all(this.sources().map((s) => this.buildStatus(s)));
   }
 
   /**
@@ -162,16 +167,16 @@ export class IntegracoesService {
         forceSync: () => this.qdiDados.forceSync(),
       },
       {
+        // S2.10.8c — ISEO Hospitais agora persistido em Postgres + sync orchestrator.
+        // Multi-sheet (HPM + HIMABA × meses) agregado num único SyncLog.
         id: 'iseo-hospitais',
-        nome: 'ISEO Hospitais (HPM + HIMABA)',
+        nome: 'ISEO Hospitais → Postgres (upsert multi-sheet)',
         descricao:
-          'Escala mensal ISEO Hospitais — várias abas (HPM JANEIRO 2026, HIMABA JANEIRO 2026, etc.). Status agregado de todas as abas.',
+          'Escala mensal ISEO Hospitais — várias abas (HPM/HIMABA × meses) sincronizadas e persistidas em Postgres. Sync no startup, cron 00/06/12/18h e auto em cada GET (cache 5min).',
         sheetIdEnv: 'ISEO_HOSPITAIS_SHEET_ID',
         sheetIdDefault: '1wmFOEsrU219fGMfksoSY5dvQu0UN7HdQ558UUiWRXuw',
         sheetGidOrName: 'gid=1108098049',
-        realtimeOnly: true,
-        noScheduler: true,
-        getStatus: () => this.iseoHospitais.getSyncStatusAgregado(),
+        getStatus: async () => this.iseoHospitais.getSyncStatusAgregado(),
         forceSync: () => this.iseoHospitais.forceSyncAsSource(),
       },
       {
@@ -254,9 +259,9 @@ export class IntegracoesService {
     ];
   }
 
-  private buildStatus(s: SourceConfig): IntegracaoStatus {
+  private async buildStatus(s: SourceConfig): Promise<IntegracaoStatus> {
     const sheetId = this.config.get<string>(s.sheetIdEnv) ?? s.sheetIdDefault;
-    const status = s.getStatus();
+    const status = await s.getStatus();
     const url = sheetId
       ? s.sheetGidOrName
         ? `https://docs.google.com/spreadsheets/d/${sheetId}/edit#${s.sheetGidOrName}`
