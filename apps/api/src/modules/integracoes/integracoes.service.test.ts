@@ -95,7 +95,29 @@ function makeFakeSheetsDb() {
   };
 }
 
-describe('IntegracoesService (S2.10.8a — 13 sources)', () => {
+/**
+ * S2.10.8d — Fake para os 3 ImportServices que compartilham o
+ * MilitarConsolidatorService. Shape igual a `dispensasImport`.
+ */
+function makeFakeMilitarImport() {
+  return {
+    getSyncStatus: () => ({
+      syncedAt: null as string | null,
+      counts: null as { created: number; updated: number; skipped: number } | null,
+      stale: false,
+      inconsistencias: 0,
+    }),
+    forceSync: async () => ({
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      inconsistencias: [] as string[],
+      syncedAt: new Date().toISOString(),
+    }),
+  };
+}
+
+describe('IntegracoesService (S2.10.8d — 16 sources)', () => {
   let svc: IntegracoesService;
   let trocasAut: FakeSheetService;
   let chefesOp: FakeSheetService;
@@ -122,6 +144,9 @@ describe('IntegracoesService (S2.10.8a — 13 sources)', () => {
   let iseo: ReturnType<typeof makeFakeIseo>;
   let mfCiodes: ReturnType<typeof makeFakeMfCiodes>;
   let sheetsDb: ReturnType<typeof makeFakeSheetsDb>;
+  let efetivoImport: ReturnType<typeof makeFakeMilitarImport>;
+  let qdiImport: ReturnType<typeof makeFakeMilitarImport>;
+  let qdiDadosImport: ReturnType<typeof makeFakeMilitarImport>;
 
   beforeEach(() => {
     trocasAut = makeFakeService({ syncedAt: null, count: 0, stale: false });
@@ -144,6 +169,9 @@ describe('IntegracoesService (S2.10.8a — 13 sources)', () => {
     iseo = makeFakeIseo();
     mfCiodes = makeFakeMfCiodes();
     sheetsDb = makeFakeSheetsDb();
+    efetivoImport = makeFakeMilitarImport();
+    qdiImport = makeFakeMilitarImport();
+    qdiDadosImport = makeFakeMilitarImport();
 
     const config = new ConfigService({});
     svc = new IntegracoesService(
@@ -159,20 +187,26 @@ describe('IntegracoesService (S2.10.8a — 13 sources)', () => {
       mfCiodes as unknown as import('../mapa-forca-ciodes/mapa-forca-ciodes.service').MapaForcaCiodesService,
       iseo as unknown as import('../iseo-hospitais/iseo-hospitais.service').IseoHospitaisService,
       sheetsDb as unknown as import('../sheets-db/sheets-db.service').SheetsDbService,
+      efetivoImport as unknown as import('../efetivo/efetivo-import.service').EfetivoImportService,
+      qdiImport as unknown as import('../efetivo/qdi-import.service').QdiImportService,
+      qdiDadosImport as unknown as import('../efetivo/qdi-dados-import.service').QdiDadosImportService,
     );
   });
 
-  it('S2.10.8a — lista as 13 integrações cadastradas (todas as planilhas mapeadas)', async () => {
+  it('S2.10.8d — lista as 16 integrações cadastradas (todas as planilhas mapeadas)', async () => {
     const result = await svc.list();
-    expect(result).toHaveLength(13);
+    expect(result).toHaveLength(16);
     expect(result.map((r) => r.id).sort()).toEqual([
       'chefes-operacoes',
       'dispensas-import',
       'dispensas-sheet',
+      'efetivo-import',
       'iseo-hospitais',
       'mapa-forca-ciodes',
       'qdi-1a1o',
       'qdi-dados',
+      'qdi-dados-import',
+      'qdi-import',
       'sheets-db',
       'trocas-autorizadas',
       'viaturas-qdv',
@@ -182,13 +216,16 @@ describe('IntegracoesService (S2.10.8a — 13 sources)', () => {
     ]);
   });
 
-  it('S2.10.8c — sources persistidas: dispensas-import + trocas-autorizadas + iseo-hospitais', async () => {
+  it('S2.10.8d — sources persistidas: 6 (dispensas + trocas + iseo + efetivo + qdi + qdi-dados)', async () => {
     const result = await svc.list();
     const realtime = result.filter((r) => r.realtimeOnly);
     const persisted = result.filter((r) => !r.realtimeOnly);
     expect(persisted.map((p) => p.id).sort()).toEqual([
       'dispensas-import',
+      'efetivo-import',
       'iseo-hospitais',
+      'qdi-dados-import',
+      'qdi-import',
       'trocas-autorizadas',
     ]);
     expect(realtime).toHaveLength(10);
@@ -286,9 +323,9 @@ describe('IntegracoesService (S2.10.8a — 13 sources)', () => {
     iseo.getSyncStatusAgregado = async () => {
       throw new Error('prisma.iseoHospitalEntry.count() timeout — Supabase cold boot');
     };
-    // list() devia retornar 13 entries; iseo-hospitais aparece como nunca
+    // list() devia retornar 16 entries; iseo-hospitais aparece como nunca
     const result = await svc.list();
-    expect(result).toHaveLength(13);
+    expect(result).toHaveLength(16);
     const iseoStatus = result.find((r) => r.id === 'iseo-hospitais');
     expect(iseoStatus?.status).toBe('nunca');
     expect(iseoStatus?.ultimoSyncEm).toBeNull();
