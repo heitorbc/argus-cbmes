@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import type { AgendaItem, AgendaResponse, AgendaFonte } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
 import { FonteBadge, FONTE_CFG } from '@/components/AgendaCard';
+import { SkeletonLines } from '@/components/Skeleton';
 
 type Visao = 'lista' | 'calendario';
 
@@ -24,44 +26,36 @@ const TODAS_FONTES: AgendaFonte[] = [
  * Filtros: range (30/60/90 dias) + fontes ativas. Conflitos destacados.
  */
 export function AgendaPage() {
-  const [data, setData] = useState<AgendaResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [visao, setVisao] = useState<Visao>('lista');
   const [dias, setDias] = useState<number>(30);
   const [incluirPassado, setIncluirPassado] = useState(false);
   const [fontesAtivas, setFontesAtivas] = useState<Set<AgendaFonte>>(new Set(TODAS_FONTES));
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    const fetchPromise = incluirPassado
-      ? (() => {
-          const hoje = new Date();
-          const inicio = new Date(hoje);
-          inicio.setUTCDate(inicio.getUTCDate() - 30);
-          const fim = new Date(hoje);
-          fim.setUTCDate(fim.getUTCDate() + dias);
-          return api.agendaRange(inicio.toISOString().slice(0, 10), fim.toISOString().slice(0, 10));
-        })()
-      : api.agendaProxima(dias);
-    fetchPromise
-      .then((d) => {
-        if (!cancelled) {
-          setData(d);
-          setError(null);
-        }
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e instanceof ApiError ? e.message : 'Erro ao carregar agenda');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [dias, incluirPassado]);
+  // S2.10.9c — useQuery substitui useEffect+fetch. staleTime 5min reduz refetches em navegações.
+  const {
+    data,
+    isLoading: loading,
+    error: queryError,
+  } = useQuery<AgendaResponse>({
+    queryKey: ['agenda', dias, incluirPassado],
+    queryFn: () => {
+      if (incluirPassado) {
+        const hoje = new Date();
+        const inicio = new Date(hoje);
+        inicio.setUTCDate(inicio.getUTCDate() - 30);
+        const fim = new Date(hoje);
+        fim.setUTCDate(fim.getUTCDate() + dias);
+        return api.agendaRange(inicio.toISOString().slice(0, 10), fim.toISOString().slice(0, 10));
+      }
+      return api.agendaProxima(dias);
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const error = queryError
+    ? queryError instanceof ApiError
+      ? queryError.message
+      : 'Erro ao carregar agenda'
+    : null;
 
   const itensFiltrados = useMemo(() => {
     if (!data) return [];
@@ -174,7 +168,7 @@ export function AgendaPage() {
         </div>
 
         {loading ? (
-          <p className="mt-4 text-sm text-slate-500">Carregando agenda…</p>
+          <SkeletonLines lines={6} className="mt-4" />
         ) : visao === 'lista' ? (
           <ListaView itens={itensFiltrados} datasConflito={datasComConflito} />
         ) : (
