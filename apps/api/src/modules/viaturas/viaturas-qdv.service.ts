@@ -1,119 +1,83 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable, Logger } from '@nestjs/common';
 import type { ViaturaQdv } from '@argus/shared-types';
-import { parseViaturasQdvCsv } from './viaturas-qdv-csv-parser';
-
-const CACHE_TTL_MS = 5 * 60 * 1000;
-const FETCH_TIMEOUT_MS = 15_000;
-
-interface CacheEntry {
-  parsed: ViaturaQdv[];
-  syncedAt: number;
-}
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { ViaturasQdvImportService } from './viaturas-qdv-import.service';
 
 /**
- * Item 3 — Lê a aba "1BBM_1CIA" da planilha QDV (read-only).
- *
- * Env vars:
- * - `QDV_SHEET_ID` (default = ID da planilha institucional)
- * - `QDV_SHEET_NAME` (default = "1BBM_1CIA")
+ * S2.10.9a — Lê QDV (aba `1BBM_1CIA`) de `prisma.viaturaQdv`.
+ * Antes (S0.5): cache TTL 5min in-memory com fetch Google em runtime.
+ * Agora: cron 00/06/12/18h + startup via `ViaturasQdvImportService`.
  */
 @Injectable()
 export class ViaturasQdvService {
   private readonly logger = new Logger(ViaturasQdvService.name);
-  private cache: CacheEntry | null = null;
-  private inflight: Promise<CacheEntry> | null = null;
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly importSvc: ViaturasQdvImportService,
+  ) {}
 
   async listAll(): Promise<ViaturaQdv[]> {
-    const { entry } = await this.getEntry();
-    return entry.parsed;
+    try {
+      const rows = await this.prisma.viaturaQdv.findMany({ orderBy: { prefixo: 'asc' } });
+      return rows.map(toShared);
+    } catch (err) {
+      this.logger.warn(`listAll falhou: ${(err as Error).message}. Retornando lista vazia.`);
+      return [];
+    }
   }
 
   async findByPrefixo(prefixo: string): Promise<ViaturaQdv | null> {
-    const all = await this.listAll();
-    const norm = prefixo.trim().toUpperCase();
-    return all.find((v) => v.prefixo.toUpperCase() === norm) ?? null;
-  }
-
-  reset(): void {
-    this.cache = null;
-    this.inflight = null;
-  }
-
-  /**
-   * S0.5/PR3 — Força resync ignorando o cache. Usado pelo botão admin em
-   * /configuracoes/integracoes.
-   */
-  async forceSync(): Promise<{ syncedAt: string; count: number }> {
-    const previous = this.cache;
     try {
-      const entry = await this.fetchAndParse();
-      this.cache = entry;
-      return { syncedAt: new Date(entry.syncedAt).toISOString(), count: entry.parsed.length };
-    } catch (err) {
-      this.logger.error(
-        `forceSync QDV falhou: ${(err as Error).message}. ${previous ? 'Mantendo snapshot anterior.' : 'Sem snapshot anterior.'}`,
-      );
-      throw new ServiceUnavailableException('Não foi possível sincronizar com a planilha QDV.');
+      const row = await this.prisma.viaturaQdv.findUnique({
+        where: { prefixo: prefixo.trim().toUpperCase() },
+      });
+      return row ? toShared(row) : null;
+    } catch {
+      return null;
     }
   }
 
+  /** S2.10.9a — Status delegado ao import service (counts em Postgres). */
   getSyncStatus(): { syncedAt: string | null; count: number; stale: boolean } {
-    if (!this.cache) return { syncedAt: null, count: 0, stale: false };
-    const stale = Date.now() - this.cache.syncedAt >= CACHE_TTL_MS;
+    const s = this.importSvc.getSyncStatus();
     return {
-      syncedAt: new Date(this.cache.syncedAt).toISOString(),
-      count: this.cache.parsed.length,
-      stale,
+      syncedAt: s.syncedAt,
+      count: s.counts ? s.counts.created : 0,
+      stale: s.stale,
     };
   }
 
-  private async getEntry(): Promise<{ entry: CacheEntry; stale: boolean }> {
-    const now = Date.now();
-    if (this.cache && now - this.cache.syncedAt < CACHE_TTL_MS) {
-      return { entry: this.cache, stale: false };
-    }
-    if (this.inflight) {
-      const entry = await this.inflight;
-      return { entry, stale: false };
-    }
-    this.inflight = this.fetchAndParse().finally(() => {
-      this.inflight = null;
-    });
-    try {
-      const entry = await this.inflight;
-      this.cache = entry;
-      return { entry, stale: false };
-    } catch (err) {
-      this.logger.error(
-        `Falha ao sincronizar QDV: ${(err as Error).message}. ${this.cache ? 'Servindo último snapshot.' : 'Sem snapshot anterior.'}`,
-      );
-      if (this.cache) return { entry: this.cache, stale: true };
-      throw new ServiceUnavailableException(
-        'Não foi possível sincronizar com a planilha QDV e não há snapshot anterior.',
-      );
-    }
+  async forceSync(): Promise<{ syncedAt: string; count: number }> {
+    const r = await this.importSvc.forceSync();
+    return { syncedAt: r.syncedAt, count: r.created };
   }
+}
 
-  private async fetchAndParse(): Promise<CacheEntry> {
-    const sheetId =
-      this.config.get<string>('QDV_SHEET_ID') ?? '1iqjSDXpbAjtbi7lvd5_5brims8Ipr-OTVXhQMGiv2I8';
-    const sheetName = this.config.get<string>('QDV_SHEET_NAME') ?? '1BBM_1CIA';
-    const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    let csv: string;
-    try {
-      const res = await fetch(url, { signal: controller.signal, redirect: 'follow' });
-      if (!res.ok) throw new Error(`HTTP ${res.status} ao baixar QDV`);
-      csv = await res.text();
-    } finally {
-      clearTimeout(timeoutId);
-    }
-    const parsed = parseViaturasQdvCsv(csv);
-    return { parsed, syncedAt: Date.now() };
-  }
+function toShared(row: {
+  prefixo: string;
+  status: string | null;
+  emprestadaA: string | null;
+  kmAtual: number | null;
+  observacao: string | null;
+  empregoPrimario: string | null;
+  empregoSecundario: string | null;
+  placa: string | null;
+  marcaModelo: string | null;
+  combustivel: string | null;
+  obm: string | null;
+}): ViaturaQdv {
+  return {
+    prefixo: row.prefixo,
+    status: row.status ?? undefined,
+    emprestadaA: row.emprestadaA ?? undefined,
+    kmAtual: row.kmAtual ?? undefined,
+    observacao: row.observacao ?? undefined,
+    empregoPrimario: row.empregoPrimario ?? undefined,
+    empregoSecundario: row.empregoSecundario ?? undefined,
+    placa: row.placa ?? undefined,
+    marcaModelo: row.marcaModelo ?? undefined,
+    combustivel: row.combustivel ?? undefined,
+    obm: row.obm ?? undefined,
+  };
 }

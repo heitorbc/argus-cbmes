@@ -3,7 +3,6 @@ import { NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { IntegracoesService } from './integracoes.service';
 import { ChefesOperacoesService } from '../chefes-operacoes/chefes-operacoes.service';
-import { DispensasSheetService } from '../dispensas/dispensas-sheet.service';
 import { TrocasAutorizadasService } from '../trocas-autorizadas/trocas-autorizadas.service';
 import { ViaturasQdvService } from '../viaturas/viaturas-qdv.service';
 import { ViaturasQdvExtrasService } from '../viaturas/viaturas-qdv-extras.service';
@@ -32,9 +31,9 @@ interface FakeExtrasService {
   baseLista: FakeSheetService;
   vtrPrincipal: FakeSheetService;
   contatos: FakeSheetService;
-  getSyncStatusBaseLista: () => SyncStatus;
-  getSyncStatusVtrPrincipal: () => SyncStatus;
-  getSyncStatusContatos: () => SyncStatus;
+  getSyncStatusBaseLista: () => Promise<SyncStatus>;
+  getSyncStatusVtrPrincipal: () => Promise<SyncStatus>;
+  getSyncStatusContatos: () => Promise<SyncStatus>;
   forceSyncBaseLista: ReturnType<typeof vi.fn>;
   forceSyncVtrPrincipal: ReturnType<typeof vi.fn>;
   forceSyncContatos: ReturnType<typeof vi.fn>;
@@ -48,24 +47,18 @@ function makeFakeExtras(): FakeExtrasService {
     baseLista,
     vtrPrincipal,
     contatos,
-    getSyncStatusBaseLista: () => baseLista.status,
-    getSyncStatusVtrPrincipal: () => vtrPrincipal.status,
-    getSyncStatusContatos: () => contatos.status,
+    getSyncStatusBaseLista: async () => baseLista.status,
+    getSyncStatusVtrPrincipal: async () => vtrPrincipal.status,
+    getSyncStatusContatos: async () => contatos.status,
     forceSyncBaseLista: baseLista.forceSync,
     forceSyncVtrPrincipal: vtrPrincipal.forceSync,
     forceSyncContatos: contatos.forceSync,
   };
 }
 
-/** S2.10.8a — Fakes para os novos services real-time-only adicionados ao menu. */
-function makeFakeQdi(): FakeSheetService {
-  return makeFakeService({ syncedAt: null, count: 0, stale: false });
-}
-
 function makeFakeIseo() {
   let status: SyncStatus = { syncedAt: null, count: 0, stale: false };
   return {
-    // S2.10.8c: agora async (Prisma queries)
     getSyncStatusAgregado: async () => status,
     forceSyncAsSource: vi.fn(async () => {
       status = { syncedAt: '2026-05-13T12:00:00.000Z', count: 50, stale: false };
@@ -117,11 +110,10 @@ function makeFakeMilitarImport() {
   };
 }
 
-describe('IntegracoesService (S2.10.8d — 16 sources)', () => {
+describe('IntegracoesService (S2.10.9a — 13 sources, 11 persistidos)', () => {
   let svc: IntegracoesService;
   let trocasAut: FakeSheetService;
   let chefesOp: FakeSheetService;
-  let dispensasSheet: FakeSheetService;
   let dispensasImport: {
     getSyncStatus: () => {
       syncedAt: string | null;
@@ -139,8 +131,6 @@ describe('IntegracoesService (S2.10.8d — 16 sources)', () => {
   };
   let viaturasQdv: FakeSheetService;
   let viaturasQdvExtras: FakeExtrasService;
-  let qdi: FakeSheetService;
-  let qdiDados: FakeSheetService;
   let iseo: ReturnType<typeof makeFakeIseo>;
   let mfCiodes: ReturnType<typeof makeFakeMfCiodes>;
   let sheetsDb: ReturnType<typeof makeFakeSheetsDb>;
@@ -151,7 +141,6 @@ describe('IntegracoesService (S2.10.8d — 16 sources)', () => {
   beforeEach(() => {
     trocasAut = makeFakeService({ syncedAt: null, count: 0, stale: false });
     chefesOp = makeFakeService({ syncedAt: null, count: 0, stale: false });
-    dispensasSheet = makeFakeService({ syncedAt: null, count: 0, stale: false });
     dispensasImport = {
       getSyncStatus: () => ({ syncedAt: null, counts: null, stale: false, inconsistencias: 0 }),
       forceSync: async () => ({
@@ -164,8 +153,6 @@ describe('IntegracoesService (S2.10.8d — 16 sources)', () => {
     };
     viaturasQdv = makeFakeService({ syncedAt: null, count: 0, stale: false });
     viaturasQdvExtras = makeFakeExtras();
-    qdi = makeFakeQdi();
-    qdiDados = makeFakeQdi();
     iseo = makeFakeIseo();
     mfCiodes = makeFakeMfCiodes();
     sheetsDb = makeFakeSheetsDb();
@@ -178,12 +165,9 @@ describe('IntegracoesService (S2.10.8d — 16 sources)', () => {
       config,
       trocasAut as unknown as TrocasAutorizadasService,
       chefesOp as unknown as ChefesOperacoesService,
-      dispensasSheet as unknown as DispensasSheetService,
       dispensasImport as unknown as import('../dispensas/dispensas-import.service').DispensasImportService,
       viaturasQdv as unknown as ViaturasQdvService,
       viaturasQdvExtras as unknown as ViaturasQdvExtrasService,
-      qdi as unknown as import('../efetivo/qdi.service').QdiService,
-      qdiDados as unknown as import('../efetivo/qdi-dados.service').QdiDadosService,
       mfCiodes as unknown as import('../mapa-forca-ciodes/mapa-forca-ciodes.service').MapaForcaCiodesService,
       iseo as unknown as import('../iseo-hospitais/iseo-hospitais.service').IseoHospitaisService,
       sheetsDb as unknown as import('../sheets-db/sheets-db.service').SheetsDbService,
@@ -193,18 +177,15 @@ describe('IntegracoesService (S2.10.8d — 16 sources)', () => {
     );
   });
 
-  it('S2.10.8d — lista as 16 integrações cadastradas (todas as planilhas mapeadas)', async () => {
+  it('S2.10.9a — lista as 13 integrações cadastradas (após remoção dos 3 legados)', async () => {
     const result = await svc.list();
-    expect(result).toHaveLength(16);
+    expect(result).toHaveLength(13);
     expect(result.map((r) => r.id).sort()).toEqual([
       'chefes-operacoes',
       'dispensas-import',
-      'dispensas-sheet',
       'efetivo-import',
       'iseo-hospitais',
       'mapa-forca-ciodes',
-      'qdi-1a1o',
-      'qdi-dados',
       'qdi-dados-import',
       'qdi-import',
       'sheets-db',
@@ -216,19 +197,24 @@ describe('IntegracoesService (S2.10.8d — 16 sources)', () => {
     ]);
   });
 
-  it('S2.10.8d — sources persistidas: 6 (dispensas + trocas + iseo + efetivo + qdi + qdi-dados)', async () => {
+  it('S2.10.9a — sources persistidas: 11 (todas exceto MF CIODES + sheets-db)', async () => {
     const result = await svc.list();
     const realtime = result.filter((r) => r.realtimeOnly);
     const persisted = result.filter((r) => !r.realtimeOnly);
     expect(persisted.map((p) => p.id).sort()).toEqual([
+      'chefes-operacoes',
       'dispensas-import',
       'efetivo-import',
       'iseo-hospitais',
       'qdi-dados-import',
       'qdi-import',
       'trocas-autorizadas',
+      'viaturas-qdv',
+      'viaturas-qdv-base-lista',
+      'viaturas-qdv-cbmes',
+      'viaturas-qdv-contatos',
     ]);
-    expect(realtime).toHaveLength(10);
+    expect(realtime.map((r) => r.id).sort()).toEqual(['mapa-forca-ciodes', 'sheets-db']);
   });
 
   it('S2.10.8a — MF CIODES está marcado como realtimeOnly + noScheduler (decisão D2)', async () => {
@@ -276,7 +262,6 @@ describe('IntegracoesService (S2.10.8d — 16 sources)', () => {
       await svc.sync('chefes-operacoes');
       expect(chefesOp.forceSync).toHaveBeenCalledTimes(1);
       expect(trocasAut.forceSync).not.toHaveBeenCalled();
-      expect(dispensasSheet.forceSync).not.toHaveBeenCalled();
       expect(viaturasQdv.forceSync).not.toHaveBeenCalled();
     });
 
@@ -302,9 +287,6 @@ describe('IntegracoesService (S2.10.8d — 16 sources)', () => {
     const trocas = result.find((r) => r.id === 'trocas-autorizadas');
     expect(trocas?.url).toContain('docs.google.com/spreadsheets/d/');
     expect(trocas?.url).toContain('gid=1799360305');
-
-    const dispensas = result.find((r) => r.id === 'dispensas-sheet');
-    expect(dispensas?.url).toContain('Dispensas%202026');
   });
 
   it('S2.10.8a — URL do MF CIODES aponta para spreadsheet conhecido', async () => {
@@ -319,19 +301,14 @@ describe('IntegracoesService (S2.10.8d — 16 sources)', () => {
   });
 
   it('S2.10.8c-fix: getStatus de 1 source falhando NÃO derruba lista — retorna status=nunca', async () => {
-    // Simula prisma falhando em cold boot (ex: pool exausto, query timeout)
     iseo.getSyncStatusAgregado = async () => {
       throw new Error('prisma.iseoHospitalEntry.count() timeout — Supabase cold boot');
     };
-    // list() devia retornar 16 entries; iseo-hospitais aparece como nunca
     const result = await svc.list();
-    expect(result).toHaveLength(16);
+    expect(result).toHaveLength(13);
     const iseoStatus = result.find((r) => r.id === 'iseo-hospitais');
     expect(iseoStatus?.status).toBe('nunca');
     expect(iseoStatus?.ultimoSyncEm).toBeNull();
     expect(iseoStatus?.qtdRegistros).toBe(0);
-    // Outras sources continuam funcionando
-    const trocas = result.find((r) => r.id === 'trocas-autorizadas');
-    expect(trocas?.status).toBe('nunca'); // status original, não 'erro'
   });
 });

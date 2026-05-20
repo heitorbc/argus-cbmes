@@ -58,6 +58,24 @@ export function MapaForcaPage() {
   const [equipePorDia, setEquipePorDia] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // S2.10.9a — Botão "Atualizar Mapa Força CIODES" (fonte real-time only,
+  // não persiste em Postgres). Útil quando o Fiscal sabe que houve mudança
+  // na planilha e quer ver o snapshot mais recente antes do TTL expirar.
+  const [syncCiodesBusy, setSyncCiodesBusy] = useState(false);
+  const [syncCiodesMsg, setSyncCiodesMsg] = useState<string | null>(null);
+
+  const handleSyncCiodes = async (): Promise<void> => {
+    setSyncCiodesBusy(true);
+    setSyncCiodesMsg(null);
+    try {
+      const r = await api.integracoesSync('mapa-forca-ciodes');
+      setSyncCiodesMsg(`Mapa Força CIODES atualizado · ${r.qtdRegistros} recursos`);
+    } catch (e) {
+      setSyncCiodesMsg(e instanceof ApiError ? e.message : 'Falha ao atualizar');
+    } finally {
+      setSyncCiodesBusy(false);
+    }
+  };
 
   const ano = mes.getFullYear();
   const mesNum = mes.getMonth() + 1;
@@ -177,31 +195,48 @@ export function MapaForcaPage() {
             </button>
           </div>
 
-          <div className="inline-flex rounded border border-slate-300 bg-white">
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setViewMode('calendario')}
-              className={`rounded-l px-3 py-1.5 text-sm transition ${
-                viewMode === 'calendario'
-                  ? 'bg-cbmes-blue text-white'
-                  : 'text-slate-700 hover:bg-slate-50'
-              }`}
+              onClick={handleSyncCiodes}
+              disabled={syncCiodesBusy}
+              className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+              title="Re-sincroniza o Mapa Força CIODES (fonte real-time, fora do cron)"
             >
-              Calendário
+              {syncCiodesBusy ? 'Atualizando…' : '↻ Atualizar CIODES'}
             </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('lista')}
-              className={`rounded-r px-3 py-1.5 text-sm transition ${
-                viewMode === 'lista'
-                  ? 'bg-cbmes-blue text-white'
-                  : 'text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              Lista
-            </button>
+            <div className="inline-flex rounded border border-slate-300 bg-white">
+              <button
+                type="button"
+                onClick={() => setViewMode('calendario')}
+                className={`rounded-l px-3 py-1.5 text-sm transition ${
+                  viewMode === 'calendario'
+                    ? 'bg-cbmes-blue text-white'
+                    : 'text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                Calendário
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('lista')}
+                className={`rounded-r px-3 py-1.5 text-sm transition ${
+                  viewMode === 'lista'
+                    ? 'bg-cbmes-blue text-white'
+                    : 'text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                Lista
+              </button>
+            </div>
           </div>
         </div>
+
+        {syncCiodesMsg && (
+          <div className="mt-2 rounded border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
+            {syncCiodesMsg}
+          </div>
+        )}
 
         {error && (
           <div

@@ -1,180 +1,209 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable, Logger } from '@nestjs/common';
 import type { ContatoLogistico, ViaturaCbmes, ViaturaQdvBaseLista } from '@argus/shared-types';
-import {
-  parseContatosLogisticasCsv,
-  parseQdvBaseListaCsv,
-  parseVtrListaPrincipalCsv,
-} from './viaturas-qdv-extras-csv-parser';
-
-const CACHE_TTL_MS = 5 * 60 * 1000;
-const FETCH_TIMEOUT_MS = 15_000;
-
-interface CacheEntry<T> {
-  parsed: T[];
-  syncedAt: number;
-}
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { ViaturasQdvImportService } from './viaturas-qdv-import.service';
 
 /**
- * S0.5/3.1 — Lê as 3 abas adicionais da planilha QDV:
- *   - BASE_LISTA
- *   - BASE_VTR_LISTA_PRINCIPAL
- *   - Contatos_LOGISTICAS
+ * S2.10.9a — Lê QDV extras (BASE_LISTA, BASE_VTR_LISTA_PRINCIPAL,
+ * Contatos_LOGISTICAS) de Postgres. As 3 abas são sincronizadas pelo
+ * `ViaturasQdvImportService` em ciclo único (multi-sheet).
  *
- * Cada aba tem cache independente (TTL 5min) + lock inflight + fallback
- * stale, espelhando `ViaturasQdvService` (aba 1BBM_1CIA).
+ * Status individual por aba mantido (o menu /integracoes mostrava 3
+ * entradas distintas) — refletido a partir do `lastSync` do import.
  */
 @Injectable()
 export class ViaturasQdvExtrasService {
   private readonly logger = new Logger(ViaturasQdvExtrasService.name);
-  private cacheBaseLista: CacheEntry<ViaturaQdvBaseLista> | null = null;
-  private cacheVtrPrincipal: CacheEntry<ViaturaCbmes> | null = null;
-  private cacheContatos: CacheEntry<ContatoLogistico> | null = null;
-  private inflightBaseLista: Promise<CacheEntry<ViaturaQdvBaseLista>> | null = null;
-  private inflightVtrPrincipal: Promise<CacheEntry<ViaturaCbmes>> | null = null;
-  private inflightContatos: Promise<CacheEntry<ContatoLogistico>> | null = null;
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly importSvc: ViaturasQdvImportService,
+  ) {}
 
-  listBaseLista(): Promise<ViaturaQdvBaseLista[]> {
-    return this.getCached('BASE_LISTA', () => this.fetchBaseLista()).then((e) => e.parsed);
-  }
-
-  listVtrPrincipal(): Promise<ViaturaCbmes[]> {
-    return this.getCached('BASE_VTR_LISTA_PRINCIPAL', () => this.fetchVtrPrincipal()).then(
-      (e) => e.parsed,
-    );
-  }
-
-  listContatosLogisticas(): Promise<ContatoLogistico[]> {
-    return this.getCached('Contatos_LOGISTICAS', () => this.fetchContatos()).then((e) => e.parsed);
-  }
-
-  getSyncStatusBaseLista(): { syncedAt: string | null; count: number; stale: boolean } {
-    return cacheStatus(this.cacheBaseLista);
-  }
-
-  getSyncStatusVtrPrincipal(): { syncedAt: string | null; count: number; stale: boolean } {
-    return cacheStatus(this.cacheVtrPrincipal);
-  }
-
-  getSyncStatusContatos(): { syncedAt: string | null; count: number; stale: boolean } {
-    return cacheStatus(this.cacheContatos);
-  }
-
-  async forceSyncBaseLista(): Promise<{ syncedAt: string; count: number }> {
-    const entry = await this.fetchBaseLista();
-    this.cacheBaseLista = entry;
-    return { syncedAt: new Date(entry.syncedAt).toISOString(), count: entry.parsed.length };
-  }
-
-  async forceSyncVtrPrincipal(): Promise<{ syncedAt: string; count: number }> {
-    const entry = await this.fetchVtrPrincipal();
-    this.cacheVtrPrincipal = entry;
-    return { syncedAt: new Date(entry.syncedAt).toISOString(), count: entry.parsed.length };
-  }
-
-  async forceSyncContatos(): Promise<{ syncedAt: string; count: number }> {
-    const entry = await this.fetchContatos();
-    this.cacheContatos = entry;
-    return { syncedAt: new Date(entry.syncedAt).toISOString(), count: entry.parsed.length };
-  }
-
-  private async getCached<T>(
-    sheetName: string,
-    fetch: () => Promise<CacheEntry<T>>,
-  ): Promise<CacheEntry<T>> {
-    const cache = this.getCacheFor<T>(sheetName);
-    const now = Date.now();
-    if (cache && now - cache.syncedAt < CACHE_TTL_MS) return cache;
-    const inflight = this.getInflightFor<T>(sheetName);
-    if (inflight) return inflight;
-    const promise = fetch().finally(() => this.setInflightFor(sheetName, null));
-    this.setInflightFor(sheetName, promise as Promise<CacheEntry<unknown>>);
+  async listBaseLista(): Promise<ViaturaQdvBaseLista[]> {
     try {
-      const entry = await promise;
-      this.setCacheFor(sheetName, entry);
-      return entry;
+      const rows = await this.prisma.viaturaQdvBaseLista.findMany({
+        orderBy: [{ obm: 'asc' }, { prefixo: 'asc' }],
+      });
+      return rows.map(toBaseLista);
     } catch (err) {
-      this.logger.error(
-        `Falha ao sincronizar QDV/${sheetName}: ${(err as Error).message}. ${cache ? 'Servindo último snapshot.' : 'Sem snapshot anterior.'}`,
-      );
-      if (cache) return cache;
-      throw new ServiceUnavailableException(
-        `Não foi possível sincronizar com a planilha QDV (aba ${sheetName}) e não há snapshot anterior.`,
-      );
+      this.logger.warn(`listBaseLista falhou: ${(err as Error).message}.`);
+      return [];
     }
   }
 
-  private getCacheFor<T>(sheetName: string): CacheEntry<T> | null {
-    if (sheetName === 'BASE_LISTA') return this.cacheBaseLista as CacheEntry<T> | null;
-    if (sheetName === 'BASE_VTR_LISTA_PRINCIPAL')
-      return this.cacheVtrPrincipal as CacheEntry<T> | null;
-    return this.cacheContatos as CacheEntry<T> | null;
-  }
-
-  private setCacheFor<T>(sheetName: string, entry: CacheEntry<T>): void {
-    if (sheetName === 'BASE_LISTA') this.cacheBaseLista = entry as CacheEntry<ViaturaQdvBaseLista>;
-    else if (sheetName === 'BASE_VTR_LISTA_PRINCIPAL')
-      this.cacheVtrPrincipal = entry as CacheEntry<ViaturaCbmes>;
-    else this.cacheContatos = entry as CacheEntry<ContatoLogistico>;
-  }
-
-  private getInflightFor<T>(sheetName: string): Promise<CacheEntry<T>> | null {
-    if (sheetName === 'BASE_LISTA') return this.inflightBaseLista as Promise<CacheEntry<T>> | null;
-    if (sheetName === 'BASE_VTR_LISTA_PRINCIPAL')
-      return this.inflightVtrPrincipal as Promise<CacheEntry<T>> | null;
-    return this.inflightContatos as Promise<CacheEntry<T>> | null;
-  }
-
-  private setInflightFor(sheetName: string, promise: Promise<CacheEntry<unknown>> | null): void {
-    if (sheetName === 'BASE_LISTA')
-      this.inflightBaseLista = promise as Promise<CacheEntry<ViaturaQdvBaseLista>> | null;
-    else if (sheetName === 'BASE_VTR_LISTA_PRINCIPAL')
-      this.inflightVtrPrincipal = promise as Promise<CacheEntry<ViaturaCbmes>> | null;
-    else this.inflightContatos = promise as Promise<CacheEntry<ContatoLogistico>> | null;
-  }
-
-  private async fetchBaseLista(): Promise<CacheEntry<ViaturaQdvBaseLista>> {
-    const csv = await this.fetchCsv('BASE_LISTA');
-    return { parsed: parseQdvBaseListaCsv(csv), syncedAt: Date.now() };
-  }
-
-  private async fetchVtrPrincipal(): Promise<CacheEntry<ViaturaCbmes>> {
-    const csv = await this.fetchCsv('BASE_VTR_LISTA_PRINCIPAL');
-    return { parsed: parseVtrListaPrincipalCsv(csv), syncedAt: Date.now() };
-  }
-
-  private async fetchContatos(): Promise<CacheEntry<ContatoLogistico>> {
-    const csv = await this.fetchCsv('Contatos_LOGISTICAS');
-    return { parsed: parseContatosLogisticasCsv(csv), syncedAt: Date.now() };
-  }
-
-  private async fetchCsv(sheetName: string): Promise<string> {
-    const sheetId =
-      this.config.get<string>('QDV_SHEET_ID') ?? '1iqjSDXpbAjtbi7lvd5_5brims8Ipr-OTVXhQMGiv2I8';
-    const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  async listVtrPrincipal(): Promise<ViaturaCbmes[]> {
     try {
-      const res = await fetch(url, { signal: controller.signal, redirect: 'follow' });
-      if (!res.ok) throw new Error(`HTTP ${res.status} ao baixar ${sheetName}`);
-      return await res.text();
-    } finally {
-      clearTimeout(timeoutId);
+      const rows = await this.prisma.viaturaCbmes.findMany({
+        orderBy: [{ obm: 'asc' }, { prefixo: 'asc' }],
+      });
+      return rows.map(toVtrPrincipal);
+    } catch (err) {
+      this.logger.warn(`listVtrPrincipal falhou: ${(err as Error).message}.`);
+      return [];
+    }
+  }
+
+  async listContatosLogisticas(): Promise<ContatoLogistico[]> {
+    try {
+      const rows = await this.prisma.contatoLogistico.findMany({
+        orderBy: { obm: 'asc' },
+      });
+      return rows.map(toContato);
+    } catch (err) {
+      this.logger.warn(`listContatosLogisticas falhou: ${(err as Error).message}.`);
+      return [];
+    }
+  }
+
+  /**
+   * Status agregado das 3 abas QDV extras. Como a sync é multi-sheet em
+   * 1 ciclo, todas refletem o mesmo `syncedAt` — count vem de cada tabela.
+   */
+  async getSyncStatusBaseLista(): Promise<{
+    syncedAt: string | null;
+    count: number;
+    stale: boolean;
+  }> {
+    const s = this.importSvc.getSyncStatus();
+    const count = await this.safeCount(() => this.prisma.viaturaQdvBaseLista.count());
+    return { syncedAt: s.syncedAt, count, stale: s.stale };
+  }
+
+  async getSyncStatusVtrPrincipal(): Promise<{
+    syncedAt: string | null;
+    count: number;
+    stale: boolean;
+  }> {
+    const s = this.importSvc.getSyncStatus();
+    const count = await this.safeCount(() => this.prisma.viaturaCbmes.count());
+    return { syncedAt: s.syncedAt, count, stale: s.stale };
+  }
+
+  async getSyncStatusContatos(): Promise<{
+    syncedAt: string | null;
+    count: number;
+    stale: boolean;
+  }> {
+    const s = this.importSvc.getSyncStatus();
+    const count = await this.safeCount(() => this.prisma.contatoLogistico.count());
+    return { syncedAt: s.syncedAt, count, stale: s.stale };
+  }
+
+  /** As 3 abas sincronizam juntas; cada forceSync chama o mesmo orchestrator. */
+  async forceSyncBaseLista(): Promise<{ syncedAt: string; count: number }> {
+    const r = await this.importSvc.forceSync();
+    const count = await this.safeCount(() => this.prisma.viaturaQdvBaseLista.count());
+    return { syncedAt: r.syncedAt, count };
+  }
+
+  async forceSyncVtrPrincipal(): Promise<{ syncedAt: string; count: number }> {
+    const r = await this.importSvc.forceSync();
+    const count = await this.safeCount(() => this.prisma.viaturaCbmes.count());
+    return { syncedAt: r.syncedAt, count };
+  }
+
+  async forceSyncContatos(): Promise<{ syncedAt: string; count: number }> {
+    const r = await this.importSvc.forceSync();
+    const count = await this.safeCount(() => this.prisma.contatoLogistico.count());
+    return { syncedAt: r.syncedAt, count };
+  }
+
+  private async safeCount(fn: () => Promise<number>): Promise<number> {
+    try {
+      return await fn();
+    } catch {
+      return 0;
     }
   }
 }
 
-function cacheStatus(cache: { syncedAt: number; parsed: unknown[] } | null): {
-  syncedAt: string | null;
-  count: number;
-  stale: boolean;
-} {
-  if (!cache) return { syncedAt: null, count: 0, stale: false };
+function toBaseLista(row: {
+  prefixo: string;
+  obm: string;
+  nomenclatura: string | null;
+  ano: string | null;
+  status: string | null;
+  emprestadaA: string | null;
+  kmAtual: number | null;
+  observacao: string | null;
+  empregoPrimario: string | null;
+  empregoSecundario: string | null;
+  placa: string | null;
+  renavam: string | null;
+  categoriaCnh: string | null;
+  marcaModelo: string | null;
+  combustivel: string | null;
+  modeloPneu: string | null;
+}): ViaturaQdvBaseLista {
   return {
-    syncedAt: new Date(cache.syncedAt).toISOString(),
-    count: cache.parsed.length,
-    stale: Date.now() - cache.syncedAt >= CACHE_TTL_MS,
+    obm: row.obm,
+    prefixo: row.prefixo,
+    nomenclatura: row.nomenclatura ?? undefined,
+    ano: row.ano ?? undefined,
+    status: row.status ?? undefined,
+    emprestadaA: row.emprestadaA ?? undefined,
+    kmAtual: row.kmAtual ?? undefined,
+    observacao: row.observacao ?? undefined,
+    empregoPrimario: row.empregoPrimario ?? undefined,
+    empregoSecundario: row.empregoSecundario ?? undefined,
+    placa: row.placa ?? undefined,
+    renavam: row.renavam ?? undefined,
+    categoriaCnh: row.categoriaCnh ?? undefined,
+    marcaModelo: row.marcaModelo ?? undefined,
+    combustivel: row.combustivel ?? undefined,
+    modeloPneu: row.modeloPneu ?? undefined,
+  };
+}
+
+function toVtrPrincipal(row: {
+  prefixo: string;
+  prefixoComUnderscore: string;
+  obm: string;
+  nomenclatura: string | null;
+  ano: string | null;
+  idade: string | null;
+  observacao: string | null;
+  placa: string | null;
+  renavam: string | null;
+  categoriaCnh: string | null;
+  tipoVeiculo: string | null;
+  marcaModelo: string | null;
+  combustivel: string | null;
+  modeloPneu: string | null;
+}): ViaturaCbmes {
+  return {
+    obm: row.obm,
+    prefixoComUnderscore: row.prefixoComUnderscore,
+    prefixo: row.prefixo,
+    nomenclatura: row.nomenclatura ?? undefined,
+    ano: row.ano ?? undefined,
+    idade: row.idade ?? undefined,
+    observacao: row.observacao ?? undefined,
+    placa: row.placa ?? undefined,
+    renavam: row.renavam ?? undefined,
+    categoriaCnh: row.categoriaCnh ?? undefined,
+    tipoVeiculo: row.tipoVeiculo ?? undefined,
+    marcaModelo: row.marcaModelo ?? undefined,
+    combustivel: row.combustivel ?? undefined,
+    modeloPneu: row.modeloPneu ?? undefined,
+  };
+}
+
+function toContato(row: {
+  obm: string;
+  nf: string;
+  militarResponsavel: string;
+  nomeCompleto: string | null;
+  telefone: string | null;
+  email: string | null;
+}): ContatoLogistico {
+  return {
+    obm: row.obm,
+    nf: row.nf,
+    militarResponsavel: row.militarResponsavel,
+    nomeCompleto: row.nomeCompleto ?? undefined,
+    telefone: row.telefone ?? undefined,
+    email: row.email ?? undefined,
   };
 }
