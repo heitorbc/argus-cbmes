@@ -351,4 +351,34 @@ describe('AgendaService', () => {
     expect(trocas.length).toBe(2); // assume + pagamento
     expect(trocas.map((t) => t.data).sort()).toEqual(['2026-05-22', '2026-05-25']);
   });
+
+  it('S2.10.8c-fix: falha em 1 coletor (dispensas) NÃO derruba a agenda', async () => {
+    const data = '2026-05-20';
+    const deps = emptyDeps();
+    // Coletor de dispensas simula cold boot Supabase falhando.
+    deps.dispensas = {
+      listAtivasNoDia: async () => {
+        throw new Error('prisma.dispensa.findMany timeout — Supabase cold boot');
+      },
+    } as never;
+    // Outras fontes têm dados normais.
+    deps.atestados = makeAtestados([
+      { id: 'at1', militarNf: NF_TARGET, dataInicio: data, dias: 3 } as never,
+    ]);
+    const svc = new AgendaService(
+      deps.mf,
+      deps.especiais,
+      deps.notas,
+      deps.chop,
+      deps.iseo,
+      deps.atestados,
+      deps.dispensas,
+      deps.ferias,
+      deps.trocas,
+      deps.efetivo,
+    );
+    // NÃO deve lançar — agenda devolve atestados normalmente, dispensas vira []
+    const resp = await svc.forMilitar(NF_TARGET, data, data, NOME_TARGET);
+    expect(resp.itens.map((i) => i.fonte)).toEqual(['atestado']);
+  });
 });

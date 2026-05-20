@@ -77,18 +77,41 @@ export class AgendaService {
       return cached.response;
     }
 
+    // S2.10.8c-fix — Promise.allSettled em vez de Promise.all: 1 coletor que
+    // falhe (ex: prisma.dispensa.findMany falhando em cold boot Supabase) NÃO
+    // deve derrubar a agenda inteira com 500. Cada falha vira log warn + [].
+    const settled = await Promise.allSettled([
+      this.coletarDoMapaForca(nf, dataInicioIso, dataFimIso),
+      this.coletarEscalaEspecial(nf, dataInicioIso, dataFimIso),
+      this.coletarNotasServico(nf, dataInicioIso, dataFimIso),
+      this.coletarIseoHospitais(nf, dataInicioIso, dataFimIso),
+      this.coletarChefesOperacoes(nf, dataInicioIso, dataFimIso),
+      this.coletarAtestados(nf, dataInicioIso, dataFimIso),
+      this.coletarDispensas(nf, dataInicioIso, dataFimIso),
+      this.coletarFerias(nf, dataInicioIso, dataFimIso),
+      this.coletarTrocasAutorizadas(nf, nome, dataInicioIso, dataFimIso),
+    ]);
+    const nomes = [
+      'mapaForca',
+      'escalaEspecial',
+      'notasServico',
+      'iseoHospitais',
+      'chefesOperacoes',
+      'atestados',
+      'dispensas',
+      'ferias',
+      'trocasAutorizadas',
+    ] as const;
     const [mapaForca, especiais, notas, iseo, chop, atestados, dispensas, ferias, trocas] =
-      await Promise.all([
-        this.coletarDoMapaForca(nf, dataInicioIso, dataFimIso),
-        this.coletarEscalaEspecial(nf, dataInicioIso, dataFimIso),
-        this.coletarNotasServico(nf, dataInicioIso, dataFimIso),
-        this.coletarIseoHospitais(nf, dataInicioIso, dataFimIso),
-        this.coletarChefesOperacoes(nf, dataInicioIso, dataFimIso),
-        this.coletarAtestados(nf, dataInicioIso, dataFimIso),
-        this.coletarDispensas(nf, dataInicioIso, dataFimIso),
-        this.coletarFerias(nf, dataInicioIso, dataFimIso),
-        this.coletarTrocasAutorizadas(nf, nome, dataInicioIso, dataFimIso),
-      ]);
+      settled.map((r, i) => {
+        if (r.status === 'fulfilled') return r.value;
+        this.logger.warn(
+          `coletar${nomes[i]![0]!.toUpperCase()}${nomes[i]!.slice(1)} falhou (nf=${nf}): ${
+            (r.reason as Error).message
+          }`,
+        );
+        return [] as AgendaItem[];
+      });
 
     const itens = [
       ...mapaForca,
