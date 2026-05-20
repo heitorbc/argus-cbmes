@@ -14,7 +14,7 @@ import type {
 import type { NotaServico as PrismaNS } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { SheetsDbService } from '../sheets-db/sheets-db.service';
-import { notaServicoToRow, rowToNotaServico } from '../sheets-db/sheets-db-serializers';
+import { rowToNotaServico } from '../sheets-db/sheets-db-serializers';
 
 /**
  * S6l — CRUD de Notas de Serviço.
@@ -124,9 +124,7 @@ export class NotasServicoService implements OnModuleInit {
         criadoPorNf,
       },
     });
-    const ns = toNotaServico(row);
-    this.syncToSheetsDb(ns);
-    return ns;
+    return toNotaServico(row);
   }
 
   /** Rejeita duplicata exata `(codigo, data)`. */
@@ -154,12 +152,11 @@ export class NotasServicoService implements OnModuleInit {
     if (input.militaresNfs !== undefined) data.militaresNfs = input.militaresNfs;
     if (input.observacoes !== undefined) data.observacoes = input.observacoes.trim() || null;
     const row = await this.prisma.notaServico.update({ where: { id }, data });
-    const ns = toNotaServico(row);
-    this.syncToSheetsDb(ns);
-    return ns;
+    return toNotaServico(row);
   }
 
   async remove(id: string): Promise<void> {
+    // S2.10.9d — Sheets-DB dual-write removido. Postgres é canônico desde S2.10.5.
     const row = await this.prisma.notaServico.findFirst({
       where: { id, deletedAt: null },
     });
@@ -167,21 +164,6 @@ export class NotasServicoService implements OnModuleInit {
     await this.prisma.notaServico.update({
       where: { id },
       data: { deletedAt: new Date() },
-    });
-    this.deleteFromSheetsDb(id);
-  }
-
-  private syncToSheetsDb(ns: NotaServico): void {
-    if (!this.sheetsDb?.isEnabled()) return;
-    void this.sheetsDb.upsertNotaServico(notaServicoToRow(ns)).catch((err: Error) => {
-      this.logger.warn(`Sheets-DB upsert NS ${ns.id} falhou: ${err.message}.`);
-    });
-  }
-
-  private deleteFromSheetsDb(id: string): void {
-    if (!this.sheetsDb?.isEnabled()) return;
-    void this.sheetsDb.deleteNotaServico(id).catch((err: Error) => {
-      this.logger.warn(`Sheets-DB delete NS ${id} falhou: ${err.message}.`);
     });
   }
 }
