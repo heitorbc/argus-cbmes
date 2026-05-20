@@ -280,4 +280,21 @@ describe('IntegracoesService (S2.10.8a — 13 sources)', () => {
     const iseoStatus = (await svc.list()).find((r) => r.id === 'iseo-hospitais');
     expect(iseoStatus?.url).toContain('1wmFOEsrU219fGMfksoSY5dvQu0UN7HdQ558UUiWRXuw');
   });
+
+  it('S2.10.8c-fix: getStatus de 1 source falhando NÃO derruba lista — retorna status=nunca', async () => {
+    // Simula prisma falhando em cold boot (ex: pool exausto, query timeout)
+    iseo.getSyncStatusAgregado = async () => {
+      throw new Error('prisma.iseoHospitalEntry.count() timeout — Supabase cold boot');
+    };
+    // list() devia retornar 13 entries; iseo-hospitais aparece como nunca
+    const result = await svc.list();
+    expect(result).toHaveLength(13);
+    const iseoStatus = result.find((r) => r.id === 'iseo-hospitais');
+    expect(iseoStatus?.status).toBe('nunca');
+    expect(iseoStatus?.ultimoSyncEm).toBeNull();
+    expect(iseoStatus?.qtdRegistros).toBe(0);
+    // Outras sources continuam funcionando
+    const trocas = result.find((r) => r.id === 'trocas-autorizadas');
+    expect(trocas?.status).toBe('nunca'); // status original, não 'erro'
+  });
 });

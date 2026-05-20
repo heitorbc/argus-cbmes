@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { IntegracaoStatus } from '@argus/shared-types';
 import { ChefesOperacoesService } from '../chefes-operacoes/chefes-operacoes.service';
@@ -46,6 +46,8 @@ interface SourceConfig {
  */
 @Injectable()
 export class IntegracoesService {
+  private readonly logger = new Logger(IntegracoesService.name);
+
   constructor(
     private readonly config: ConfigService,
     private readonly trocasAut: TrocasAutorizadasService,
@@ -261,12 +263,24 @@ export class IntegracoesService {
 
   private async buildStatus(s: SourceConfig): Promise<IntegracaoStatus> {
     const sheetId = this.config.get<string>(s.sheetIdEnv) ?? s.sheetIdDefault;
-    const status = await s.getStatus();
     const url = sheetId
       ? s.sheetGidOrName
         ? `https://docs.google.com/spreadsheets/d/${sheetId}/edit#${s.sheetGidOrName}`
         : `https://docs.google.com/spreadsheets/d/${sheetId}/edit`
       : '';
+    // S2.10.8c-fix — Isola falha de 1 source para não derrubar a lista
+    // inteira via Promise.all em list(). Cold boot do Supabase pode falhar
+    // queries como prisma.iseoHospitalEntry.count() (getSyncStatusAgregado);
+    // sem este try/catch, a exceção sobe → HTTP 500 no menu inteiro.
+    let status: { syncedAt: string | null; count: number; stale: boolean };
+    try {
+      status = await s.getStatus();
+    } catch (err) {
+      this.logger.warn(
+        `getStatus de '${s.id}' falhou (${(err as Error).message}). Exibindo como 'nunca'.`,
+      );
+      status = { syncedAt: null, count: 0, stale: false };
+    }
     let statusLabel: IntegracaoStatus['status'];
     if (status.syncedAt === null) statusLabel = 'nunca';
     else if (status.stale) statusLabel = 'stale';

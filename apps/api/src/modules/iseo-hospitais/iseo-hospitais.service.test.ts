@@ -158,4 +158,18 @@ describe('IseoHospitaisService + Import (S2.10.8c — Prisma)', () => {
     expect(hpm?.count).toBe(5);
     expect(himaba?.count).toBe(4);
   });
+
+  it('S2.10.8c-fix: getSyncStatusAgregado retorna count=0 (sem lançar) quando prisma.count falha', async () => {
+    build();
+    // Simula cold boot Supabase / pool exausto / connection refused
+    prisma.iseoHospitalEntry.count = vi
+      .fn()
+      .mockRejectedValue(
+        new Error('Connection terminated'),
+      ) as unknown as typeof prisma.iseoHospitalEntry.count;
+    const status = await svc.getSyncStatusAgregado();
+    expect(status.count).toBe(0);
+    expect(status.syncedAt).toBeNull();
+    expect(status.stale).toBe(false);
+  });
 });
