@@ -5,14 +5,13 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { TrocasAutorizadasImportService } from './trocas-autorizadas-import.service';
 
 /**
- * S2.10.8b — Trocas Autorizadas (planilha externa do Comando) agora em
- * Postgres. Antes (S0.5/Item 1): cache TTL 5min in-memory, fetch a cada
- * request. Agora: leitura direta de `prisma.trocaAutorizada` + auto-sync
- * fire-and-forget transparente.
+ * S2.10.8b — Trocas Autorizadas (planilha externa do Comando) em Postgres.
  *
- * Pattern espelha `DispensasService` (S2.10.7d): `listAll()` e
- * `listByData()` disparam `syncIfStale()` em background sem bloquear o
- * GET; próximo request vê dados atualizados.
+ * S2.10.9b — GETs são **Postgres-puros**: removido `syncIfStale()` fire-and-
+ * forget para eliminar contenção Google×Postgres no caminho do request. Sync
+ * acontece exclusivamente via cron 00/06/12/18h, startup e botão manual em
+ * `/configuracoes/integracoes`. Lag máximo aceito: 6h (Tech Lead 2026-05-20;
+ * regra de 2 dias de antecedência das trocas absorve o lag).
  */
 @Injectable()
 export class TrocasAutorizadasService {
@@ -22,8 +21,6 @@ export class TrocasAutorizadasService {
   ) {}
 
   async listAll(): Promise<TrocaAutorizada[]> {
-    // S2.10.8b — sync transparente fire-and-forget
-    void this.importSvc.syncIfStale();
     const rows = await this.prisma.trocaAutorizada.findMany({
       orderBy: [{ dataEscala: 'asc' }, { id: 'asc' }],
     });
@@ -31,7 +28,6 @@ export class TrocasAutorizadasService {
   }
 
   async listByData(dataIso: string): Promise<TrocaAutorizada[]> {
-    void this.importSvc.syncIfStale();
     const rows = await this.prisma.trocaAutorizada.findMany({
       where: {
         OR: [{ dataEscala: dataIso }, { dataPagamento: dataIso }],
