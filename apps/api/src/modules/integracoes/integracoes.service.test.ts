@@ -78,16 +78,6 @@ function makeFakeMfCiodes() {
   };
 }
 
-function makeFakeSheetsDb() {
-  return {
-    getSyncStatusAsSource: () => ({ syncedAt: null, count: 0, stale: false }),
-    forceSyncAsSource: vi.fn(async () => ({
-      syncedAt: '2026-05-13T12:00:00.000Z',
-      count: 3,
-    })),
-  };
-}
-
 /**
  * S2.10.8d — Fake para os 3 ImportServices que compartilham o
  * MilitarConsolidatorService. Shape igual a `dispensasImport`.
@@ -110,7 +100,7 @@ function makeFakeMilitarImport() {
   };
 }
 
-describe('IntegracoesService (S2.10.9a — 13 sources, 11 persistidos)', () => {
+describe('IntegracoesService (S2.10.9d — 12 sources, 11 persistidos)', () => {
   let svc: IntegracoesService;
   let trocasAut: FakeSheetService;
   let chefesOp: FakeSheetService;
@@ -133,7 +123,6 @@ describe('IntegracoesService (S2.10.9a — 13 sources, 11 persistidos)', () => {
   let viaturasQdvExtras: FakeExtrasService;
   let iseo: ReturnType<typeof makeFakeIseo>;
   let mfCiodes: ReturnType<typeof makeFakeMfCiodes>;
-  let sheetsDb: ReturnType<typeof makeFakeSheetsDb>;
   let efetivoImport: ReturnType<typeof makeFakeMilitarImport>;
   let qdiImport: ReturnType<typeof makeFakeMilitarImport>;
   let qdiDadosImport: ReturnType<typeof makeFakeMilitarImport>;
@@ -155,7 +144,6 @@ describe('IntegracoesService (S2.10.9a — 13 sources, 11 persistidos)', () => {
     viaturasQdvExtras = makeFakeExtras();
     iseo = makeFakeIseo();
     mfCiodes = makeFakeMfCiodes();
-    sheetsDb = makeFakeSheetsDb();
     efetivoImport = makeFakeMilitarImport();
     qdiImport = makeFakeMilitarImport();
     qdiDadosImport = makeFakeMilitarImport();
@@ -170,16 +158,15 @@ describe('IntegracoesService (S2.10.9a — 13 sources, 11 persistidos)', () => {
       viaturasQdvExtras as unknown as ViaturasQdvExtrasService,
       mfCiodes as unknown as import('../mapa-forca-ciodes/mapa-forca-ciodes.service').MapaForcaCiodesService,
       iseo as unknown as import('../iseo-hospitais/iseo-hospitais.service').IseoHospitaisService,
-      sheetsDb as unknown as import('../sheets-db/sheets-db.service').SheetsDbService,
       efetivoImport as unknown as import('../efetivo/efetivo-import.service').EfetivoImportService,
       qdiImport as unknown as import('../efetivo/qdi-import.service').QdiImportService,
       qdiDadosImport as unknown as import('../efetivo/qdi-dados-import.service').QdiDadosImportService,
     );
   });
 
-  it('S2.10.9a — lista as 13 integrações cadastradas (após remoção dos 3 legados)', async () => {
+  it('S2.10.9d — lista as 12 integrações (após remoção do sheets-db)', async () => {
     const result = await svc.list();
-    expect(result).toHaveLength(13);
+    expect(result).toHaveLength(12);
     expect(result.map((r) => r.id).sort()).toEqual([
       'chefes-operacoes',
       'dispensas-import',
@@ -188,7 +175,6 @@ describe('IntegracoesService (S2.10.9a — 13 sources, 11 persistidos)', () => {
       'mapa-forca-ciodes',
       'qdi-dados-import',
       'qdi-import',
-      'sheets-db',
       'trocas-autorizadas',
       'viaturas-qdv',
       'viaturas-qdv-base-lista',
@@ -197,7 +183,7 @@ describe('IntegracoesService (S2.10.9a — 13 sources, 11 persistidos)', () => {
     ]);
   });
 
-  it('S2.10.9a — sources persistidas: 11 (todas exceto MF CIODES + sheets-db)', async () => {
+  it('S2.10.9d — sources persistidas: 11 (todas exceto MF CIODES)', async () => {
     const result = await svc.list();
     const realtime = result.filter((r) => r.realtimeOnly);
     const persisted = result.filter((r) => !r.realtimeOnly);
@@ -214,7 +200,7 @@ describe('IntegracoesService (S2.10.9a — 13 sources, 11 persistidos)', () => {
       'viaturas-qdv-cbmes',
       'viaturas-qdv-contatos',
     ]);
-    expect(realtime.map((r) => r.id).sort()).toEqual(['mapa-forca-ciodes', 'sheets-db']);
+    expect(realtime.map((r) => r.id).sort()).toEqual(['mapa-forca-ciodes']);
   });
 
   it('S2.10.8a — MF CIODES está marcado como realtimeOnly + noScheduler (decisão D2)', async () => {
@@ -305,7 +291,7 @@ describe('IntegracoesService (S2.10.9a — 13 sources, 11 persistidos)', () => {
       throw new Error('prisma.iseoHospitalEntry.count() timeout — Supabase cold boot');
     };
     const result = await svc.list();
-    expect(result).toHaveLength(13);
+    expect(result).toHaveLength(12);
     const iseoStatus = result.find((r) => r.id === 'iseo-hospitais');
     expect(iseoStatus?.status).toBe('nunca');
     expect(iseoStatus?.ultimoSyncEm).toBeNull();

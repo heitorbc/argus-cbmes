@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { EscalaEspecialMensal, EscalaMensal, NotaServico } from '@argus/shared-types';
+import { describe, it, expect, vi } from 'vitest';
+import type { EscalaEspecialMensal, EscalaMensal } from '@argus/shared-types';
 import { EscalasService } from '../escalas/escalas.service';
 import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.service';
 import { NotasServicoService } from '../notas-servico/notas-servico.service';
@@ -7,9 +7,16 @@ import { makeEscalasPrismaMock } from '../../common/prisma/prisma-test-mock';
 import type { SheetsDbService } from './sheets-db.service';
 
 /**
- * Tests de integração S2.2 → S2.10.5: confirma que cada um dos 3 services
- * dispara dual-write para o SheetsDbService quando habilitado e silencia
- * quando desabilitado. Prisma é a fonte primária; Sheets-DB é espelho.
+ * S2.10.9d — Tests de regressão do encerramento do dual-write.
+ *
+ * Antes (S2.2 → S2.10.8): `save()` / `delete()` / `remove()` em
+ * EscalasService, EscalasEspeciaisService e NotasServicoService disparavam
+ * write fire-and-forget para a planilha BD_ARGUS_CBMES_HOM.
+ *
+ * Agora (S2.10.9d): Postgres é canônico (desde S2.10.5). Os helpers
+ * `syncToSheetsDb` / `deleteFromSheetsDb` foram removidos. Os métodos
+ * de leitura `bootstrapFromSheetsDbIfEmpty()` permanecem como fallback
+ * read-only de segurança (bootstrap no startup quando tabela vazia).
  */
 
 function makeSheetsDbMock(enabled: boolean) {
@@ -69,152 +76,86 @@ const escalaEspecialSample: EscalaEspecialMensal = {
   avisos: [],
 };
 
-describe('EscalasService dual-write', () => {
-  it('save() dispara replaceEscalaMensalMes quando enabled', async () => {
+describe('S2.10.9d — EscalasService: dual-write removido', () => {
+  it('save() NÃO chama mais replaceEscalaMensalMes', async () => {
     const sheetsDb = makeSheetsDbMock(true);
-    const svc = new EscalasService(makeEscalasPrismaMock(), sheetsDb);
-    await svc.save(escalaMensalSample);
-    await new Promise((r) => setImmediate(r));
-    expect(sheetsDb.replaceEscalaMensalMes).toHaveBeenCalledWith(2026, 5, expect.any(Array));
-  });
-
-  it('save() é no-op para Sheets-DB quando desabilitado', async () => {
-    const sheetsDb = makeSheetsDbMock(false);
     const svc = new EscalasService(makeEscalasPrismaMock(), sheetsDb);
     await svc.save(escalaMensalSample);
     await new Promise((r) => setImmediate(r));
     expect(sheetsDb.replaceEscalaMensalMes).not.toHaveBeenCalled();
   });
 
-  it('delete() dispara replace com array vazio (limpa mês)', async () => {
+  it('delete() NÃO chama mais replaceEscalaMensalMes', async () => {
     const sheetsDb = makeSheetsDbMock(true);
     const svc = new EscalasService(makeEscalasPrismaMock(), sheetsDb);
     await svc.save(escalaMensalSample);
-    sheetsDb.replaceEscalaMensalMes.mockClear();
     await svc.delete(2026, 5);
     await new Promise((r) => setImmediate(r));
-    expect(sheetsDb.replaceEscalaMensalMes).toHaveBeenCalledWith(2026, 5, []);
-  });
-
-  it('falha do Sheets-DB não derruba persistência Postgres', async () => {
-    const sheetsDb = makeSheetsDbMock(true);
-    sheetsDb.replaceEscalaMensalMes.mockRejectedValue(new Error('rate limit'));
-    const svc = new EscalasService(makeEscalasPrismaMock(), sheetsDb);
-    await svc.save(escalaMensalSample);
-    await new Promise((r) => setImmediate(r));
-    // Postgres persistiu apesar do erro Sheets
-    const got = await svc.get(2026, 5);
-    expect(got?.ano).toBe(2026);
-    expect(got?.mes).toBe(5);
-  });
-
-  it('funciona sem SheetsDbService injetado (constructor opcional)', async () => {
-    const svc = new EscalasService(makeEscalasPrismaMock());
-    await expect(svc.save(escalaMensalSample)).resolves.toBeTruthy();
-    const got = await svc.get(2026, 5);
-    expect(got?.ano).toBe(2026);
+    expect(sheetsDb.replaceEscalaMensalMes).not.toHaveBeenCalled();
   });
 });
 
-describe('EscalasEspeciaisService dual-write', () => {
-  it('save() dispara replaceEscalaEspecialMes', async () => {
+describe('S2.10.9d — EscalasEspeciaisService: dual-write removido', () => {
+  it('save() NÃO chama mais replaceEscalaEspecialMes', async () => {
     const sheetsDb = makeSheetsDbMock(true);
     const svc = new EscalasEspeciaisService(makeEscalasPrismaMock(), sheetsDb);
     await svc.save(escalaEspecialSample);
     await new Promise((r) => setImmediate(r));
-    expect(sheetsDb.replaceEscalaEspecialMes).toHaveBeenCalledWith(2026, 5, [
-      [
-        '2026',
-        '5',
-        '2026-05-10',
-        'CB X',
-        '111',
-        '07:10 ÀS 13:10',
-        'APOIO',
-        'esp.xlsm',
-        '2026-04-30T00:00:00.000Z',
-        '',
-      ],
-    ]);
+    expect(sheetsDb.replaceEscalaEspecialMes).not.toHaveBeenCalled();
   });
 
-  it('delete() limpa o mês no Sheets-DB', async () => {
+  it('delete() NÃO chama mais replaceEscalaEspecialMes', async () => {
     const sheetsDb = makeSheetsDbMock(true);
     const svc = new EscalasEspeciaisService(makeEscalasPrismaMock(), sheetsDb);
     await svc.save(escalaEspecialSample);
-    sheetsDb.replaceEscalaEspecialMes.mockClear();
     await svc.delete(2026, 5);
     await new Promise((r) => setImmediate(r));
-    expect(sheetsDb.replaceEscalaEspecialMes).toHaveBeenCalledWith(2026, 5, []);
+    expect(sheetsDb.replaceEscalaEspecialMes).not.toHaveBeenCalled();
   });
 });
 
-describe('NotasServicoService dual-write + bootstrap', () => {
-  let sheetsDb: ReturnType<typeof makeSheetsDbMock>;
-  let svc: NotasServicoService;
-
-  beforeEach(() => {
-    sheetsDb = makeSheetsDbMock(true);
-    svc = new NotasServicoService(makeEscalasPrismaMock(), sheetsDb);
-  });
-
-  it('create() dispara upsertNotaServico', async () => {
+describe('S2.10.9d — NotasServicoService: dual-write removido', () => {
+  it('create() NÃO chama mais upsertNotaServico', async () => {
+    const sheetsDb = makeSheetsDbMock(true);
+    const svc = new NotasServicoService(makeEscalasPrismaMock(), sheetsDb);
     await svc.create(
       {
-        codigo: 'NS001',
-        descricao: 'X',
-        data: '2026-05-15',
+        codigo: 'NS-T1',
+        descricao: 'teste',
+        data: '2026-05-10',
         horaInicio: '08:00',
-        horaFim: '12:00',
+        horaFim: '18:00',
         militaresNfs: ['111'],
       },
       '3037509',
     );
     await new Promise((r) => setImmediate(r));
-    expect(sheetsDb.upsertNotaServico).toHaveBeenCalledTimes(1);
-    const row = sheetsDb.upsertNotaServico.mock.calls[0]?.[0] as string[];
-    expect(row[1]).toBe('NS001');
+    expect(sheetsDb.upsertNotaServico).not.toHaveBeenCalled();
   });
 
-  it('update() dispara upsertNotaServico', async () => {
+  it('remove() NÃO chama mais deleteNotaServico', async () => {
+    const sheetsDb = makeSheetsDbMock(true);
+    const svc = new NotasServicoService(makeEscalasPrismaMock(), sheetsDb);
     const ns = await svc.create(
       {
-        codigo: 'NS001',
-        descricao: 'X',
-        data: '2026-05-15',
-        horaInicio: '08:00',
-        horaFim: '12:00',
+        codigo: 'NS-T2',
+        descricao: 'a remover',
+        data: '2026-05-11',
+        horaInicio: '09:00',
+        horaFim: '17:00',
         militaresNfs: ['111'],
       },
       '3037509',
     );
-    sheetsDb.upsertNotaServico.mockClear();
-    await svc.update(ns.id, { descricao: 'Y' });
-    await new Promise((r) => setImmediate(r));
-    expect(sheetsDb.upsertNotaServico).toHaveBeenCalledTimes(1);
-  });
-
-  it('remove() dispara deleteNotaServico', async () => {
-    const ns = await svc.create(
-      {
-        codigo: 'NS001',
-        descricao: 'X',
-        data: '2026-05-15',
-        horaInicio: '08:00',
-        horaFim: '12:00',
-        militaresNfs: ['111'],
-      },
-      '3037509',
-    );
-    sheetsDb.deleteNotaServico.mockClear();
     await svc.remove(ns.id);
     await new Promise((r) => setImmediate(r));
-    expect(sheetsDb.deleteNotaServico).toHaveBeenCalledWith(ns.id);
+    expect(sheetsDb.deleteNotaServico).not.toHaveBeenCalled();
   });
 
-  it('bootstrap importa Sheets-DB → Postgres quando Postgres vazio', async () => {
-    const persisted: NotaServico = {
-      id: 'ns:persistido',
+  it('bootstrap read-only continua funcionando (fallback de segurança)', async () => {
+    const sheetsDb = makeSheetsDbMock(true);
+    const persisted = {
+      id: 'ns:t-3',
       codigo: 'NS999',
       descricao: 'Vinda do Sheets',
       data: '2026-05-20',
@@ -239,14 +180,12 @@ describe('NotasServicoService dual-write + bootstrap', () => {
         persisted.criadoPorNf,
       ],
     ]);
-    // NODE_ENV=test pula o onModuleInit; emulamos chamando direto.
-    // Como o método é privado, recriamos o service com NODE_ENV destemporariamente.
     const oldEnv = process.env.NODE_ENV;
     process.env.NODE_ENV = 'development';
-    const svc2 = new NotasServicoService(makeEscalasPrismaMock(), sheetsDb);
-    await svc2.onModuleInit();
+    const svc = new NotasServicoService(makeEscalasPrismaMock(), sheetsDb);
+    await svc.onModuleInit();
     process.env.NODE_ENV = oldEnv;
-    const lista = await svc2.list();
+    const lista = await svc.list();
     expect(lista.some((n) => n.codigo === 'NS999')).toBe(true);
   });
 });

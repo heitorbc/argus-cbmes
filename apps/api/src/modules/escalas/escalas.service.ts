@@ -17,7 +17,7 @@ import { resolveDataDir } from '../../common/dev-fixtures';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { parseEscalaXlsx, parseFilename } from './escala-xlsx-parser';
 import { SheetsDbService } from '../sheets-db/sheets-db.service';
-import { escalaMensalToRows, rowsToEscalasMensais } from '../sheets-db/sheets-db-serializers';
+import { rowsToEscalasMensais } from '../sheets-db/sheets-db-serializers';
 
 /**
  * Resolve a quinzena (1 ou 2) de um dia ISO usando a fronteira gravada na
@@ -212,8 +212,8 @@ export class EscalasService implements OnModuleInit {
   }
 
   async save(escala: EscalaMensal): Promise<EscalaMensal> {
+    // S2.10.9d — Sheets-DB dual-write removido. Postgres é canônico desde S2.10.5.
     await this.upsertNoPostgres(escala);
-    this.syncToSheetsDb(escala);
     return (await this.get(escala.ano, escala.mes)) ?? escala;
   }
 
@@ -223,7 +223,6 @@ export class EscalasService implements OnModuleInit {
     });
     if (!existing) return false;
     await this.prisma.escalaMensal.delete({ where: { ano_mes: { ano, mes } } });
-    this.deleteFromSheetsDb(ano, mes);
     return true;
   }
 
@@ -381,23 +380,6 @@ export class EscalasService implements OnModuleInit {
           },
         });
       }
-    });
-  }
-
-  private syncToSheetsDb(escala: EscalaMensal): void {
-    if (!this.sheetsDb?.isEnabled()) return;
-    const rows = escalaMensalToRows(escala);
-    void this.sheetsDb.replaceEscalaMensalMes(escala.ano, escala.mes, rows).catch((err: Error) => {
-      this.logger.warn(
-        `Sheets-DB write falhou para escala ${escala.mes}/${escala.ano}: ${err.message}. Postgres OK.`,
-      );
-    });
-  }
-
-  private deleteFromSheetsDb(ano: number, mes: number): void {
-    if (!this.sheetsDb?.isEnabled()) return;
-    void this.sheetsDb.replaceEscalaMensalMes(ano, mes, []).catch((err: Error) => {
-      this.logger.warn(`Sheets-DB delete falhou para escala ${mes}/${ano}: ${err.message}.`);
     });
   }
 }

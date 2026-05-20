@@ -8,7 +8,6 @@ import { QdiDadosImportService } from '../efetivo/qdi-dados-import.service';
 import { QdiImportService } from '../efetivo/qdi-import.service';
 import { IseoHospitaisService } from '../iseo-hospitais/iseo-hospitais.service';
 import { MapaForcaCiodesService } from '../mapa-forca-ciodes/mapa-forca-ciodes.service';
-import { SheetsDbService } from '../sheets-db/sheets-db.service';
 import { TrocasAutorizadasService } from '../trocas-autorizadas/trocas-autorizadas.service';
 import { ViaturasQdvService } from '../viaturas/viaturas-qdv.service';
 import { ViaturasQdvExtrasService } from '../viaturas/viaturas-qdv-extras.service';
@@ -57,7 +56,6 @@ export class IntegracoesService {
     private readonly viaturasQdvExtras: ViaturasQdvExtrasService,
     private readonly mapaForcaCiodes: MapaForcaCiodesService,
     private readonly iseoHospitais: IseoHospitaisService,
-    private readonly sheetsDb: SheetsDbService,
     // S2.10.8d — 3 ImportServices que compartilham o MilitarConsolidatorService.
     private readonly efetivoImport: EfetivoImportService,
     private readonly qdiImport: QdiImportService,
@@ -263,19 +261,10 @@ export class IntegracoesService {
         forceSync: () => this.viaturasQdvExtras.forceSyncContatos(),
       },
 
-      // ── Sheets-DB (dual-write, escrita via SA) ─────────────────────────
-      {
-        id: 'sheets-db',
-        nome: 'BD_ARGUS_CBMES_HOM (Sheets-DB)',
-        descricao:
-          'Planilha-DB institucional (espelho Drive) — dual-write das tabelas operacionais (escalas mensais, escalas especiais, notas de serviço). Bootstrap único no startup; sync = refazer bootstrap.',
-        sheetIdEnv: 'SHEETS_DB_ID',
-        sheetIdDefault: '',
-        realtimeOnly: true,
-        noScheduler: true,
-        getStatus: () => this.sheetsDb.getSyncStatusAsSource(),
-        forceSync: () => this.sheetsDb.forceSyncAsSource(),
-      },
+      // S2.10.9d — Entry `sheets-db` removida do menu. Dual-write encerrado:
+      // Postgres é canônico desde S2.10.5; `bootstrapFromSheetsDbIfEmpty()`
+      // mantido em escalas/escalas-especiais/notas-servico como fallback
+      // read-only de segurança (sem impacto no menu).
     ];
   }
 

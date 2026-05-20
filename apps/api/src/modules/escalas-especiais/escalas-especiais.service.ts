@@ -10,7 +10,7 @@ import { resolveDataDir } from '../../common/dev-fixtures';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { parseEscalaEspecialXlsm, parseFilenameEspecial } from './escala-especial-xlsm-parser';
 import { SheetsDbService } from '../sheets-db/sheets-db.service';
-import { escalaEspecialToRows, rowsToEscalasEspeciais } from '../sheets-db/sheets-db-serializers';
+import { rowsToEscalasEspeciais } from '../sheets-db/sheets-db-serializers';
 
 /**
  * S2.10.5 — Persistência em Postgres via Prisma. Sheets-DB continua como
@@ -140,13 +140,12 @@ export class EscalasEspeciaisService implements OnModuleInit {
   }
 
   /**
-   * S2.2 → S2.10.5 — Persiste em Postgres (transação cascata) + dispara
-   * replace no Sheets-DB em background. Falhas Sheets logam warning mas
-   * não derrubam.
+   * S2.2 → S2.10.9d — Persiste em Postgres (transação cascata). Sheets-DB
+   * dual-write removido em S2.10.9d (espelho legado não é mais necessário;
+   * Postgres é a fonte de verdade canônica desde S2.10.5).
    */
   async save(escala: EscalaEspecialMensal): Promise<EscalaEspecialMensal> {
     await this.upsertNoPostgres(escala);
-    this.syncToSheetsDb(escala);
     return (await this.get(escala.ano, escala.mes)) ?? escala;
   }
 
@@ -158,7 +157,6 @@ export class EscalasEspeciaisService implements OnModuleInit {
     await this.prisma.escalaEspecialMensal.delete({
       where: { ano_mes: { ano, mes } },
     });
-    this.deleteFromSheetsDb(ano, mes);
     return true;
   }
 
@@ -226,27 +224,6 @@ export class EscalasEspeciaisService implements OnModuleInit {
           },
         });
       }
-    });
-  }
-
-  private syncToSheetsDb(escala: EscalaEspecialMensal): void {
-    if (!this.sheetsDb?.isEnabled()) return;
-    const rows = escalaEspecialToRows(escala);
-    void this.sheetsDb
-      .replaceEscalaEspecialMes(escala.ano, escala.mes, rows)
-      .catch((err: Error) => {
-        this.logger.warn(
-          `Sheets-DB write falhou para escala especial ${escala.mes}/${escala.ano}: ${err.message}.`,
-        );
-      });
-  }
-
-  private deleteFromSheetsDb(ano: number, mes: number): void {
-    if (!this.sheetsDb?.isEnabled()) return;
-    void this.sheetsDb.replaceEscalaEspecialMes(ano, mes, []).catch((err: Error) => {
-      this.logger.warn(
-        `Sheets-DB delete falhou para escala especial ${mes}/${ano}: ${err.message}.`,
-      );
     });
   }
 }
