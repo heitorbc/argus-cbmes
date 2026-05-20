@@ -609,3 +609,100 @@ model SyncLog {
   @@index([fonte, finalizadoEm])
   @@map("sync_logs")
 }
+
+// ────────────────────────────────────────────────────────────────────────
+// S2.10.9a — ChefesOperações + QDV em Postgres (Google Sheets → cache real-time → Postgres)
+// ────────────────────────────────────────────────────────────────────────
+
+/// Escala mensal de Chefe de Operações.
+/// Não rastreia ano/mes — a planilha mostra apenas o mês corrente; cada sync faz replace-all.
+model ChefeOperacoesEscala {
+  nf             String
+  dia            Int // 1-31
+  marcador       String // 'X' | 'Y' | 'S' | '*'
+  posto          String
+  nomeGuerra     String
+  telefone       String?
+  sincronizadoEm DateTime @default(now())
+
+  @@id([nf, dia])
+  @@index([dia])
+  @@map("chefe_operacoes_escala")
+}
+
+/// QDV — aba `1BBM_1CIA` (operacional/diário).
+model ViaturaQdv {
+  prefixo           String   @id
+  status            String?
+  emprestadaA       String?
+  kmAtual           Int?
+  observacao        String?
+  empregoPrimario   String?
+  empregoSecundario String?
+  placa             String?
+  marcaModelo       String?
+  combustivel       String?
+  obm               String?
+  sincronizadoEm    DateTime @default(now())
+
+  @@map("viaturas_qdv")
+}
+
+/// QDV — aba `BASE_LISTA` (cadastro mestre detalhado por OBM).
+model ViaturaQdvBaseLista {
+  prefixo           String   @id
+  obm               String
+  nomenclatura      String?
+  ano               String?
+  status            String?
+  emprestadaA       String?
+  kmAtual           Int?
+  observacao        String?
+  empregoPrimario   String?
+  empregoSecundario String?
+  placa             String?
+  renavam           String?
+  categoriaCnh      String?
+  marcaModelo       String?
+  combustivel       String?
+  modeloPneu        String?
+  sincronizadoEm    DateTime @default(now())
+
+  @@index([obm])
+  @@map("viaturas_qdv_base_lista")
+}
+
+/// QDV — aba `BASE_VTR_LISTA_PRINCIPAL` (cadastro CBMES inteiro).
+model ViaturaCbmes {
+  prefixo              String   @id
+  prefixoComUnderscore String
+  obm                  String
+  nomenclatura         String?
+  ano                  String?
+  idade                String?
+  observacao           String?
+  placa                String?
+  renavam              String?
+  categoriaCnh         String?
+  tipoVeiculo          String?
+  marcaModelo          String?
+  combustivel          String?
+  modeloPneu           String?
+  sincronizadoEm       DateTime @default(now())
+
+  @@index([obm])
+  @@map("viaturas_cbmes")
+}
+
+/// QDV — aba `Contatos_LOGISTICAS` (responsável logístico por OBM).
+model ContatoLogistico {
+  obm                String   @id
+  nf                 String
+  militarResponsavel String
+  nomeCompleto       String?
+  telefone           String?
+  email              String?
+  sincronizadoEm     DateTime @default(now())
+
+  @@map("contatos_logisticos")
+}

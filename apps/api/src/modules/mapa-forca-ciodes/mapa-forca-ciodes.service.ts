@@ -5,7 +5,14 @@ import { RecursosService } from '../recursos/recursos.service';
 import { UNIDADE_1CIA_1BBM_ID } from '../unidades/unidades.service';
 import { parseMapaForcaCsv } from './mapa-forca-ciodes-csv-parser';
 
-const CACHE_TTL_MS = 5 * 60 * 1000;
+/**
+ * S2.10.9a — TTL adaptativo. Em janelas operacionais críticas (passagem
+ * de turno 07-09h + início noturno 18-20h, hora local America/Sao_Paulo),
+ * cache curto para refletir alterações rapidamente. Fora dessas janelas,
+ * cache longo para reduzir fetch Google em 3-4x.
+ */
+const CACHE_TTL_CRITICAL_MS = 5 * 60 * 1000;
+const CACHE_TTL_RELAXED_MS = 20 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 15_000;
 
 interface CacheEntry {
@@ -70,12 +77,23 @@ export class MapaForcaCiodesService {
    */
   getSyncStatus(): { syncedAt: string | null; count: number; stale: boolean } {
     if (!this.cache) return { syncedAt: null, count: 0, stale: false };
-    const stale = Date.now() - this.cache.syncedAt >= CACHE_TTL_MS;
+    const stale = Date.now() - this.cache.syncedAt >= this.getTtlMs();
     return {
       syncedAt: new Date(this.cache.syncedAt).toISOString(),
       count: this.cache.recursos.length,
       stale,
     };
+  }
+
+  /**
+   * S2.10.9a — Retorna o TTL atual conforme a hora local. Janelas críticas
+   * (07-09h e 18-20h hora America/Sao_Paulo) usam TTL curto; fora delas o
+   * TTL é longo (reduz fetch Google fora dos horários sensíveis).
+   */
+  private getTtlMs(): number {
+    const hour = nowLocalHour();
+    const inCriticalWindow = (hour >= 7 && hour < 9) || (hour >= 18 && hour < 20);
+    return inCriticalWindow ? CACHE_TTL_CRITICAL_MS : CACHE_TTL_RELAXED_MS;
   }
 
   /**
@@ -121,7 +139,7 @@ export class MapaForcaCiodesService {
 
   private async getEntry(): Promise<{ entry: CacheEntry; stale: boolean }> {
     const now = Date.now();
-    if (this.cache && now - this.cache.syncedAt < CACHE_TTL_MS) {
+    if (this.cache && now - this.cache.syncedAt < this.getTtlMs()) {
       return { entry: this.cache, stale: false };
     }
     if (this.inflight) {
@@ -176,4 +194,18 @@ export class MapaForcaCiodesService {
     for (const a of avisos) this.logger.warn(`Mapa Força: ${a}`);
     return { recursos, fiscalDoDia, syncedAt: Date.now() };
   }
+}
+
+/**
+ * S2.10.9a — Hora local America/Sao_Paulo. Render roda em UTC; sem isso
+ * `new Date().getHours()` retornaria a hora UTC, deslocando a janela
+ * crítica em 3 horas (errado).
+ */
+function nowLocalHour(): number {
+  const fmt = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    hour: 'numeric',
+    hour12: false,
+  });
+  return Number.parseInt(fmt.format(new Date()), 10);
 }

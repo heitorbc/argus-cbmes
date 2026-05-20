@@ -3,10 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type { IntegracaoStatus } from '@argus/shared-types';
 import { ChefesOperacoesService } from '../chefes-operacoes/chefes-operacoes.service';
 import { DispensasImportService } from '../dispensas/dispensas-import.service';
-import { DispensasSheetService } from '../dispensas/dispensas-sheet.service';
 import { EfetivoImportService } from '../efetivo/efetivo-import.service';
-import { QdiService } from '../efetivo/qdi.service';
-import { QdiDadosService } from '../efetivo/qdi-dados.service';
 import { QdiDadosImportService } from '../efetivo/qdi-dados-import.service';
 import { QdiImportService } from '../efetivo/qdi-import.service';
 import { IseoHospitaisService } from '../iseo-hospitais/iseo-hospitais.service';
@@ -55,12 +52,9 @@ export class IntegracoesService {
     private readonly config: ConfigService,
     private readonly trocasAut: TrocasAutorizadasService,
     private readonly chefesOp: ChefesOperacoesService,
-    private readonly dispensasSheet: DispensasSheetService,
     private readonly dispensasImport: DispensasImportService,
     private readonly viaturasQdv: ViaturasQdvService,
     private readonly viaturasQdvExtras: ViaturasQdvExtrasService,
-    private readonly qdi: QdiService,
-    private readonly qdiDados: QdiDadosService,
     private readonly mapaForcaCiodes: MapaForcaCiodesService,
     private readonly iseoHospitais: IseoHospitaisService,
     private readonly sheetsDb: SheetsDbService,
@@ -195,42 +189,17 @@ export class IntegracoesService {
         forceSync: () => this.trocasAut.forceSync(),
       },
       {
+        // S2.10.9a — ChOp agora persistido em Postgres + sync orchestrator.
+        // Substitui o cache in-memory anterior (pattern S2.10.8d/c).
         id: 'chefes-operacoes',
-        nome: 'Chefes de Operações (ChOp)',
-        descricao: 'Escala de Chefes de Operações da 1ª Cia/1º BBM.',
+        nome: 'Chefes de Operações → Postgres (replace-all)',
+        descricao:
+          'Escala mensal de Chefes de Operações da 1ª Cia/1º BBM. Sincronizada no startup, cron 00/06/12/18h e botão manual. Replace-all: cada sync apaga o estado anterior do mês corrente.',
         sheetIdEnv: 'CHOP_SHEET_ID',
         sheetIdDefault: '1Nlr_uSNVD6dByaWPTL6IttSOa2nQPXO-m7FqTpeH8WI',
         sheetGidOrName: 'gid=1250546399',
-        realtimeOnly: true,
-        noScheduler: true,
         getStatus: () => this.chefesOp.getSyncStatus(),
         forceSync: () => this.chefesOp.forceSync(),
-      },
-      {
-        id: 'qdi-1a1o',
-        nome: 'QDI — aba "1ª1º" (operacional)',
-        descricao:
-          'Quadro de Distribuição Interna do 1º BBM (aba operacional 1ª Cia). Fonte primária de NF/posto/nome de guerra dos militares.',
-        sheetIdEnv: 'GOOGLE_SHEET_ID_QDI',
-        sheetIdDefault: '12-XCsNwr34d625Wkkuq-mr4bmv2Fcr2QQ1C7WfVjwB0',
-        sheetGidOrName: 'gid=558859373',
-        realtimeOnly: true,
-        noScheduler: true,
-        getStatus: () => this.qdi.getSyncStatus(),
-        forceSync: () => this.qdi.forceSync(),
-      },
-      {
-        id: 'qdi-dados',
-        nome: 'QDI — aba "DADOS"',
-        descricao:
-          'Aba DADOS do QDI com lotação canônica (LOCAL=1ª1º). Fonte primária para ChOps de outras Cias.',
-        sheetIdEnv: 'GOOGLE_SHEET_ID_QDI',
-        sheetIdDefault: '12-XCsNwr34d625Wkkuq-mr4bmv2Fcr2QQ1C7WfVjwB0',
-        sheetGidOrName: 'gid=1395786516',
-        realtimeOnly: true,
-        noScheduler: true,
-        getStatus: () => this.qdiDados.getSyncStatus(),
-        forceSync: () => this.qdiDados.forceSync(),
       },
       {
         // S2.10.8c — ISEO Hospitais agora persistido em Postgres + sync orchestrator.
@@ -245,67 +214,52 @@ export class IntegracoesService {
         getStatus: async () => this.iseoHospitais.getSyncStatusAgregado(),
         forceSync: () => this.iseoHospitais.forceSyncAsSource(),
       },
-      {
-        id: 'dispensas-sheet',
-        nome: 'Dispensas 2026 — leitura raw',
-        descricao:
-          'Mesma aba "Dispensas 2026" lida em formato raw (sem upsert). Usada por /dispensas/sheet para conferência manual.',
-        sheetIdEnv: 'DISPENSAS_SHEET_ID',
-        sheetIdDefault: '1gA17VKQNV8xlnqIhAJfu57TW1GS6VH2YDrcJZk405do',
-        sheetGidOrName: 'Dispensas%202026',
-        realtimeOnly: true,
-        noScheduler: true,
-        getStatus: () => this.dispensasSheet.getSyncStatus(),
-        forceSync: () => this.dispensasSheet.forceSync(),
-      },
 
-      // ── QDV (real-time + cache) ────────────────────────────────────────
+      // ── QDV (multi-sheet → Postgres em S2.10.9a) ───────────────────────
+      // As 4 entries compartilham o ViaturasQdvImportService; forceSync de
+      // qualquer uma sincroniza todas as 4 abas (replace-all multi-sheet).
       {
         id: 'viaturas-qdv',
-        nome: 'QDV — Viaturas 1BBM/1ªCia',
-        descricao: 'Quadro Demonstrativo de Viaturas (aba 1BBM_1CIA).',
+        nome: 'QDV — Viaturas 1BBM/1ªCia → Postgres',
+        descricao:
+          'Quadro Demonstrativo de Viaturas, aba 1BBM_1CIA. Sincronizada com prisma.viaturaQdv via cron 00/06/12/18h + startup + botão manual.',
         sheetIdEnv: 'QDV_SHEET_ID',
         sheetIdDefault: '1iqjSDXpbAjtbi7lvd5_5brims8Ipr-OTVXhQMGiv2I8',
         sheetGidOrName: '1BBM_1CIA',
-        realtimeOnly: true,
-        noScheduler: true,
         getStatus: () => this.viaturasQdv.getSyncStatus(),
         forceSync: () => this.viaturasQdv.forceSync(),
       },
       {
         id: 'viaturas-qdv-base-lista',
-        nome: 'QDV — BASE_LISTA',
-        descricao: 'Cadastro mestre detalhado das viaturas por OBM.',
+        nome: 'QDV — BASE_LISTA → Postgres',
+        descricao:
+          'Cadastro mestre detalhado das viaturas por OBM. Persistido em prisma.viaturaQdvBaseLista (multi-sheet sync compartilhado).',
         sheetIdEnv: 'QDV_SHEET_ID',
         sheetIdDefault: '1iqjSDXpbAjtbi7lvd5_5brims8Ipr-OTVXhQMGiv2I8',
         sheetGidOrName: 'BASE_LISTA',
-        realtimeOnly: true,
-        noScheduler: true,
-        getStatus: () => this.viaturasQdvExtras.getSyncStatusBaseLista(),
+        getStatus: async () => this.viaturasQdvExtras.getSyncStatusBaseLista(),
         forceSync: () => this.viaturasQdvExtras.forceSyncBaseLista(),
       },
       {
         id: 'viaturas-qdv-cbmes',
-        nome: 'QDV — Lista Principal CBMES',
-        descricao: 'TODAS as viaturas do CBMES (aba BASE_VTR_LISTA_PRINCIPAL).',
+        nome: 'QDV — Lista Principal CBMES → Postgres',
+        descricao:
+          'TODAS as viaturas do CBMES (aba BASE_VTR_LISTA_PRINCIPAL). Persistido em prisma.viaturaCbmes (multi-sheet sync compartilhado).',
         sheetIdEnv: 'QDV_SHEET_ID',
         sheetIdDefault: '1iqjSDXpbAjtbi7lvd5_5brims8Ipr-OTVXhQMGiv2I8',
         sheetGidOrName: 'BASE_VTR_LISTA_PRINCIPAL',
-        realtimeOnly: true,
-        noScheduler: true,
-        getStatus: () => this.viaturasQdvExtras.getSyncStatusVtrPrincipal(),
+        getStatus: async () => this.viaturasQdvExtras.getSyncStatusVtrPrincipal(),
         forceSync: () => this.viaturasQdvExtras.forceSyncVtrPrincipal(),
       },
       {
         id: 'viaturas-qdv-contatos',
-        nome: 'QDV — Contatos Logísticos',
-        descricao: 'Responsável logístico por OBM (aba Contatos_LOGISTICAS).',
+        nome: 'QDV — Contatos Logísticos → Postgres',
+        descricao:
+          'Responsável logístico por OBM (aba Contatos_LOGISTICAS). Persistido em prisma.contatoLogistico (multi-sheet sync compartilhado).',
         sheetIdEnv: 'QDV_SHEET_ID',
         sheetIdDefault: '1iqjSDXpbAjtbi7lvd5_5brims8Ipr-OTVXhQMGiv2I8',
         sheetGidOrName: 'Contatos_LOGISTICAS',
-        realtimeOnly: true,
-        noScheduler: true,
-        getStatus: () => this.viaturasQdvExtras.getSyncStatusContatos(),
+        getStatus: async () => this.viaturasQdvExtras.getSyncStatusContatos(),
         forceSync: () => this.viaturasQdvExtras.forceSyncContatos(),
       },
 
