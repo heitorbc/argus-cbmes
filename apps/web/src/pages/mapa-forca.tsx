@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { DayPicker, type DayButtonProps } from 'react-day-picker';
 import { ptBR } from 'date-fns/locale';
 import 'react-day-picker/dist/style.css';
+import { useQuery } from '@tanstack/react-query';
 import { ApiError, api } from '@/lib/api';
 
 const LETRA_EQUIPE_LABEL: Record<string, string> = {
@@ -54,10 +55,6 @@ export function MapaForcaPage() {
   const today = new Date();
   const [mes, setMes] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
   const [viewMode, setViewMode] = useState<'calendario' | 'lista'>('calendario');
-  const [diasComEscala, setDiasComEscala] = useState<string[]>([]);
-  const [equipePorDia, setEquipePorDia] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   // S2.10.9a — Botão "Atualizar Mapa Força CIODES" (fonte real-time only,
   // não persiste em Postgres). Útil quando o Fiscal sabe que houve mudança
   // na planilha e quer ver o snapshot mais recente antes do TTL expirar.
@@ -80,28 +77,24 @@ export function MapaForcaPage() {
   const ano = mes.getFullYear();
   const mesNum = mes.getMonth() + 1;
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    api
-      .escalasDiasDisponiveis(ano, mesNum)
-      .then((r) => {
-        if (cancelled) return;
-        setDiasComEscala(r.dias);
-        setEquipePorDia(r.equipePorDia);
-        setError(null);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e instanceof ApiError ? e.message : 'Erro ao carregar dias');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [ano, mesNum]);
+  // S2.10.9c — useQuery substitui useEffect+fetch. staleTime 30s (passagem
+  // de turno é crítica). Cache persiste em localStorage entre navegações.
+  const {
+    data: diasResp,
+    isLoading: loading,
+    error: queryError,
+  } = useQuery({
+    queryKey: ['escalas-dias-disponiveis', ano, mesNum],
+    queryFn: () => api.escalasDiasDisponiveis(ano, mesNum),
+    staleTime: 30 * 1000,
+  });
+  const diasComEscala = useMemo(() => diasResp?.dias ?? [], [diasResp]);
+  const equipePorDia = useMemo(() => diasResp?.equipePorDia ?? {}, [diasResp]);
+  const error = queryError
+    ? queryError instanceof ApiError
+      ? queryError.message
+      : 'Erro ao carregar dias'
+    : null;
 
   const diasSet = useMemo(() => new Set(diasComEscala), [diasComEscala]);
 

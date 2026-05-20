@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   STATUS_INTEGRACAO_LABEL,
   type IntegracaoStatus,
@@ -7,6 +8,7 @@ import {
 } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { SkeletonTable } from '@/components/Skeleton';
 
 const REFRESH_MS = 30_000;
 
@@ -24,50 +26,42 @@ const REFRESH_MS = 30_000;
 export function IntegracoesPage() {
   const { user } = useAuth();
   const isAdmin = user?.papeis.includes('admin') ?? false;
-  const [items, setItems] = useState<IntegracaoStatus[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [atualizadoEm, setAtualizadoEm] = useState<Date | null>(null);
+  const queryClient = useQueryClient();
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncingAll, setSyncingAll] = useState(false);
   const [syncAllResult, setSyncAllResult] = useState<string | null>(null);
   const [historicoModal, setHistoricoModal] = useState<{ id: string; nome: string } | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const list = await api.integracoesList();
-        if (cancelled) return;
-        setItems(list);
-        setError(null);
-        setAtualizadoEm(new Date());
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof ApiError ? e.message : 'Erro ao carregar integrações');
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    void load();
-    const id = setInterval(load, REFRESH_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, []);
+  // S2.10.9c — useQuery com refetchInterval substitui o setInterval manual.
+  // Cache hidratado do localStorage (cache 24h) — visitas seguintes mostram
+  // dados imediatamente enquanto o refetch acontece em background.
+  const {
+    data: items = [] as IntegracaoStatus[],
+    isLoading: loading,
+    error: queryError,
+    dataUpdatedAt,
+  } = useQuery({
+    queryKey: ['integracoes'],
+    queryFn: () => api.integracoesList(),
+    staleTime: REFRESH_MS,
+    refetchInterval: REFRESH_MS,
+  });
+  const error = queryError
+    ? queryError instanceof ApiError
+      ? queryError.message
+      : 'Erro ao carregar integrações'
+    : null;
+  const atualizadoEm = dataUpdatedAt ? new Date(dataUpdatedAt) : null;
 
   async function handleSync(id: string) {
     setSyncingId(id);
     setSyncError(null);
     try {
       const updated = await api.integracoesSync(id);
-      setItems((prev) => prev.map((it) => (it.id === id ? updated : it)));
-      setAtualizadoEm(new Date());
+      queryClient.setQueryData<IntegracaoStatus[]>(['integracoes'], (prev) =>
+        prev ? prev.map((it) => (it.id === id ? updated : it)) : prev,
+      );
     } catch (e) {
       setSyncError(e instanceof ApiError ? e.message : 'Erro ao sincronizar');
     } finally {
@@ -88,10 +82,8 @@ export function IntegracoesPage() {
       setSyncAllResult(
         `✓ Sync completo — ${ok} OK${partial > 0 ? `, ${partial} parcial(is)` : ''}${failed > 0 ? `, ${failed} falha(s)` : ''}`,
       );
-      // Recarrega lista pra refletir novos timestamps
-      const list = await api.integracoesList();
-      setItems(list);
-      setAtualizadoEm(new Date());
+      // S2.10.9c — invalida cache para forçar refetch
+      await queryClient.invalidateQueries({ queryKey: ['integracoes'] });
     } catch (e) {
       setSyncError(e instanceof ApiError ? e.message : 'Erro ao sincronizar tudo');
     } finally {
@@ -153,9 +145,7 @@ export function IntegracoesPage() {
           </div>
         )}
 
-        {loading && items.length === 0 && (
-          <p className="mt-4 text-sm text-slate-500">Carregando…</p>
-        )}
+        {loading && items.length === 0 && <SkeletonTable rows={8} cols={5} className="mt-4" />}
 
         {items.length > 0 && (
           <div className="mt-4 overflow-x-auto rounded border border-slate-200 bg-white">

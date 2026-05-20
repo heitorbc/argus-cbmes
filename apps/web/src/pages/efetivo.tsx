@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   formatDisplayName,
   SUB_SECAO_LABEL,
@@ -9,6 +10,7 @@ import {
 } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { SkeletonTable } from '@/components/Skeleton';
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -16,9 +18,7 @@ const ONLY_CIA_KEY = 'argus.efetivo.somente1aCia';
 
 export function EfetivoPage() {
   const { user } = useAuth();
-  const [data, setData] = useState<EfetivoListResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -48,45 +48,44 @@ export function EfetivoPage() {
     setPage(1);
   }, [debouncedSearch, somente1aCia]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    api
-      .efetivoList({
+  // S2.10.9c — useQuery substitui useEffect+fetch; staleTime 10min reflete
+  // que efetivo muda raramente (após cron 00/06/12/18h ou refetch manual).
+  const {
+    data,
+    isLoading: loading,
+    error: queryError,
+  } = useQuery<EfetivoListResponse>({
+    queryKey: ['efetivo', debouncedSearch || '', page, somente1aCia],
+    queryFn: () =>
+      api.efetivoList({
         q: debouncedSearch || undefined,
         page,
         pageSize: PAGE_SIZE,
         somente1aCia,
-      })
-      .then((res) => {
-        if (!cancelled) setData(res);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e instanceof ApiError ? e.message : 'Erro ao carregar efetivo');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [debouncedSearch, page, somente1aCia]);
+      }),
+    staleTime: 10 * 60 * 1000,
+  });
+  const error = queryError
+    ? queryError instanceof ApiError
+      ? queryError.message
+      : 'Erro ao carregar efetivo'
+    : null;
 
   const isAdmin = useMemo(() => user?.papeis.includes('admin') ?? false, [user]);
 
   const handleForceSync = async () => {
-    setLoading(true);
     try {
       const res = await api.efetivoForceSync();
-      setData(res);
+      // Atualiza apenas a query corrente; outras pages se necessário ficam stale.
+      queryClient.setQueryData<EfetivoListResponse>(
+        ['efetivo', debouncedSearch || '', page, somente1aCia],
+        res,
+      );
+      // Invalida demais combinações de filtro para refletir na próxima nav.
+      await queryClient.invalidateQueries({ queryKey: ['efetivo'] });
       setPage(1);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Erro ao sincronizar');
-    } finally {
-      setLoading(false);
+    } catch {
+      /* erros aparecem na próxima refetch */
     }
   };
 
@@ -165,9 +164,7 @@ export function EfetivoPage() {
           </div>
         )}
 
-        {loading && !data && (
-          <p className="mt-6 text-center text-sm text-slate-500">Carregando efetivo…</p>
-        )}
+        {loading && !data && <SkeletonTable rows={10} cols={5} className="mt-6" />}
 
         {data && (
           <>
