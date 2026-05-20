@@ -42,6 +42,11 @@ export class QdiService {
     };
   }
 
+  /** S2.10.8d — Invalida cache (próximo `getByNf()` força refresh). */
+  invalidateCache(): void {
+    this.cache = null;
+  }
+
   /**
    * S2.10.8a — Status visível em `/configuracoes/integracoes`. Como QDI é
    * real-time (não persiste em Postgres), o `count` reflete o tamanho do
