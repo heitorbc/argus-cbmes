@@ -1,32 +1,18 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { makeDispensasPrismaMock } from '../../common/prisma/prisma-test-mock';
-import { DispensasImportService } from './dispensas-import.service';
 import { DispensasService } from './dispensas.service';
 
 const NF1 = '3037509';
 const NF2 = '3670180';
 const sargenteanteNf = '9999999';
 
-/**
- * Stub mínimo do DispensasImportService — `syncIfStale` é fire-and-forget
- * no service real, então o stub no-op não interfere nos tests.
- */
-function makeImportStub(): DispensasImportService {
-  return {
-    syncIfStale: vi.fn().mockResolvedValue(undefined),
-    forceSync: vi.fn(),
-    syncToDatabase: vi.fn(),
-    getSyncStatus: vi.fn(),
-  } as unknown as DispensasImportService;
-}
-
 describe('DispensasService (S6j/S2.10.7d Prisma)', () => {
   let svc: DispensasService;
 
   beforeEach(() => {
     const prisma = makeDispensasPrismaMock();
-    svc = new DispensasService(prisma, makeImportStub());
+    svc = new DispensasService(prisma);
   });
 
   it('create gera id + timestamps + origem manual', async () => {
@@ -179,5 +165,14 @@ describe('DispensasService (S6j/S2.10.7d Prisma)', () => {
 
   it('findById lança NotFound para id desconhecido', async () => {
     await expect(svc.findById('disp:xpto')).rejects.toThrow(NotFoundException);
+  });
+
+  it('S2.10.9b: GETs Postgres-puro — service não depende mais do ImportService', () => {
+    // Regressão: o constructor recebe apenas PrismaService. Se um futuro PR
+    // re-injetar o ImportService para disparar `syncIfStale()` em GETs,
+    // este teste explicita que a decisão D2 (Tech Lead 2026-05-20) foi
+    // remover o fire-and-forget para eliminar contenção Google×Postgres.
+    expect(svc).toBeInstanceOf(DispensasService);
+    expect(DispensasService.length).toBe(1); // constructor arity = 1 (apenas prisma)
   });
 });

@@ -12,27 +12,22 @@ import {
 } from '@argus/shared-types';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import type { Dispensa as PrismaDispensa } from '@prisma/client';
-import { DispensasImportService } from './dispensas-import.service';
 
 /**
- * S6j/S2.10.7d — CRUD de Dispensas em Prisma + sync transparente da
- * planilha externa "Dispensas 2026".
+ * S6j/S2.10.7d — CRUD de Dispensas em Prisma. Sync com a planilha externa
+ * "Dispensas 2026" é responsabilidade exclusiva do `SyncOrchestratorService`
+ * (cron 00/06/12/18h + startup) e do botão "Sincronizar agora" no menu
+ * `/configuracoes/integracoes`.
  *
- * Antes (S6j): persistência in-memory (Map). Agora (S2.10.7d) usa Prisma
- * `dispensa` table. Toda chamada de `list()` ou `listAtivasNoDia()` dispara
- * `syncIfStale()` fire-and-forget (cache TTL 5min no DispensasImportService).
+ * S2.10.9b — GETs são **Postgres-puros**: removido `syncIfStale()` fire-and-
+ * forget dos getters para eliminar contenção Google×Postgres no caminho do
+ * request. Lag máximo aceito: 6h entre crons (Tech Lead 2026-05-20).
  */
 @Injectable()
 export class DispensasService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly importSvc: DispensasImportService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async list(filter: { militarNf?: string; ano?: number } = {}): Promise<Dispensa[]> {
-    // S2.10.7d — sync transparente (fire-and-forget; não bloqueia)
-    void this.importSvc.syncIfStale();
-
     const where: Record<string, unknown> = { deletedAt: null };
     if (filter.militarNf) where.militarNf = filter.militarNf;
     if (filter.ano !== undefined) {
@@ -56,7 +51,6 @@ export class DispensasService {
 
   /** Lista dispensas ativas em um dia específico (S6j integração Prévia). */
   async listAtivasNoDia(dataIso: string): Promise<Dispensa[]> {
-    void this.importSvc.syncIfStale();
     // Filtra dispensas onde dataIso ∈ [dataInicio, dataInicio + dias).
     // Postgres não tem aritmética de data em string fácil, então pegamos
     // todas as não-deletadas com dataInicio <= dataIso e filtramos em JS.

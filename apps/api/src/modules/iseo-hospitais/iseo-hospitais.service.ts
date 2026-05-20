@@ -10,13 +10,13 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { IseoHospitaisImportService } from './iseo-hospitais-import.service';
 
 /**
- * S2.10.8c — ISEO Hospitais (multi-sheet HPM + HIMABA × meses) agora em
- * Postgres. Antes (S0.5/S2.8.1): cache TTL 5min por aba in-memory, fetch
- * em cada request. Agora: leitura direta de `prisma.iseoHospitalEntry`
- * com sync transparente fire-and-forget.
+ * S2.10.8c — ISEO Hospitais (multi-sheet HPM + HIMABA × meses) em Postgres.
  *
- * Pattern espelha `DispensasService` (S2.10.7d) e
- * `TrocasAutorizadasService` (S2.10.8b).
+ * S2.10.9b — GETs são **Postgres-puros**: removido `syncIfStale()` fire-and-
+ * forget para eliminar contenção Google×Postgres no caminho do request. Sync
+ * acontece exclusivamente via cron 00/06/12/18h, startup e botão manual em
+ * `/configuracoes/integracoes`. Lag de 6h é aceitável: ISEO não é sensível
+ * a sub-tempo real (apenas detecção de conflitos com outras escalas).
  */
 @Injectable()
 export class IseoHospitaisService {
@@ -29,7 +29,6 @@ export class IseoHospitaisService {
 
   /** Lista todas as entradas (todas as unidades + meses combinados). */
   async list(): Promise<IseoHospitalEntry[]> {
-    void this.importSvc.syncIfStale();
     const rows = await this.prisma.iseoHospitalEntry.findMany({
       orderBy: [{ dataIso: 'asc' }, { unidade: 'asc' }, { turno: 'asc' }],
     });
@@ -37,7 +36,6 @@ export class IseoHospitaisService {
   }
 
   async listByUnidade(unidade: IseoHospitalUnidade): Promise<IseoHospitalEntry[]> {
-    void this.importSvc.syncIfStale();
     const rows = await this.prisma.iseoHospitalEntry.findMany({
       where: { unidade },
       orderBy: [{ dataIso: 'asc' }, { turno: 'asc' }],
@@ -46,7 +44,6 @@ export class IseoHospitaisService {
   }
 
   async listDoDia(dataIso: string): Promise<IseoHospitalEntry[]> {
-    void this.importSvc.syncIfStale();
     const rows = await this.prisma.iseoHospitalEntry.findMany({
       where: { dataIso },
       orderBy: [{ unidade: 'asc' }, { turno: 'asc' }],
@@ -55,7 +52,6 @@ export class IseoHospitaisService {
   }
 
   async listByMilitar(nf: string): Promise<IseoHospitalEntry[]> {
-    void this.importSvc.syncIfStale();
     const rows = await this.prisma.iseoHospitalEntry.findMany({
       where: { nf },
       orderBy: [{ dataIso: 'asc' }],
