@@ -4,8 +4,11 @@ import type { IntegracaoStatus } from '@argus/shared-types';
 import { ChefesOperacoesService } from '../chefes-operacoes/chefes-operacoes.service';
 import { DispensasImportService } from '../dispensas/dispensas-import.service';
 import { DispensasSheetService } from '../dispensas/dispensas-sheet.service';
+import { EfetivoImportService } from '../efetivo/efetivo-import.service';
 import { QdiService } from '../efetivo/qdi.service';
 import { QdiDadosService } from '../efetivo/qdi-dados.service';
+import { QdiDadosImportService } from '../efetivo/qdi-dados-import.service';
+import { QdiImportService } from '../efetivo/qdi-import.service';
 import { IseoHospitaisService } from '../iseo-hospitais/iseo-hospitais.service';
 import { MapaForcaCiodesService } from '../mapa-forca-ciodes/mapa-forca-ciodes.service';
 import { SheetsDbService } from '../sheets-db/sheets-db.service';
@@ -61,6 +64,10 @@ export class IntegracoesService {
     private readonly mapaForcaCiodes: MapaForcaCiodesService,
     private readonly iseoHospitais: IseoHospitaisService,
     private readonly sheetsDb: SheetsDbService,
+    // S2.10.8d — 3 ImportServices que compartilham o MilitarConsolidatorService.
+    private readonly efetivoImport: EfetivoImportService,
+    private readonly qdiImport: QdiImportService,
+    private readonly qdiDadosImport: QdiDadosImportService,
   ) {}
 
   /**
@@ -99,6 +106,63 @@ export class IntegracoesService {
         },
         forceSync: async () => {
           const r = await this.dispensasImport.forceSync();
+          return { syncedAt: r.syncedAt, count: r.created + r.updated };
+        },
+      },
+      // S2.10.8d — 3 sources que consolidam a tabela `militares` via
+      // MilitarConsolidatorService (inflight lock compartilhado). Sincronizar
+      // qualquer uma das 3 reconsolida todo o efetivo.
+      {
+        id: 'efetivo-import',
+        nome: 'EFETIVO (Sargenteante) → Postgres (upsert consolidado)',
+        descricao:
+          'Sincroniza a planilha EFETIVO (Sargenteante) com a tabela militares no Postgres. Reconsolida 3-way com QDI 1ª1º + QDI/DADOS via inflight lock. Sync no startup + cron 00/06/12/18h.',
+        sheetIdEnv: 'GOOGLE_SHEET_ID_EFETIVO',
+        sheetIdDefault: '',
+        sheetGidOrName: 'gid=1379090962',
+        getStatus: () => {
+          const s = this.efetivoImport.getSyncStatus();
+          const total = s.counts ? s.counts.created + s.counts.updated : 0;
+          return { syncedAt: s.syncedAt, count: total, stale: s.stale };
+        },
+        forceSync: async () => {
+          const r = await this.efetivoImport.forceSync();
+          return { syncedAt: r.syncedAt, count: r.created + r.updated };
+        },
+      },
+      {
+        id: 'qdi-import',
+        nome: 'QDI 1ª1º → Postgres (upsert consolidado)',
+        descricao:
+          'Sincroniza a aba QDI 1ª1º com a tabela militares no Postgres via MilitarConsolidatorService (3-way merge com EFETIVO + DADOS). Inflight lock garante consolidação única quando syncAll roda em paralelo.',
+        sheetIdEnv: 'GOOGLE_SHEET_ID_QDI',
+        sheetIdDefault: '12-XCsNwr34d625Wkkuq-mr4bmv2Fcr2QQ1C7WfVjwB0',
+        sheetGidOrName: 'gid=558859373',
+        getStatus: () => {
+          const s = this.qdiImport.getSyncStatus();
+          const total = s.counts ? s.counts.created + s.counts.updated : 0;
+          return { syncedAt: s.syncedAt, count: total, stale: s.stale };
+        },
+        forceSync: async () => {
+          const r = await this.qdiImport.forceSync();
+          return { syncedAt: r.syncedAt, count: r.created + r.updated };
+        },
+      },
+      {
+        id: 'qdi-dados-import',
+        nome: 'QDI/DADOS → Postgres (upsert consolidado)',
+        descricao:
+          'Sincroniza a aba QDI/DADOS (fonte primária do consolidador, conforme ADR-008) com a tabela militares no Postgres via MilitarConsolidatorService.',
+        sheetIdEnv: 'GOOGLE_SHEET_ID_QDI',
+        sheetIdDefault: '12-XCsNwr34d625Wkkuq-mr4bmv2Fcr2QQ1C7WfVjwB0',
+        sheetGidOrName: 'gid=1395786516',
+        getStatus: () => {
+          const s = this.qdiDadosImport.getSyncStatus();
+          const total = s.counts ? s.counts.created + s.counts.updated : 0;
+          return { syncedAt: s.syncedAt, count: total, stale: s.stale };
+        },
+        forceSync: async () => {
+          const r = await this.qdiDadosImport.forceSync();
           return { syncedAt: r.syncedAt, count: r.created + r.updated };
         },
       },
