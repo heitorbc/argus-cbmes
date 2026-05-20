@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type {
   IseoHospitalEntry,
   IseoHospitalSyncStatus,
@@ -20,6 +20,8 @@ import { IseoHospitaisImportService } from './iseo-hospitais-import.service';
  */
 @Injectable()
 export class IseoHospitaisService {
+  private readonly logger = new Logger(IseoHospitaisService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly importSvc: IseoHospitaisImportService,
@@ -99,7 +101,17 @@ export class IseoHospitaisService {
     stale: boolean;
   }> {
     const importStatus = this.importSvc.getSyncStatus();
-    const count = await this.prisma.iseoHospitalEntry.count();
+    // S2.10.8c-fix — try/catch defensivo. Em cold boot do Supabase a primeira
+    // query Prisma pode falhar/timeout; sem este wrapper, a exceção sobe e
+    // o IntegracoesService devolve HTTP 500 no menu inteiro.
+    let count = 0;
+    try {
+      count = await this.prisma.iseoHospitalEntry.count();
+    } catch (err) {
+      this.logger.warn(
+        `prisma.iseoHospitalEntry.count() falhou: ${(err as Error).message}. Retornando count=0.`,
+      );
+    }
     return { syncedAt: importStatus.syncedAt, count, stale: importStatus.stale };
   }
 
