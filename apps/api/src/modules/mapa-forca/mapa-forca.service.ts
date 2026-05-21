@@ -90,7 +90,53 @@ export class MapaForcaService {
     const [ano, mes, dia] = parseDataIso(dataIso);
     const inconsistencias: MapaForcaInconsistencia[] = [];
 
-    const escala = await this.escalas.get(ano, mes);
+    // S2.10.11c — Paraleliza 10 fontes independentes em vez de await em
+    // cascata. Cada uma é uma query Prisma ou fetch real-time; estão
+    // semanticamente independentes (não dependem dos resultados das outras).
+    //
+    // Antes: 10 awaits sequenciais (cada Prisma cerca de 50-150ms) = ~1.5s
+    // Depois: Promise.all roda em paralelo, limitado pelo pool e pelo
+    // Postgres (na prática ~200-400ms).
+    //
+    // `escalas.get` e `getEscaladosDoDia` ficam em paralelo embora
+    // `getEscaladosDoDia` internamente faça `get` — duplicação leve aceita
+    // para evitar serialização adicional.
+    const [
+      escala,
+      escalados,
+      efetivoTotal,
+      allViaturas,
+      mfRecursos,
+      aprovacoes,
+      atosEspeciaisRaw,
+      chefes,
+      chopHabilitados,
+      trocasAutorizadasDoDia,
+      dispensasAtivas,
+      nsDoDia,
+    ] = await Promise.all([
+      this.escalas.get(ano, mes),
+      this.escalas.getEscaladosDoDia(ano, mes, dataIso),
+      this.efetivo.getAll({ somente1aCia: false, incluirEfetivoOrfao: true }),
+      this.viaturas.list(),
+      this.mapaForcaCiodes.getRecursos(),
+      this.ajustes.getAprovacoes(dataIso),
+      this.escalasEspeciais.getAtosDoDia(ano, mes, dataIso),
+      this.chefesOperacoes.getEscaladosDoDia(ano, mes, dia).catch(() => []),
+      this.chefesOperacoes.getHabilitadosNfs(),
+      this.trocasAutorizadas.listByData(dataIso).catch((err) => {
+        inconsistencias.push({
+          tipo: 'TROCAS_AUTORIZADAS_INDISPONIVEIS',
+          mensagem: `Não foi possível consultar a planilha de Trocas Autorizadas: ${
+            (err as Error).message
+          }`,
+        });
+        return [];
+      }),
+      this.dispensasSvc.listAtivasNoDia(dataIso),
+      this.notasServicoSvc.listDoDia(dataIso),
+    ]);
+
     if (!escala) {
       inconsistencias.push({
         tipo: 'SEM_ESCALA_NO_MES',
@@ -98,7 +144,6 @@ export class MapaForcaService {
       });
     }
 
-    const escalados = await this.escalas.getEscaladosDoDia(ano, mes, dataIso);
     const equipe = escalados.equipe;
     if (escala && !equipe) {
       inconsistencias.push({
@@ -107,15 +152,7 @@ export class MapaForcaService {
       });
     }
 
-    // Resolução nome→NF cruzando com efetivo consolidado.
-    // S6c/F1: NomeMatcher precisa de TODOS os militares (DADOS+1ª1º+EFETIVO)
-    // para resolver militares que estão nas escalas mas ainda não foram
-    // lançados no QDI 1ª1º (DRH atrasado). A página /cadastros/efetivo continua
-    // filtrada (somente1aCia=true sem incluirEfetivoOrfao).
-    const efetivoTotal = await this.efetivo.getAll({
-      somente1aCia: false,
-      incluirEfetivoOrfao: true,
-    });
+    // S6c/F1: NomeMatcher usa o efetivo completo (DADOS+1ª1º+EFETIVO).
     const matcher = new NomeMatcher(efetivoTotal);
     // S2.10.7c — efetivoByNf usado tanto para enriquecer dispensas/atestados
     // quanto para aplicar trocas aprovadas em tripulação antes do build.
@@ -161,8 +198,7 @@ export class MapaForcaService {
     // Viaturas operacionais (status real vindo do Mapa Força).
     // Inclui também as viaturas baixadas/emprestadas (com status), para que o WhatsApp
     // possa mostrar `***#BAIXADA#***` inline ao invés de omitir a viatura.
-    const allViaturas = await this.viaturas.list();
-    const mfRecursos = await this.mapaForcaCiodes.getRecursos();
+    // S2.10.11c — `allViaturas` e `mfRecursos` carregadas em paralelo lá em cima.
     const viaturasOp = allViaturas.map((v) => ({
       id: v.id,
       codigo: v.prefixo,
@@ -194,8 +230,7 @@ export class MapaForcaService {
     // F7a — Ajustes pré-turno (trocas/escala especial/NS/dispensas) persistidos por data.
     const ajustes = this.ajustes.get(dataIso);
     // S2.10.7b/c — Decisões de aprovação individual do Fiscal por item.
-    // Persistido em Prisma desde S2.10.7c.
-    const aprovacoes = await this.ajustes.getAprovacoes(dataIso);
+    // Persistido em Prisma desde S2.10.7c. (carregado em paralelo no Promise.all acima)
     const statusAprovacaoDispensa = (id: string): StatusAprovacao =>
       aprovacoes.get(`dispensa:${id}`) ?? 'pendente';
     const statusAprovacaoAtestado = (id: string): StatusAprovacao =>
@@ -204,17 +239,16 @@ export class MapaForcaService {
       aprovacoes.get(`troca:${trocaIdStr}`) ?? 'pendente';
 
     // S6a-fix item 4 — atos da Escala Especial do dia (read-only injetado).
-    const atosEspeciais = (await this.escalasEspeciais.getAtosDoDia(ano, mes, dataIso)).map(
-      (a) => ({
-        data: a.data,
-        militarRaw: a.militarRaw,
-        horario: a.horario,
-        funcao: a.funcao,
-      }),
-    );
+    // S2.10.11c — `atosEspeciaisRaw` veio do Promise.all lá em cima.
+    const atosEspeciais = atosEspeciaisRaw.map((a) => ({
+      data: a.data,
+      militarRaw: a.militarRaw,
+      horario: a.horario,
+      funcao: a.funcao,
+    }));
 
     // S6a-fix item 6 — Chefes de Operações escalados no dia (planilha externa).
-    const chefes = await this.chefesOperacoes.getEscaladosDoDia(ano, mes, dia).catch(() => []);
+    // S2.10.11c — `chefes` veio do Promise.all lá em cima.
 
     // S0.x/Fix-2 — Injeta o Chefe Titular (vindo da planilha de ChOp) como
     // entry em `tripulacao` para que apareça no MESMO card "CHEFE DE OPERAÇÕES"
@@ -227,8 +261,8 @@ export class MapaForcaService {
     let chefeTitular = chefes[0];
     const overrideChop = ajustes.overridesChefeOperacoes.find((o) => o.data === dataIso);
     if (overrideChop) {
-      const habilitados = await this.chefesOperacoes.getHabilitadosNfs();
-      if (!habilitados.has(overrideChop.novoChefeNf)) {
+      // S2.10.11c — `chopHabilitados` veio do Promise.all lá em cima.
+      if (!chopHabilitados.has(overrideChop.novoChefeNf)) {
         inconsistencias.push({
           tipo: 'NF_NAO_RESOLVIDO',
           mensagem: `Override de Chefe de Operações: NF ${overrideChop.novoChefeNf} não está habilitado na planilha ChOp.`,
@@ -341,17 +375,7 @@ export class MapaForcaService {
     // S2.10.7c — movido para ANTES de buildComposicaoMf: as trocas APROVADAS
     // são aplicadas em tripulação primeiro, para que composicaoMf reflita o
     // efetivo real (swap pós-aprovação).
-    const trocasAutorizadasDoDia = await this.trocasAutorizadas.listByData(dataIso).catch((err) => {
-      inconsistencias.push({
-        tipo: 'TROCAS_AUTORIZADAS_INDISPONIVEIS',
-        mensagem: `Não foi possível consultar a planilha de Trocas Autorizadas: ${(err as Error).message}`,
-      });
-      return [];
-    });
-    // S0.5/0.1.1.3 — para validar substituto de ChOp contra a planilha
-    // específica, carregamos a lista de NFs habilitados (1 vez por
-    // request). Vazio se a planilha não está sincronizada.
-    const chopHabilitados = await this.chefesOperacoes.getHabilitadosNfs();
+    // S2.10.11c — `trocasAutorizadasDoDia` e `chopHabilitados` vieram do Promise.all lá em cima.
     const trocasAutComoPrevia = dedupTrocasAutorizadas(
       trocasAutorizadasDoDia.map((t) =>
         converterTrocaAutorizadaEmPrevia(t, dataIso, matcher, inconsistencias, chopHabilitados),
@@ -403,7 +427,7 @@ export class MapaForcaService {
     // S6j — Dispensas: deriva de DispensasService.listAtivasNoDia (entidade
     // canônica) + enriquece com nome do militar quando NF resolve no efetivo.
     // S2.10.7d — agora async (Prisma).
-    const dispensasAtivas = await this.dispensasSvc.listAtivasNoDia(dataIso);
+    // S2.10.11c — `dispensasAtivas` veio do Promise.all lá em cima.
     const dispensasPrevia: PreviaDispensa[] = dispensasAtivas.map((d) => {
       const m = efetivoByNf.get(d.militarNf);
       return {
@@ -436,7 +460,7 @@ export class MapaForcaService {
     });
 
     // S6l — Notas de Serviço do dia, enriquecidas com militares (nome formatado).
-    const nsDoDia = await this.notasServicoSvc.listDoDia(dataIso);
+    // S2.10.11c — `nsDoDia` veio do Promise.all lá em cima.
     const notasServicoEnriched: PreviaNotaServico[] = nsDoDia.map((n) => ({
       codigo: n.codigo,
       descricao: n.descricao,
