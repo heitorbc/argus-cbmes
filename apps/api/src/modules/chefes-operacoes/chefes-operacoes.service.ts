@@ -72,9 +72,11 @@ export class ChefesOperacoesService {
     return enriquecidos.sort((a, b) => a.nomeGuerra.localeCompare(b.nomeGuerra));
   }
 
-  async getEscaladosDoDia(_ano: number, _mes: number, dia: number): Promise<ChefeOperacoes[]> {
+  async getEscaladosDoDia(ano: number, mes: number, dia: number): Promise<ChefeOperacoes[]> {
     try {
-      const rows = await this.prisma.chefeOperacoesEscala.findMany({ where: { dia } });
+      const rows = await this.prisma.chefeOperacoesEscala.findMany({
+        where: { ano, mes, dia },
+      });
       return rows
         .filter((r) => ESCALADO_MARKERS.has(r.marcador))
         .map((r) => ({
@@ -93,15 +95,16 @@ export class ChefesOperacoesService {
   }
 
   /**
-   * S2.10.10b — Escala completa do mês corrente armazenado em Postgres.
-   *
-   * Como a planilha de ChOp usa replace-all e só armazena 1 mês de cada vez,
-   * não há parâmetro de ano/mes — sempre retorna o mês atualmente em
-   * `prisma.chefeOperacoesEscala`. Frontend mostra como "Escala do mês corrente".
+   * S2.10.11b — Escala de um mês específico (com histórico multi-mês).
+   * Filtra `where: { ano, mes }`; retorna agrupado por dia.
    */
-  async listEscaladosDoMes(): Promise<{ dia: number; militares: ChefeOperacoes[] }[]> {
+  async listEscaladosDoMes(
+    ano: number,
+    mes: number,
+  ): Promise<{ dia: number; militares: ChefeOperacoes[] }[]> {
     try {
       const rows = await this.prisma.chefeOperacoesEscala.findMany({
+        where: { ano, mes },
         orderBy: [{ dia: 'asc' }, { posto: 'asc' }, { nomeGuerra: 'asc' }],
       });
       const porDia = new Map<number, ChefeOperacoes[]>();
@@ -124,6 +127,24 @@ export class ChefesOperacoesService {
       this.logger.warn(
         `listEscaladosDoMes falhou: ${(err as Error).message}. Retornando lista vazia.`,
       );
+      return [];
+    }
+  }
+
+  /**
+   * S2.10.11b — Lista os pares `(ano, mes)` disponíveis em Postgres,
+   * ordenados decrescente. Usado pelo seletor de mês na página de ChOp.
+   */
+  async listMesesDisponiveis(): Promise<Array<{ ano: number; mes: number }>> {
+    try {
+      const rows = await this.prisma.chefeOperacoesEscala.findMany({
+        distinct: ['ano', 'mes'],
+        select: { ano: true, mes: true },
+        orderBy: [{ ano: 'desc' }, { mes: 'desc' }],
+      });
+      return rows.map((r) => ({ ano: r.ano, mes: r.mes }));
+    } catch (err) {
+      this.logger.warn(`listMesesDisponiveis falhou: ${(err as Error).message}.`);
       return [];
     }
   }

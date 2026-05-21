@@ -1,10 +1,31 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { parseChefesOperacoesCsv } from './chefes-operacoes-csv-parser';
+import { parseAnoMesFromSheetName, parseChefesOperacoesCsv } from './chefes-operacoes-csv-parser';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 15_000;
+
+const DEFAULT_SHEET_ID = '1Nlr_uSNVD6dByaWPTL6IttSOa2nQPXO-m7FqTpeH8WI';
+
+/**
+ * S2.10.11b — Lista padrão de abas conhecidas. Override via env
+ * `CHOP_SHEET_NAMES` (CSV separado por vírgula).
+ */
+const DEFAULT_SHEET_NAMES = [
+  'JANEIRO 2026',
+  'FEVEREIRO 2026',
+  'MARÇO 2026',
+  'ABRIL 2026',
+  'MAIO 2026',
+  'JUNHO 2026',
+  'JULHO 2026',
+  'AGOSTO 2026',
+  'SETEMBRO 2026',
+  'OUTUBRO 2026',
+  'NOVEMBRO 2026',
+  'DEZEMBRO 2026',
+];
 
 export interface SyncResult {
   created: number;
@@ -15,19 +36,21 @@ export interface SyncResult {
 }
 
 /**
- * S2.10.9a — Importa a planilha "Escala de Chefe de Operações" e persiste
- * em `prisma.chefeOperacoesEscala`. Replace-all strategy: a planilha mostra
- * apenas o mês corrente; cada sync apaga o estado antigo e insere o novo.
+ * S2.10.11b — Importa todas as abas mensais da planilha "Escala de Chefe de
+ * Operações" e persiste em `prisma.chefeOperacoesEscala`. Cada aba representa
+ * 1 mês; oficiais de toda a instituição (não só 1ª Cia) podem aparecer.
  *
- * Pattern espelha `DispensasImportService` (S2.10.8a) e
- * `TrocasAutorizadasImportService` (S2.10.8b).
+ * Padrão multi-sheet: itera `sheetNames()` (env-driven), faz fetch de cada
+ * aba em paralelo, agrega o resultado num único SyncLog. Falha em 1 aba NÃO
+ * bloqueia as demais (graceful degradation — pattern do ISEO em S2.10.8c).
+ *
+ * Idempotência: `deleteMany({ano, mes})` + `createMany` por aba (cada mês
+ * é substituído inteiro). Dados de outros meses ficam intactos.
  */
 @Injectable()
 export class ChefesOperacoesImportService {
-  /** S2.10.9a — Identifier estável para o SyncOrchestrator. */
   readonly id = 'chefes-operacoes-import';
-  /** Nome amigável exibido em /configuracoes/integracoes. */
-  readonly nome = 'Chefes de Operações → Postgres (replace-all)';
+  readonly nome = 'Chefes de Operações → Postgres (multi-mês)';
 
   private readonly logger = new Logger(ChefesOperacoesImportService.name);
   private lastSync: SyncResult | null = null;
@@ -80,67 +103,83 @@ export class ChefesOperacoesImportService {
   }
 
   private async executeSyncToDatabase(): Promise<SyncResult> {
-    const parsed = await this.fetchAndParse();
-    this.logger.log(`ChOp: parser retornou ${parsed.length} militares`);
-
+    const sheets = this.sheetNames();
     const inconsistencias: string[] = [];
 
-    // Replace-all: a planilha é o estado canônico do mês corrente.
-    // O `deleteMany` + `createMany` precisa ser atômico para não deixar
-    // estado intermediário visível para outros requests.
+    // Fetch + parse em paralelo (cada aba pode falhar independentemente)
+    const results = await Promise.all(
+      sheets.map(async (sheet) => {
+        try {
+          const { ano, mes, militares } = await this.fetchAndParse(sheet);
+          return { sheet, ano, mes, militares, err: null as Error | null };
+        } catch (err) {
+          const msg = `Aba "${sheet}" falhou: ${(err as Error).message}`;
+          this.logger.warn(`ChOp sync: ${msg}`);
+          inconsistencias.push(msg);
+          return { sheet, ano: 0, mes: 0, militares: [], err: err as Error };
+        }
+      }),
+    );
+
     let created = 0;
-    let updated = 0;
     let skipped = 0;
 
-    const rows: Array<{
-      nf: string;
-      dia: number;
-      marcador: string;
-      posto: string;
-      nomeGuerra: string;
-      telefone: string | null;
-    }> = [];
-    for (const c of parsed) {
-      try {
-        for (const [dia, marcador] of c.porDia) {
+    for (const r of results) {
+      if (r.err || !r.ano || !r.mes) {
+        skipped++;
+        continue;
+      }
+      const { ano, mes, militares } = r;
+      // Monta as rows para este mês.
+      const rows: Array<{
+        ano: number;
+        mes: number;
+        nf: string;
+        dia: number;
+        marcador: string;
+        posto: string;
+        nomeGuerra: string;
+        telefone: string | null;
+      }> = [];
+      for (const m of militares) {
+        for (const [dia, marcador] of m.porDia) {
           rows.push({
-            nf: c.nf,
+            ano,
+            mes,
+            nf: m.nf,
             dia,
             marcador,
-            posto: c.posto,
-            nomeGuerra: c.nomeGuerra,
-            telefone: c.telefone ?? null,
+            posto: m.posto,
+            nomeGuerra: m.nomeGuerra,
+            telefone: m.telefone ?? null,
           });
         }
+      }
+
+      // Transaction por mês: delete tudo do (ano, mes) + insert novo.
+      // Falha em 1 mês não afeta os demais (try/catch externo).
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          await tx.chefeOperacoesEscala.deleteMany({ where: { ano, mes } });
+          if (rows.length > 0) {
+            const r2 = await tx.chefeOperacoesEscala.createMany({
+              data: rows,
+              skipDuplicates: true,
+            });
+            created += r2.count;
+          }
+        });
       } catch (err) {
         skipped++;
-        inconsistencias.push(
-          `Militar NF ${c.nf} (${c.nomeGuerra}) falhou: ${(err as Error).message}`,
-        );
+        const msg = `Persist ${String(mes).padStart(2, '0')}/${ano} falhou: ${(err as Error).message}`;
+        this.logger.warn(`ChOp sync: ${msg}`);
+        inconsistencias.push(msg);
       }
-    }
-
-    try {
-      await this.prisma.$transaction(async (tx) => {
-        await tx.chefeOperacoesEscala.deleteMany({});
-        if (rows.length > 0) {
-          const r = await tx.chefeOperacoesEscala.createMany({
-            data: rows,
-            skipDuplicates: true,
-          });
-          created = r.count;
-        }
-      });
-      updated = 0; // replace-all sempre re-cria tudo
-    } catch (err) {
-      const msg = `Transaction ChOp falhou: ${(err as Error).message}`;
-      this.logger.error(msg);
-      inconsistencias.push(msg);
     }
 
     const result: SyncResult = {
       created,
-      updated,
+      updated: 0, // replace per mês
       skipped,
       inconsistencias,
       syncedAt: new Date().toISOString(),
@@ -148,27 +187,41 @@ export class ChefesOperacoesImportService {
     this.lastSync = result;
     this.lastSyncAtMs = Date.now();
     this.logger.log(
-      `ChOp sync OK: created=${created}, skipped=${skipped}, inconsistencias=${inconsistencias.length}`,
+      `ChOp sync OK: created=${created}, abas=${sheets.length}, falhas=${inconsistencias.length}`,
     );
     return result;
   }
 
-  private async fetchAndParse() {
-    const sheetId =
-      this.config.get<string>('CHOP_SHEET_ID') ?? '1Nlr_uSNVD6dByaWPTL6IttSOa2nQPXO-m7FqTpeH8WI';
-    const gid = this.config.get<string>('CHOP_SHEET_GID') ?? '1250546399';
-    const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+  private sheetNames(): string[] {
+    const raw = this.config.get<string>('CHOP_SHEET_NAMES');
+    if (raw && raw.trim()) {
+      return raw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    return DEFAULT_SHEET_NAMES;
+  }
+
+  private async fetchAndParse(sheet: string) {
+    const sheetId = this.config.get<string>('CHOP_SHEET_ID') ?? DEFAULT_SHEET_ID;
+    const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(
+      sheet,
+    )}`;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
       const res = await fetch(url, { signal: controller.signal, redirect: 'follow' });
-      if (!res.ok) throw new Error(`HTTP ${res.status} ao baixar ChOp`);
-      const csv = await res.text();
-      const parsed = parseChefesOperacoesCsv(csv);
-      if (parsed.length === 0) {
-        throw new Error('ChOp retornou vazio após parse — provavelmente a estrutura mudou');
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} ao baixar ChOp "${sheet}"`);
       }
+      const csv = await res.text();
+      const fromSheetName = parseAnoMesFromSheetName(sheet);
+      const parsed = parseChefesOperacoesCsv(csv, {
+        defaultAno: fromSheetName?.ano,
+        defaultMes: fromSheetName?.mes,
+      });
       return parsed;
     } finally {
       clearTimeout(timeoutId);
