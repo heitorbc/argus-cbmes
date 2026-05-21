@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { IseoHospitalEntry } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
 
@@ -113,38 +114,45 @@ function rangeFromPreset(
  *     mês atual / mês anterior / personalizado / todas).
  */
 export function IseoHospitaisPage() {
-  const [todas, setTodas] = useState<IseoHospitalEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState<Unidade>('HPM');
   const [filtroMilitar, setFiltroMilitar] = useState<string>('');
   const [visao, setVisao] = useState<Visao>('lista');
   const [periodo, setPeriodo] = useState<PeriodoPreset>('hoje');
   const [customInicio, setCustomInicio] = useState<string>('');
   const [customFim, setCustomFim] = useState<string>('');
+  // S2.10.10a — Botão "Sincronizar" sob demanda (sem cron/startup).
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    api
-      .iseoHospitaisList()
-      .then((list) => {
-        if (cancelled) return;
-        setTodas(list);
-        setError(null);
-      })
-      .catch((e) => {
-        if (!cancelled) {
-          setError(e instanceof ApiError ? e.message : 'Erro ao carregar escala ISEO Hospitais');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const {
+    data: todas = [] as IseoHospitalEntry[],
+    isLoading: loading,
+    error: queryError,
+  } = useQuery({
+    queryKey: ['iseo-hospitais'],
+    queryFn: () => api.iseoHospitaisList(),
+    staleTime: 5 * 60 * 1000,
+  });
+  const error = queryError
+    ? queryError instanceof ApiError
+      ? queryError.message
+      : 'Erro ao carregar escala ISEO Hospitais'
+    : null;
+
+  const handleSync = async (): Promise<void> => {
+    setSyncBusy(true);
+    setSyncMsg(null);
+    try {
+      const r = await api.integracoesSync('iseo-hospitais');
+      await queryClient.invalidateQueries({ queryKey: ['iseo-hospitais'] });
+      setSyncMsg(`ISEO Hospitais sincronizado · ${r.qtdRegistros} entries`);
+    } catch (e) {
+      setSyncMsg(e instanceof ApiError ? e.message : 'Falha ao sincronizar');
+    } finally {
+      setSyncBusy(false);
+    }
+  };
 
   const range = useMemo(
     () => rangeFromPreset(periodo, customInicio, customFim),
@@ -193,9 +201,26 @@ export function IseoHospitaisPage() {
       <section className="mx-auto max-w-5xl p-4">
         <div className="rounded border border-slate-200 bg-white p-3 text-xs text-slate-600">
           <strong>Fonte:</strong> planilha institucional ISEO Hospitais (Google Sheets,
-          sincronização a cada ~5min). As entradas alimentam automaticamente a{' '}
+          sincronização sob demanda). As entradas alimentam automaticamente a{' '}
           <strong>Agenda do militar</strong> e ficam disponíveis para detecção de conflito com
           outras escalas (Mensal, Especial, Notas de Serviço).
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void handleSync()}
+            disabled={syncBusy}
+            title="Re-sincronizar com a planilha ISEO Hospitais (multi-sheet HPM + HIMABA × meses)"
+            className="rounded-button border border-cbmes-blue bg-white px-3 py-2 text-sm font-medium text-cbmes-blue hover:bg-cbmes-blue/5 disabled:opacity-50"
+          >
+            {syncBusy ? '⟳ Sincronizando…' : '🔄 Sincronizar'}
+          </button>
+          {syncMsg && (
+            <span className="rounded border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700">
+              {syncMsg}
+            </span>
+          )}
         </div>
 
         {error && (

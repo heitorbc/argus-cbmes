@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   STATUS_VIATURA_LABEL,
   type ContatoLogistico,
@@ -17,35 +18,49 @@ import { STATUS_VIATURA_BADGE } from '@/lib/status-viatura-style';
  * detalhe completo + edição dos campos operacionais.
  */
 export function ViaturasPage() {
-  const [enriquecidas, setEnriquecidas] = useState<ViaturaEnriquecida[]>([]);
-  const [internas, setInternas] = useState<Viatura[]>([]);
-  const [contatoResponsavel, setContatoResponsavel] = useState<ContatoLogistico | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [filtro, setFiltro] = useState('');
+  // S2.10.10a — Sync sob demanda (QDV multi-sheet: 4 abas em paralelo).
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    Promise.all([api.viaturasEnriquecidas(), api.viaturasList().catch(() => [])])
-      .then(([enr, list]) => {
-        if (cancelled) return;
-        setEnriquecidas(enr.items);
-        setContatoResponsavel(enr.contatoResponsavel);
-        setInternas(list);
-        setError(null);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e instanceof ApiError ? e.message : 'Erro ao carregar viaturas');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const {
+    data,
+    isLoading: loading,
+    error: queryError,
+  } = useQuery({
+    queryKey: ['viaturas-enriquecidas-page'],
+    queryFn: async () => {
+      const [enr, list] = await Promise.all([
+        api.viaturasEnriquecidas(),
+        api.viaturasList().catch(() => [] as Viatura[]),
+      ]);
+      return { enr, list };
+    },
+    staleTime: 10 * 60 * 1000,
+  });
+  const enriquecidas: ViaturaEnriquecida[] = data?.enr.items ?? [];
+  const internas: Viatura[] = data?.list ?? [];
+  const contatoResponsavel: ContatoLogistico | null = data?.enr.contatoResponsavel ?? null;
+  const error = queryError
+    ? queryError instanceof ApiError
+      ? queryError.message
+      : 'Erro ao carregar viaturas'
+    : null;
+
+  const handleSync = async (): Promise<void> => {
+    setSyncBusy(true);
+    setSyncMsg(null);
+    try {
+      const r = await api.integracoesSync('viaturas-qdv');
+      await queryClient.invalidateQueries({ queryKey: ['viaturas-enriquecidas-page'] });
+      setSyncMsg(`QDV sincronizada · ${r.qtdRegistros} viaturas (1BBM/1ªCia)`);
+    } catch (e) {
+      setSyncMsg(e instanceof ApiError ? e.message : 'Falha ao sincronizar');
+    } finally {
+      setSyncBusy(false);
+    }
+  };
 
   // KM Atual: override interno tem precedência sobre QDV
   const kmByPrefixo = new Map(
@@ -100,14 +115,31 @@ export function ViaturasPage() {
             {items.length} viatura{items.length === 1 ? '' : 's'}
             {termo && enriquecidas.length !== items.length && ` (de ${enriquecidas.length})`}
           </p>
-          <input
-            type="search"
-            value={filtro}
-            onChange={(e) => setFiltro(e.target.value)}
-            placeholder="Filtrar por prefixo, nomenclatura ou placa"
-            className="w-full rounded border border-slate-300 px-3 py-2 text-sm sm:w-72"
-          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void handleSync()}
+              disabled={syncBusy}
+              title="Re-sincronizar QDV (4 abas) com a planilha do Logística"
+              className="rounded-button border border-cbmes-red bg-white px-3 py-2 text-sm font-medium text-cbmes-red hover:bg-cbmes-red/5 disabled:opacity-50"
+            >
+              {syncBusy ? '⟳ Sincronizando…' : '🔄 Sincronizar QDV'}
+            </button>
+            <input
+              type="search"
+              value={filtro}
+              onChange={(e) => setFiltro(e.target.value)}
+              placeholder="Filtrar por prefixo, nomenclatura ou placa"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm sm:w-72"
+            />
+          </div>
         </div>
+
+        {syncMsg && (
+          <div className="mt-2 rounded border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700">
+            {syncMsg}
+          </div>
+        )}
 
         {error && (
           <div

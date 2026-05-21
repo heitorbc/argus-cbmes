@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AgendaModule } from './modules/agenda/agenda.module';
@@ -47,8 +46,8 @@ import { ViaturasModule } from './modules/viaturas/viaturas.module';
       // não existem e o ConfigModule cai no `process.env`.
       envFilePath: ['.env.local', '../../.env.local', '.env', '../../.env'],
     }),
-    // S2.10.8a — Scheduler global para o SyncOrchestratorService (cron 00/06/12/18h).
-    ScheduleModule.forRoot(),
+    // S2.10.10a — `ScheduleModule.forRoot()` removido junto do `@Cron` do
+    // SyncOrchestratorService. Sync com planilhas é 100% sob demanda agora.
     PrismaModule,
     AtestadosModule,
     AuthModule,
