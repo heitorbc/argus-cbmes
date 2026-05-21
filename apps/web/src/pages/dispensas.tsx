@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   TIPO_DISPENSA,
   TIPO_DISPENSA_LABEL,
@@ -11,6 +12,7 @@ import {
 import { ApiError, api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { MilitarSelect } from '@/components/militar-select';
+import { SkeletonTable } from '@/components/Skeleton';
 
 interface FormState {
   militarNf: string;
@@ -61,42 +63,36 @@ export function DispensasPage() {
   const podeCriar = isAdmin || isSarg || isFiscal;
   const podeEditar = isAdmin || isSarg;
 
-  const [dispensas, setDispensas] = useState<Dispensa[]>([]);
+  const queryClient = useQueryClient();
   const [filtroMilitar, setFiltroMilitar] = useState<{ nf?: string; raw?: string }>({});
   const [filtroAno, setFiltroAno] = useState<number>(new Date().getFullYear());
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [refreshSeed, setRefreshSeed] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    api
-      .dispensasList({ militarNf: filtroMilitar.nf, ano: filtroAno })
-      .then((list) => {
-        if (cancelled) return;
-        setDispensas(list);
-        setError(null);
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e instanceof ApiError ? e.message : 'Erro ao carregar dispensas');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [filtroMilitar.nf, filtroAno, refreshSeed]);
+  // S2.10.11a — useQuery substitui useEffect+fetch (era a única página de
+  // cadastro que ainda não tinha sido migrada). staleTime 5min reflete
+  // que dispensas mudam raramente.
+  const {
+    data: dispensas = [] as Dispensa[],
+    isLoading: loading,
+    error: queryError,
+  } = useQuery({
+    queryKey: ['dispensas', filtroMilitar.nf ?? '', filtroAno],
+    queryFn: () => api.dispensasList({ militarNf: filtroMilitar.nf, ano: filtroAno }),
+    staleTime: 5 * 60 * 1000,
+  });
+  const error = queryError
+    ? queryError instanceof ApiError
+      ? queryError.message
+      : 'Erro ao carregar dispensas'
+    : null;
 
-  const reload = () => setRefreshSeed((s) => s + 1);
+  const reload = () => queryClient.invalidateQueries({ queryKey: ['dispensas'] });
 
   const startCreate = () => {
     setForm(EMPTY_FORM);
@@ -195,7 +191,7 @@ export function DispensasPage() {
       await api.dispensasRemove(d.id);
       await reload();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Erro ao remover');
+      setFormError(err instanceof ApiError ? err.message : 'Erro ao remover');
     }
   };
 
@@ -440,7 +436,7 @@ export function DispensasPage() {
         )}
 
         <div className="mt-4 space-y-2">
-          {loading && <p className="text-sm text-slate-500">Carregando…</p>}
+          {loading && <SkeletonTable rows={10} cols={5} />}
           {!loading && dispensas.length === 0 && (
             <p className="text-sm text-slate-500">Nenhuma dispensa no filtro atual.</p>
           )}
