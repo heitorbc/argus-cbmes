@@ -32,6 +32,7 @@ import type {
   RegistrarConferenciaCovInput,
   RegistrarConferenciaMaterialInput,
   RegistrarConferenciaMateriaisInput,
+  ChefeOperacoes,
   CreateUnidadeInput,
   CreateViaturaInput,
   Dispensa,
@@ -801,6 +802,13 @@ export const api = {
   /** Lista militares habilitados como ChOp (planilha externa) com posto/nome enriquecido. */
   chefesOperacoesHabilitados: () =>
     request<ChefeOperacoesHabilitado[]>('/chefes-operacoes/habilitados'),
+
+  /**
+   * S2.10.10b — Escala do mês corrente da planilha ChOp, agrupada por dia.
+   * A planilha usa replace-all strategy (só armazena 1 mês de cada vez).
+   */
+  chefesOperacoesEscaladosMes: () =>
+    request<Array<{ dia: number; militares: ChefeOperacoes[] }>>('/chefes-operacoes/escalados-mes'),
 
   // Notas de Serviço (S6l)
   notasServicoList: (filter: { data?: string; militarNf?: string } = {}) => {

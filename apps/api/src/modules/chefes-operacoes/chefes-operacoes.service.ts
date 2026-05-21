@@ -93,6 +93,42 @@ export class ChefesOperacoesService {
   }
 
   /**
+   * S2.10.10b — Escala completa do mês corrente armazenado em Postgres.
+   *
+   * Como a planilha de ChOp usa replace-all e só armazena 1 mês de cada vez,
+   * não há parâmetro de ano/mes — sempre retorna o mês atualmente em
+   * `prisma.chefeOperacoesEscala`. Frontend mostra como "Escala do mês corrente".
+   */
+  async listEscaladosDoMes(): Promise<{ dia: number; militares: ChefeOperacoes[] }[]> {
+    try {
+      const rows = await this.prisma.chefeOperacoesEscala.findMany({
+        orderBy: [{ dia: 'asc' }, { posto: 'asc' }, { nomeGuerra: 'asc' }],
+      });
+      const porDia = new Map<number, ChefeOperacoes[]>();
+      for (const r of rows) {
+        if (!ESCALADO_MARKERS.has(r.marcador)) continue;
+        const arr = porDia.get(r.dia) ?? [];
+        arr.push({
+          posto: r.posto,
+          nomeGuerra: r.nomeGuerra,
+          nf: r.nf,
+          telefone: r.telefone ?? undefined,
+          marcador: r.marcador,
+        });
+        porDia.set(r.dia, arr);
+      }
+      return Array.from(porDia.entries())
+        .sort(([a], [b]) => a - b)
+        .map(([dia, militares]) => ({ dia, militares }));
+    } catch (err) {
+      this.logger.warn(
+        `listEscaladosDoMes falhou: ${(err as Error).message}. Retornando lista vazia.`,
+      );
+      return [];
+    }
+  }
+
+  /**
    * Conjunto de NFs habilitados a ser Chefe de Operações (todos militares
    * na escala, escalados ou não). Usado para validar trocas autorizadas
    * cuja função envolve ChOp — substituto deve estar habilitado.
