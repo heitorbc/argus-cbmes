@@ -115,6 +115,7 @@ export function HomePage() {
             <CardLink to="/cadastros/atestados" icon="🏥" label="Atestados" />
             <CardLink to="/cadastros/notas-servico" icon="📋" label="Notas de Serviço" />
             <CardLink to="/cadastros/iseo-hospitais" icon="🏥" label="ISEO Hospitais" />
+            <CardLink to="/cadastros/chefes-operacoes" icon="👮" label="Chefes de Operações" />
           </ModuloSection>
         )}
 

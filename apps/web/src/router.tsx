@@ -27,6 +27,7 @@ import { RecursosPage } from '@/pages/recursos';
 import { UnidadesPage } from '@/pages/unidades';
 import { UsuariosPage } from '@/pages/usuarios';
 import { AtestadosPage } from '@/pages/atestados';
+import { ChefesOperacoesPage } from '@/pages/chefes-operacoes';
 import { CompartimentosMateriaisPage } from '@/pages/compartimentos-materiais';
 import { ConferenciaEquipePage } from '@/pages/conferencia-equipe';
 import { ConferenciaMateriaisPage } from '@/pages/conferencia-materiais';
@@ -130,6 +131,7 @@ export const router = createBrowserRouter([
           { path: '/cadastros/ferias', element: <FeriasPage /> },
           { path: '/cadastros/trocas', element: <TrocasPage /> },
           { path: '/cadastros/iseo-hospitais', element: <IseoHospitaisPage /> },
+          { path: '/cadastros/chefes-operacoes', element: <ChefesOperacoesPage /> },
           { path: '/cadastros/atestados', element: <AtestadosPage /> },
           { path: '/cadastros/notas-servico', element: <NotasServicoPage /> },
           { path: '/cadastros/locais-faxina', element: <LocaisFaxinaPage /> },
