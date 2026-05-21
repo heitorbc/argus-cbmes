@@ -33,7 +33,7 @@ class FakeSource implements SyncSource {
   }
 }
 
-describe('SyncOrchestratorService (S2.10.8a)', () => {
+describe('SyncOrchestratorService (S2.10.10a — sync sob demanda)', () => {
   let prisma: ReturnType<typeof makeSyncLogPrismaMock>;
 
   beforeEach(() => {
@@ -140,18 +140,13 @@ describe('SyncOrchestratorService (S2.10.8a)', () => {
     expect(all[1]).toMatchObject({ id: 'b', nome: 'Beta' });
   });
 
-  it('onModuleInit: dispara syncAll (fire-and-forget) e não bloqueia boot', async () => {
-    const source = new FakeSource('a');
-    const svc = new SyncOrchestratorService(prisma, [source]);
-    // onModuleInit retorna sem aguardar o sync interno
-    await svc.onModuleInit();
-    // Permite o fire-and-forget completar antes de verificar
-    await new Promise((r) => setTimeout(r, 50));
-    expect(source.forceSync).toHaveBeenCalled();
-  });
-
-  it('onModuleInit com 0 sources: log warning, não falha', async () => {
-    const svc = new SyncOrchestratorService(prisma, []);
-    await expect(svc.onModuleInit()).resolves.toBeUndefined();
+  it('S2.10.10a: classe NÃO implementa onModuleInit nem expõe syncCron', () => {
+    // Regressão estrutural: garante que sync automático não voltará por engano.
+    // O Tech Lead pediu (2026-05-20) sync 100% sob demanda — qualquer
+    // reintrodução de cron/startup precisa ser feita explicitamente quebrando
+    // este teste.
+    const svc = new SyncOrchestratorService(prisma, [new FakeSource('a')]);
+    expect((svc as unknown as { onModuleInit?: unknown }).onModuleInit).toBeUndefined();
+    expect((svc as unknown as { syncCron?: unknown }).syncCron).toBeUndefined();
   });
 });

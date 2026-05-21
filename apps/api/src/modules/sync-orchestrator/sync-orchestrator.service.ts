@@ -1,5 +1,4 @@
-import { Inject, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { SyncLog } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
@@ -50,50 +49,31 @@ export interface SyncSource {
 export const SYNC_SOURCES = Symbol('SYNC_SOURCES');
 
 /**
- * S2.10.8a — Orquestrador central de sincronizações com planilhas externas.
+ * S2.10.10a — Orquestrador central de sincronizações com planilhas externas.
  *
- * - **Startup (onModuleInit)**: dispara `syncAll('startup')` em background
- *   (fire-and-forget). Não bloqueia o boot do servidor.
- * - **Cron** (`0 0,6,12,18 * * *`): a cada 6h fixas (00, 06, 12, 18 UTC).
- * - **Manual** (admin via `/configuracoes/integracoes`): `syncOne(id)` ou
- *   `syncAll('manual')` chamados pelo controller.
+ * **Sync 100% sob demanda** (decisão Tech Lead 2026-05-20):
+ * - `@Cron` removido (não há mais sync automático periódico)
+ * - `onModuleInit` removido (sem sync no startup)
+ * - Único trigger ativo: `syncOne(id, 'manual')` ou `syncAll('manual')`
+ *   chamado pelo controller `/integracoes/:id/sync` e `/integracoes/sync-all`,
+ *   acessível pelo menu admin OU pelos botões "🔄 Sincronizar" em cada página
+ *   de módulo (Dispensas, Efetivo, Trocas, ISEO, Viaturas, ChOp).
  *
  * Cada execução grava 1 `SyncLog` por source (status, counts, erros, duração,
  * trigger). Histórico visível no dashboard.
  *
- * Decisão D2 do plano: MAPA FORÇA CIODES NÃO é registrado aqui (real-time only
- * por opção do Tech Lead; alta frequência de atualização direta na planilha).
+ * Decisão D4 do roadmap S2.10.9: MAPA FORÇA CIODES continua real-time
+ * (cache TTL adaptativo + botão "↻ Atualizar CIODES" no header de
+ * `/mapa-forca`) — fora do escopo do orchestrator.
  */
 @Injectable()
-export class SyncOrchestratorService implements OnModuleInit {
+export class SyncOrchestratorService {
   private readonly logger = new Logger(SyncOrchestratorService.name);
 
   constructor(
     private readonly prisma: PrismaService,
     @Inject(SYNC_SOURCES) private readonly sources: readonly SyncSource[],
   ) {}
-
-  /** Sync inicial fire-and-forget no startup. Não bloqueia boot. */
-  async onModuleInit(): Promise<void> {
-    if (this.sources.length === 0) {
-      this.logger.warn('Nenhuma SyncSource registrada — sync orchestrator inativo.');
-      return;
-    }
-    this.logger.log(
-      `Startup sync (fire-and-forget): ${this.sources.length} source(s) registradas — ${this.sources.map((s) => s.id).join(', ')}`,
-    );
-    // Fire-and-forget: erros viram log na própria syncAll; não bloqueia boot.
-    void this.syncAll('startup').catch((err) => {
-      this.logger.error(`Startup sync inesperado: ${(err as Error).message}`);
-    });
-  }
-
-  /** Cron 00h/06h/12h/18h (UTC). Padrão fixo acordado com Tech Lead. */
-  @Cron('0 0 0,6,12,18 * * *')
-  async syncCron(): Promise<void> {
-    this.logger.log('Cron sync disparado (00/06/12/18h)');
-    await this.syncAll('cron');
-  }
 
   /**
    * Roda todas as sources em paralelo. Cada uma grava seu próprio SyncLog

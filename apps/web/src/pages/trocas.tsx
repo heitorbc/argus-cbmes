@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { TrocaAutorizada } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
 
@@ -9,34 +10,44 @@ import { ApiError, api } from '@/lib/api';
  * na composição da Prévia/PD por data via `PreviaService`.
  */
 export function TrocasPage() {
-  const [todas, setTodas] = useState<TrocaAutorizada[]>([]);
+  const queryClient = useQueryClient();
   const [filtroData, setFiltroData] = useState<string>('');
   const [filtroMilitar, setFiltroMilitar] = useState<string>('');
   const [apenasFuturas, setApenasFuturas] = useState(true);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [selecionada, setSelecionada] = useState<TrocaAutorizada | null>(null);
+  // S2.10.10a — Botão "Sincronizar" sob demanda. Sem cron/startup, dados
+  // ficam estáveis até alguém clicar.
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    api
-      .trocasAutorizadasList()
-      .then((list) => {
-        if (cancelled) return;
-        setTodas(list);
-        setError(null);
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e instanceof ApiError ? e.message : 'Erro ao carregar trocas');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const {
+    data: todas = [] as TrocaAutorizada[],
+    isLoading: loading,
+    error: queryError,
+  } = useQuery({
+    queryKey: ['trocas-autorizadas'],
+    queryFn: () => api.trocasAutorizadasList(),
+    staleTime: 5 * 60 * 1000,
+  });
+  const error = queryError
+    ? queryError instanceof ApiError
+      ? queryError.message
+      : 'Erro ao carregar trocas'
+    : null;
+
+  const handleSync = async (): Promise<void> => {
+    setSyncBusy(true);
+    setSyncMsg(null);
+    try {
+      const r = await api.integracoesSync('trocas-autorizadas');
+      await queryClient.invalidateQueries({ queryKey: ['trocas-autorizadas'] });
+      setSyncMsg(`Trocas sincronizadas · ${r.qtdRegistros} entries`);
+    } catch (e) {
+      setSyncMsg(e instanceof ApiError ? e.message : 'Falha ao sincronizar');
+    } finally {
+      setSyncBusy(false);
+    }
+  };
 
   const filtradas = useMemo(() => {
     const hoje = new Date().toISOString().slice(0, 10);
@@ -78,6 +89,23 @@ export function TrocasPage() {
           militares trocam de papéis. <strong>Read-only:</strong> para alterar, use o formulário
           institucional original. As entries autorizadas entram automaticamente em{' '}
           <code>previa.trocas</code> do dia correspondente.
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void handleSync()}
+            disabled={syncBusy}
+            title="Re-sincronizar com a planilha de Trocas Autorizadas"
+            className="rounded-button border border-cbmes-blue bg-white px-3 py-2 text-sm font-medium text-cbmes-blue hover:bg-cbmes-blue/5 disabled:opacity-50"
+          >
+            {syncBusy ? '⟳ Sincronizando…' : '🔄 Sincronizar'}
+          </button>
+          {syncMsg && (
+            <span className="rounded border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700">
+              {syncMsg}
+            </span>
+          )}
         </div>
 
         {error && (
