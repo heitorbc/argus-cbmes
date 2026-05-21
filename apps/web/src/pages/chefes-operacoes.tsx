@@ -48,9 +48,28 @@ function postoIdx(p: string): number {
  * (mesmo padrão do S2.10.10a). Sem cron/startup; dados ficam estáveis
  * até alguém clicar.
  */
+const NOMES_MES_PT = [
+  '',
+  'Janeiro',
+  'Fevereiro',
+  'Março',
+  'Abril',
+  'Maio',
+  'Junho',
+  'Julho',
+  'Agosto',
+  'Setembro',
+  'Outubro',
+  'Novembro',
+  'Dezembro',
+];
+
 export function ChefesOperacoesPage() {
   const queryClient = useQueryClient();
+  const hoje = new Date();
   const [aba, setAba] = useState<Aba>('escalados');
+  const [ano, setAno] = useState<number>(hoje.getFullYear());
+  const [mes, setMes] = useState<number>(hoje.getMonth() + 1);
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
@@ -69,8 +88,14 @@ export function ChefesOperacoesPage() {
     isLoading: loadingEscalados,
     error: errorEscalados,
   } = useQuery({
-    queryKey: ['chefes-operacoes-escalados-mes'],
-    queryFn: () => api.chefesOperacoesEscaladosMes(),
+    queryKey: ['chefes-operacoes-escalados-mes', ano, mes],
+    queryFn: () => api.chefesOperacoesEscaladosMes(ano, mes),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: mesesDisponiveis = [] } = useQuery({
+    queryKey: ['chefes-operacoes-meses-disponiveis'],
+    queryFn: () => api.chefesOperacoesMesesDisponiveis(),
     staleTime: 5 * 60 * 1000,
   });
 
@@ -89,6 +114,7 @@ export function ChefesOperacoesPage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['chefes-operacoes-habilitados'] }),
         queryClient.invalidateQueries({ queryKey: ['chefes-operacoes-escalados-mes'] }),
+        queryClient.invalidateQueries({ queryKey: ['chefes-operacoes-meses-disponiveis'] }),
       ]);
       setSyncMsg(`ChOp sincronizado · ${r.qtdRegistros} entries`);
     } catch (e) {
@@ -97,6 +123,14 @@ export function ChefesOperacoesPage() {
       setSyncBusy(false);
     }
   };
+
+  // Lista para o seletor: meses presentes no banco + o mês selecionado (caso
+  // o usuário tenha escolhido um que ainda não foi sincronizado).
+  const opcoesMes = [...mesesDisponiveis];
+  if (!opcoesMes.some((o) => o.ano === ano && o.mes === mes)) {
+    opcoesMes.push({ ano, mes });
+  }
+  opcoesMes.sort((a, b) => b.ano - a.ano || b.mes - a.mes);
 
   const habilitadosOrdenados = [...habilitados].sort((a, b) => {
     const pi = postoIdx(a.posto) - postoIdx(b.posto);
@@ -112,15 +146,16 @@ export function ChefesOperacoesPage() {
         </Link>
         <h1 className="mt-1 text-lg font-bold">👮 Chefes de Operações</h1>
         <p className="text-xs opacity-90">
-          Escala ChOp da 1ª Cia/1º BBM · planilha externa (Google Sheets) · read-only
+          Escala ChOp · CBMES (todos os oficiais) · planilha externa (Google Sheets) · read-only
         </p>
       </header>
 
       <section className="mx-auto max-w-5xl p-4">
         <div className="rounded border border-slate-200 bg-white p-3 text-xs text-slate-600">
-          <strong>Fonte:</strong> planilha institucional "Escala de Chefe de Operações" (Google
-          Sheets, gestão do Cmt 1ª Cia). Replace-all: só armazena o mês corrente. Alterações são
-          raras (&lt;1 por mês) — clique em sincronizar quando a planilha for editada.
+          <strong>Fonte:</strong> planilha institucional "Escala de Chefe de Operações" — abas
+          mensais com oficiais de toda a instituição. Histórico multi-mês em Postgres desde
+          S2.10.11b. Alterações são raras (&lt;1 por mês) — clique em sincronizar quando a planilha
+          for editada.
         </div>
 
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -149,15 +184,38 @@ export function ChefesOperacoesPage() {
             </button>
           </div>
 
-          <button
-            type="button"
-            onClick={() => void handleSync()}
-            disabled={syncBusy}
-            title="Re-sincronizar a planilha de ChOp"
-            className="rounded-button border border-cbmes-blue bg-white px-3 py-2 text-sm font-medium text-cbmes-blue hover:bg-cbmes-blue/5 disabled:opacity-50"
-          >
-            {syncBusy ? '⟳ Sincronizando…' : '🔄 Sincronizar'}
-          </button>
+          <div className="flex items-center gap-2">
+            {aba === 'escalados' && (
+              <select
+                value={`${ano}-${mes}`}
+                onChange={(e) => {
+                  const [a, m] = e.target.value.split('-').map((n) => Number.parseInt(n, 10)) as [
+                    number,
+                    number,
+                  ];
+                  setAno(a);
+                  setMes(m);
+                }}
+                className="rounded border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700"
+                title="Mês da escala"
+              >
+                {opcoesMes.map((o) => (
+                  <option key={`${o.ano}-${o.mes}`} value={`${o.ano}-${o.mes}`}>
+                    {NOMES_MES_PT[o.mes]} {o.ano}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={() => void handleSync()}
+              disabled={syncBusy}
+              title="Re-sincronizar todas as abas mensais da planilha de ChOp"
+              className="rounded-button border border-cbmes-blue bg-white px-3 py-2 text-sm font-medium text-cbmes-blue hover:bg-cbmes-blue/5 disabled:opacity-50"
+            >
+              {syncBusy ? '⟳ Sincronizando…' : '🔄 Sincronizar'}
+            </button>
+          </div>
         </div>
 
         {syncMsg && (

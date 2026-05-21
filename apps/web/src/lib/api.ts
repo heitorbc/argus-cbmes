@@ -804,11 +804,26 @@ export const api = {
     request<ChefeOperacoesHabilitado[]>('/chefes-operacoes/habilitados'),
 
   /**
-   * S2.10.10b — Escala do mês corrente da planilha ChOp, agrupada por dia.
-   * A planilha usa replace-all strategy (só armazena 1 mês de cada vez).
+   * S2.10.10b/S2.10.11b — Escala de um mês específico da planilha ChOp,
+   * agrupada por dia. Multi-mês desde S2.10.11b: aceita `ano` e `mes`
+   * como query params (default: mês corrente).
    */
-  chefesOperacoesEscaladosMes: () =>
-    request<Array<{ dia: number; militares: ChefeOperacoes[] }>>('/chefes-operacoes/escalados-mes'),
+  chefesOperacoesEscaladosMes: (ano?: number, mes?: number) => {
+    const params = new URLSearchParams();
+    if (ano !== undefined) params.set('ano', String(ano));
+    if (mes !== undefined) params.set('mes', String(mes));
+    const qs = params.toString();
+    return request<Array<{ dia: number; militares: ChefeOperacoes[] }>>(
+      `/chefes-operacoes/escalados-mes${qs ? `?${qs}` : ''}`,
+    );
+  },
+
+  /**
+   * S2.10.11b — Lista os pares `{ano, mes}` armazenados em Postgres,
+   * ordenados decrescente. Popula seletor de mês na página de ChOp.
+   */
+  chefesOperacoesMesesDisponiveis: () =>
+    request<Array<{ ano: number; mes: number }>>('/chefes-operacoes/meses-disponiveis'),
 
   // Notas de Serviço (S6l)
   notasServicoList: (filter: { data?: string; militarNf?: string } = {}) => {

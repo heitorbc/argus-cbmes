@@ -614,9 +614,13 @@ model SyncLog {
 // S2.10.9a — ChefesOperações + QDV em Postgres (Google Sheets → cache real-time → Postgres)
 // ────────────────────────────────────────────────────────────────────────
 
-/// Escala mensal de Chefe de Operações.
-/// Não rastreia ano/mes — a planilha mostra apenas o mês corrente; cada sync faz replace-all.
+/// S2.10.11b — Escala mensal de Chefe de Operações com histórico multi-mês.
+/// A planilha tem uma aba por mês (`JAN 2026`, `FEV 2026`, etc.) com oficiais
+/// de toda a instituição (não só 1ª Cia). Cada sync re-importa os meses
+/// configurados em `CHOP_SHEET_NAMES`. Upsert idempotente por (ano,mes,nf,dia).
 model ChefeOperacoesEscala {
+  ano            Int
+  mes            Int // 1-12
   nf             String
   dia            Int // 1-31
   marcador       String // 'X' | 'Y' | 'S' | '*'
@@ -625,8 +629,9 @@ model ChefeOperacoesEscala {
   telefone       String?
   sincronizadoEm DateTime @default(now())
 
-  @@id([nf, dia])
-  @@index([dia])
+  @@id([ano, mes, nf, dia])
+  @@index([ano, mes, dia])
+  @@index([nf])
   @@map("chefe_operacoes_escala")
 }
 
