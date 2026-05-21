@@ -89,6 +89,7 @@ export function HomePage() {
           destaque
         >
           <CardLink to="/mapa-forca" icon="🗺️" label="Mapa Força" destaque />
+          <CardLink to="/agenda" icon="📅" label="Minha Agenda" />
           <CardLink to="/parte-diaria" icon="📑" label="Parte Diária" />
           <CardLink to="/cadastros/fiscais" icon="⭐" label="Fiscais (override)" />
           <CardLink to="/cadastros/ideo" icon="📋" label="IDEO" />

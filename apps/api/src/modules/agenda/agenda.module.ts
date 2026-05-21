@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AgendaService } from './agenda.service';
 import { AgendaController } from './agenda.controller';
 import { MapaForcaModule } from '../mapa-forca/mapa-forca.module';
+import { EscalasModule } from '../escalas/escalas.module';
 import { EscalasEspeciaisModule } from '../escalas-especiais/escalas-especiais.module';
 import { NotasServicoModule } from '../notas-servico/notas-servico.module';
 import { ChefesOperacoesModule } from '../chefes-operacoes/chefes-operacoes.module';
@@ -15,6 +16,7 @@ import { EfetivoModule } from '../efetivo/efetivo.module';
 @Module({
   imports: [
     MapaForcaModule,
+    EscalasModule,
     EscalasEspeciaisModule,
     NotasServicoModule,
     ChefesOperacoesModule,

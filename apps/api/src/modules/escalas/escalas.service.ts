@@ -95,6 +95,31 @@ export function computeDiff(antes: EscalaMensal, depois: EscalaMensal): EscalaDi
 }
 
 /**
+ * S2.10.11a — Lista pares `{ano, mes}` que cobrem o range `[inicioIso, fimIso]`.
+ * Usado por `listEscaladosDoMilitarNoRange` para descobrir quais escalas
+ * mensais precisam ser carregadas. Tipicamente 1-4 meses.
+ */
+function mesesNoRange(inicioIso: string, fimIso: string): Array<{ ano: number; mes: number }> {
+  if (inicioIso > fimIso) return [];
+  const startAno = Number.parseInt(inicioIso.slice(0, 4), 10);
+  const startMes = Number.parseInt(inicioIso.slice(5, 7), 10);
+  const endAno = Number.parseInt(fimIso.slice(0, 4), 10);
+  const endMes = Number.parseInt(fimIso.slice(5, 7), 10);
+  const out: Array<{ ano: number; mes: number }> = [];
+  let ano = startAno;
+  let mes = startMes;
+  while (ano < endAno || (ano === endAno && mes <= endMes)) {
+    out.push({ ano, mes });
+    mes += 1;
+    if (mes > 12) {
+      mes = 1;
+      ano += 1;
+    }
+  }
+  return out;
+}
+
+/**
  * S2.10.5 — Persistência em Postgres via Prisma. Sheets-DB continua como
  * espelho institucional (dual-write fire-and-forget). XLSX bootstrap dev
  * só roda se Postgres E Sheets-DB estiverem vazios.
@@ -239,6 +264,68 @@ export class EscalasService implements OnModuleInit {
     const bucket = q === 1 ? escala.composicaoPorQuinzena.q1 : escala.composicaoPorQuinzena.q2;
     const entries = bucket.filter((c) => c.equipe === equipe);
     return { equipe, entries };
+  }
+
+  /**
+   * S2.10.11a — Helper rápido para a Agenda. Em vez de chamar
+   * `MapaForcaService.getMapaForcaDoDia()` 30× (10+ fontes cada),
+   * lê direto de `EscalaMensal` filtrando pelo militar dentro do range.
+   *
+   * Retorna 1 entry por dia em que o militar aparece na composição (de
+   * acordo com `diaEquipe` × `composicaoEntries` da quinzena correta).
+   *
+   * Custo: 1-2 queries Prisma totais (1 por mês no range) em vez de 30
+   * chamadas × 15-20 queries cada.
+   */
+  async listEscaladosDoMilitarNoRange(
+    nf: string,
+    inicioIso: string,
+    fimIso: string,
+  ): Promise<
+    Array<{
+      data: string;
+      equipe: LetraEquipeRotativa;
+      viatura: string;
+      funcao: string;
+    }>
+  > {
+    // Identifica os meses do range. Tipicamente 1-4 meses.
+    const meses = mesesNoRange(inicioIso, fimIso);
+    if (meses.length === 0) return [];
+
+    // Busca todas as escalas dos meses em 1 query.
+    const rows = await this.prisma.escalaMensal.findMany({
+      where: {
+        OR: meses.map(({ ano, mes }) => ({ ano, mes })),
+      },
+      include: { composicaoEntries: true },
+    });
+
+    const out: Array<{
+      data: string;
+      equipe: LetraEquipeRotativa;
+      viatura: string;
+      funcao: string;
+    }> = [];
+
+    for (const row of rows) {
+      const escala = toEscalaMensal(row);
+      // diaEquipe é Record<string, LetraEquipeRotativa>. Filtrar pelos dias
+      // no range que tenham equipe atribuída.
+      for (const [data, equipe] of Object.entries(escala.diaEquipe)) {
+        if (data < inicioIso || data > fimIso) continue;
+        const q = quinzenaDoDia(data, escala);
+        const bucket = q === 1 ? escala.composicaoPorQuinzena.q1 : escala.composicaoPorQuinzena.q2;
+        for (const c of bucket) {
+          if (c.equipe !== equipe) continue;
+          if (c.militar.nf !== nf) continue;
+          out.push({ data, equipe, viatura: c.viatura, funcao: c.funcao });
+        }
+      }
+    }
+
+    out.sort((a, b) => a.data.localeCompare(b.data));
+    return out;
   }
 
   async updateDiaEquipe(

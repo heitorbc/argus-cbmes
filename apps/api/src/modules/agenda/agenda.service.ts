@@ -10,6 +10,7 @@ import { DispensasService } from '../dispensas/dispensas.service';
 import { FeriasService } from '../ferias/ferias.service';
 import { TrocasAutorizadasService } from '../trocas-autorizadas/trocas-autorizadas.service';
 import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.service';
+import { EscalasService } from '../escalas/escalas.service';
 import { EfetivoService } from '../efetivo/efetivo.service';
 import { parseMilitarCell } from '../escalas/escala-xlsx-parser';
 
@@ -50,6 +51,7 @@ export class AgendaService {
 
   constructor(
     private readonly mapaForca: MapaForcaService,
+    private readonly escalas: EscalasService,
     private readonly escalasEspeciais: EscalasEspeciaisService,
     private readonly notasServico: NotasServicoService,
     private readonly chefesOperacoes: ChefesOperacoesService,
@@ -141,44 +143,35 @@ export class AgendaService {
   }
 
   /**
-   * Coleta entries do militar via `MapaForcaService.getMapaForcaDoDia`
-   * por dia. Reaproveita o pipeline completo: NomeMatcher (NF resolvido),
-   * trocas autorizadas integradas na tripulação, fiscal, escala especial
-   * misturada na composição do dia.
+   * S2.10.11a — Coleta entries do militar lendo direto de `EscalaMensal`
+   * via `EscalasService.listEscaladosDoMilitarNoRange`. Antes (S2.8.3):
+   * chamava `MapaForcaService.getMapaForcaDoDia` 30× em sequência (10+
+   * fontes cada × 30 dias = ~300 operações), causando timeouts
+   * silenciosos que faziam dias inteiros sumirem da Agenda.
+   *
+   * Agora: 1-2 queries Prisma totais (1 por mês no range). Resolve a dor
+   * principal do user: escalas mensais que existem em Postgres mas não
+   * apareciam no box "Próxima escala".
+   *
+   * Tradeoff: perde-se o enriquecimento de trocas autorizadas integradas
+   * na composição (eram aplicadas via NomeMatcher pelo MapaForcaService).
+   * Mantido em `coletarTrocasAutorizadas` (coletor separado).
    */
   private async coletarDoMapaForca(nf: string, inicio: string, fim: string): Promise<AgendaItem[]> {
-    const out: AgendaItem[] = [];
-    const dias = [...iterDias(inicio, fim)];
-    const resultados = await Promise.all(
-      dias.map(async (data) => {
-        try {
-          return { data, mf: await this.mapaForca.getMapaForcaDoDia(data) };
-        } catch (err) {
-          this.logger.debug(`getMapaForcaDoDia ${data}: ${(err as Error).message}`);
-          return null;
-        }
-      }),
-    );
-    for (const r of resultados) {
-      if (!r) continue;
-      const { data, mf } = r;
-      for (const t of mf.tripulacao) {
-        if (t.militarResolvido?.nf !== nf) continue;
-        const sub: string[] = [t.viatura];
-        if (t.funcao) sub.push(t.funcao);
-        if (t.isFiscal) sub.push('Fiscal');
-        out.push({
-          data,
-          fonte: 'escala_mensal',
-          titulo: `Equipe ${t.equipe}`,
-          subtitulo: sub.join(' · '),
-          funcao: t.funcao,
-          detalheUrl: `/mapa-forca/${data}`,
-          id: `mf|${data}|${t.viatura}|${t.funcao}`,
-        });
-      }
-    }
-    return out;
+    const escalados = await this.escalas.listEscaladosDoMilitarNoRange(nf, inicio, fim);
+    return escalados.map((e) => {
+      const sub: string[] = [e.viatura];
+      if (e.funcao) sub.push(e.funcao);
+      return {
+        data: e.data,
+        fonte: 'escala_mensal' as const,
+        titulo: `Equipe ${e.equipe}`,
+        subtitulo: sub.join(' · '),
+        funcao: e.funcao,
+        detalheUrl: `/mapa-forca/${e.data}`,
+        id: `mf|${e.data}|${e.viatura}|${e.funcao}`,
+      };
+    });
   }
 
   /**

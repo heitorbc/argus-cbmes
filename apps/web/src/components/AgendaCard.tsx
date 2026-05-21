@@ -1,50 +1,40 @@
-import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import type { AgendaItem, AgendaResponse } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
+import { Skeleton } from '@/components/Skeleton';
 
 /**
  * Card compacto exibido na home com a PRÓXIMA escala do militar logado.
  * Mostra também badge de alerta se houver conflitos detectados na janela.
+ *
+ * S2.10.11a — useQuery + staleTime 5min. Cache hidratado do localStorage
+ * (via React Query persister) torna 2ª visita instantânea.
  */
 export function AgendaCard() {
-  const [data, setData] = useState<AgendaResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    api
-      .agendaProxima(30)
-      .then((d) => {
-        if (!cancelled) {
-          setData(d);
-          setError(null);
-        }
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e instanceof ApiError ? e.message : 'Erro ao carregar agenda');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const {
+    data,
+    isLoading: loading,
+    error: queryError,
+  } = useQuery<AgendaResponse>({
+    queryKey: ['agenda-proxima', 30],
+    queryFn: () => api.agendaProxima(30),
+    staleTime: 5 * 60 * 1000,
+  });
 
   if (loading) {
     return (
-      <div className="rounded border border-cbmes-blue/20 bg-white p-3 text-sm text-slate-500">
-        Carregando próxima escala…
+      <div className="rounded border border-cbmes-blue/20 bg-white p-3">
+        <Skeleton className="h-4 w-1/3" />
+        <Skeleton className="mt-2 h-3 w-2/3" />
       </div>
     );
   }
-  if (error) {
+  if (queryError) {
+    const msg = queryError instanceof ApiError ? queryError.message : 'Erro ao carregar agenda';
     return (
       <div className="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
-        Agenda indisponível: {error}
+        Agenda indisponível: {msg}
       </div>
     );
   }

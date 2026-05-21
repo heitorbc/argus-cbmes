@@ -7,7 +7,6 @@ import type {
   IseoHospitalEntry,
   MapaForcaDoDia,
   NotaServico,
-  TripulacaoEntry,
 } from '@argus/shared-types';
 import { AgendaService } from './agenda.service';
 
@@ -59,35 +58,26 @@ function makeMapaForca(porData: Record<string, TripulacaoEntry[]>) {
   } as never;
 }
 
-function tripEntry(
-  viatura: string,
-  funcao: string,
-  nf: string,
-  nome: string,
-  isFiscal = false,
-): TripulacaoEntry {
-  return {
-    equipe: 'A',
-    viatura,
-    funcao,
-    militar: { raw: `2ºSGT ${nome}`, postoAbreviado: '2ºSGT', nomeGuerra: nome, nf },
-    militarResolvido: {
-      nf,
-      nome: `2ºSGT BM ${nome}`,
-      nomeGuerra: nome,
-      posto: '2ºSGT',
-      ant: 419,
-      situacao: 'ATIVO',
-      categoria: 'COMBATENTE',
-      unidadeId: '1bbm',
-      origem: '1ª1º',
-    } as never,
-    isFiscal,
-  } as never;
-}
-
 function makeEscalasEspeciais(escala: EscalaEspecialMensal | null) {
   return { get: () => escala } as never;
+}
+
+/**
+ * S2.10.11a — Stub do EscalasService.listEscaladosDoMilitarNoRange.
+ * Recebe lista de entries pré-prontos e devolve filtrados por militarNf.
+ */
+function makeEscalas(
+  porMilitar: Record<
+    string,
+    Array<{ data: string; equipe: string; viatura: string; funcao: string }>
+  >,
+) {
+  return {
+    listEscaladosDoMilitarNoRange: async (nf: string, inicio: string, fim: string) => {
+      const todas = porMilitar[nf] ?? [];
+      return todas.filter((e) => e.data >= inicio && e.data <= fim);
+    },
+  } as never;
 }
 
 function makeNotasServico(notas: NotaServico[]) {
@@ -148,6 +138,7 @@ function makeEfetivo() {
 function emptyDeps() {
   return {
     mf: makeMapaForca({}),
+    escalas: makeEscalas({}),
     especiais: makeEscalasEspeciais(null),
     notas: makeNotasServico([]),
     chop: makeChefes({}),
@@ -163,19 +154,19 @@ function emptyDeps() {
 // ── Tests ─────────────────────────────────────────────────────────
 
 describe('AgendaService', () => {
-  it('coleta tripulacao filtrada por NF do MapaForcaService', async () => {
+  it('S2.10.11a: coleta escalas mensais do militar via EscalasService.listEscaladosDoMilitarNoRange', async () => {
     const data1 = '2026-05-17';
     const data2 = '2026-05-21';
     const deps = emptyDeps();
-    deps.mf = makeMapaForca({
-      [data1]: [
-        tripEntry('ABTS_01', 'Motorista', NF_TARGET, 'HEITOR'),
-        tripEntry('ABTS_01', 'Chefe', '9999999', 'OUTRO'),
+    deps.escalas = makeEscalas({
+      [NF_TARGET]: [
+        { data: data1, equipe: 'A', viatura: 'ABTS_01', funcao: 'Motorista' },
+        { data: data2, equipe: 'B', viatura: 'AU_154', funcao: 'Operador' },
       ],
-      [data2]: [tripEntry('AU_154', 'Operador', NF_TARGET, 'HEITOR', true)],
     });
     const svc = new AgendaService(
       deps.mf,
+      deps.escalas,
       deps.especiais,
       deps.notas,
       deps.chop,
@@ -187,9 +178,10 @@ describe('AgendaService', () => {
       deps.efetivo,
     );
     const resp = await svc.forMilitar(NF_TARGET, data1, data2, NOME_TARGET);
-    expect(resp.itens.filter((i) => i.fonte === 'escala_mensal').length).toBe(2);
-    const fiscalItem = resp.itens.find((i) => i.subtitulo?.includes('Fiscal'));
-    expect(fiscalItem?.data).toBe(data2);
+    const mensais = resp.itens.filter((i) => i.fonte === 'escala_mensal');
+    expect(mensais).toHaveLength(2);
+    expect(mensais.map((i) => i.data).sort()).toEqual([data1, data2]);
+    expect(mensais.find((i) => i.data === data1)?.subtitulo).toContain('ABTS_01');
   });
 
   it('integra atestado, dispensa, férias do militar', async () => {
@@ -206,6 +198,7 @@ describe('AgendaService', () => {
     ]);
     const svc = new AgendaService(
       deps.mf,
+      deps.escalas,
       deps.especiais,
       deps.notas,
       deps.chop,
@@ -224,8 +217,8 @@ describe('AgendaService', () => {
   it('detecta conflito escala_mensal × iseo_hospitais no mesmo dia', async () => {
     const data = '2026-05-29';
     const deps = emptyDeps();
-    deps.mf = makeMapaForca({
-      [data]: [tripEntry('ABTS_01', 'Motorista', NF_TARGET, 'HEITOR')],
+    deps.escalas = makeEscalas({
+      [NF_TARGET]: [{ data, equipe: 'A', viatura: 'ABTS_01', funcao: 'Motorista' }],
     });
     deps.iseo = makeIseo([
       {
@@ -239,6 +232,7 @@ describe('AgendaService', () => {
     ]);
     const svc = new AgendaService(
       deps.mf,
+      deps.escalas,
       deps.especiais,
       deps.notas,
       deps.chop,
@@ -260,12 +254,15 @@ describe('AgendaService', () => {
     const passada = '2026-05-19';
     const futura = '2026-05-21';
     const deps = emptyDeps();
-    deps.mf = makeMapaForca({
-      [passada]: [tripEntry('X', 'F', NF_TARGET, 'X')],
-      [futura]: [tripEntry('Y', 'F', NF_TARGET, 'X')],
+    deps.escalas = makeEscalas({
+      [NF_TARGET]: [
+        { data: passada, equipe: 'A', viatura: 'X', funcao: 'F' },
+        { data: futura, equipe: 'A', viatura: 'Y', funcao: 'F' },
+      ],
     });
     const svc = new AgendaService(
       deps.mf,
+      deps.escalas,
       deps.especiais,
       deps.notas,
       deps.chop,
@@ -288,6 +285,7 @@ describe('AgendaService', () => {
     deps.notas = { list: spy } as never;
     const svc = new AgendaService(
       deps.mf,
+      deps.escalas,
       deps.especiais,
       deps.notas,
       deps.chop,
@@ -307,6 +305,7 @@ describe('AgendaService', () => {
     const deps = emptyDeps();
     const svc = new AgendaService(
       deps.mf,
+      deps.escalas,
       deps.especiais,
       deps.notas,
       deps.chop,
@@ -336,6 +335,7 @@ describe('AgendaService', () => {
     ]);
     const svc = new AgendaService(
       deps.mf,
+      deps.escalas,
       deps.especiais,
       deps.notas,
       deps.chop,
@@ -367,6 +367,7 @@ describe('AgendaService', () => {
     ]);
     const svc = new AgendaService(
       deps.mf,
+      deps.escalas,
       deps.especiais,
       deps.notas,
       deps.chop,
