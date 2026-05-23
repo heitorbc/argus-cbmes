@@ -65,18 +65,33 @@ function makeEscalasEspeciais(escala: EscalaEspecialMensal | null) {
 /**
  * S2.10.11a — Stub do EscalasService.listEscaladosDoMilitarNoRange.
  * Recebe lista de entries pré-prontos e devolve filtrados por militarNf.
+ * S2.10.11d — Stub também `traceEscalasNoRange` (usado pelo /agenda/_trace).
  */
 function makeEscalas(
   porMilitar: Record<
     string,
-    Array<{ data: string; equipe: string; viatura: string; funcao: string }>
+    Array<{
+      data: string;
+      equipe: string;
+      viatura: string;
+      funcao: string;
+      origem?: 'composicao' | 'mergulho' | 'salvamar';
+      resolvidoPor?: 'nf-salvo' | 'nome-matcher' | 'nao-resolvido';
+    }>
   >,
 ) {
   return {
     listEscaladosDoMilitarNoRange: async (nf: string, inicio: string, fim: string) => {
       const todas = porMilitar[nf] ?? [];
-      return todas.filter((e) => e.data >= inicio && e.data <= fim);
+      return todas
+        .filter((e) => e.data >= inicio && e.data <= fim)
+        .map((e) => ({
+          origem: e.origem ?? ('composicao' as const),
+          resolvidoPor: e.resolvidoPor ?? ('nf-salvo' as const),
+          ...e,
+        }));
     },
+    traceEscalasNoRange: async () => [],
   } as never;
 }
 
@@ -350,6 +365,91 @@ describe('AgendaService', () => {
     const trocas = resp.itens.filter((i) => i.fonte === 'troca_autorizada');
     expect(trocas.length).toBe(2); // assume + pagamento
     expect(trocas.map((t) => t.data).sort()).toEqual(['2026-05-22', '2026-05-25']);
+  });
+
+  it('S2.10.11d: escala especial resolve militarRaw via NomeMatcher quando militarNf é null', async () => {
+    const data = '2026-05-23';
+    const deps = emptyDeps();
+    deps.especiais = makeEscalasEspeciais({
+      ano: 2026,
+      mes: 5,
+      origemArquivo: 'fake.xlsm',
+      importadoEm: new Date().toISOString(),
+      atos: [
+        {
+          data,
+          militarRaw: '2º SGT BARCELLOS',
+          militarNf: undefined,
+          horario: '08:00-12:00',
+          funcao: 'Instrutor',
+        },
+      ],
+      avisos: [],
+    } as never);
+    // efetivo permite o NomeMatcher resolver "BARCELLOS" → NF 3037509
+    deps.efetivo = {
+      getAll: async () => [
+        {
+          nf: NF_TARGET,
+          posto: '2ºSGT',
+          nome: 'HEITOR BARCELLOS COELHO',
+          nomeGuerra: 'BARCELLOS',
+        } as never,
+      ],
+    } as never;
+    const svc = new AgendaService(
+      deps.mf,
+      deps.escalas,
+      deps.especiais,
+      deps.notas,
+      deps.chop,
+      deps.iseo,
+      deps.atestados,
+      deps.dispensas,
+      deps.ferias,
+      deps.trocas,
+      deps.efetivo,
+    );
+    const resp = await svc.forMilitar(NF_TARGET, data, data, NOME_TARGET);
+    const especiais = resp.itens.filter((i) => i.fonte === 'escala_especial');
+    expect(especiais).toHaveLength(1);
+    expect(especiais[0]?.titulo).toContain('Instrutor');
+  });
+
+  it('S2.10.11d: traceForMilitar devolve estrutura diagnostic com escalaMensal + escalaEspecial', async () => {
+    const data = '2026-05-25';
+    const deps = emptyDeps();
+    deps.escalas = makeEscalas({
+      [NF_TARGET]: [
+        {
+          data,
+          equipe: 'C',
+          viatura: 'ABTS 01',
+          funcao: 'Motorista',
+          origem: 'composicao',
+          resolvidoPor: 'nf-salvo',
+        },
+      ],
+    });
+    const svc = new AgendaService(
+      deps.mf,
+      deps.escalas,
+      deps.especiais,
+      deps.notas,
+      deps.chop,
+      deps.iseo,
+      deps.atestados,
+      deps.dispensas,
+      deps.ferias,
+      deps.trocas,
+      deps.efetivo,
+    );
+    const trace = await svc.traceForMilitar(NF_TARGET, data, data);
+    expect(trace.nf).toBe(NF_TARGET);
+    expect(trace.range.meses).toEqual([{ ano: 2026, mes: 5 }]);
+    expect(trace.escalaMensal.entriesDoMilitar).toHaveLength(1);
+    expect(trace.escalaMensal.entriesDoMilitar[0]?.viatura).toBe('ABTS 01');
+    expect(trace.escalaEspecial.mesesSemEscala).toEqual([{ ano: 2026, mes: 5 }]);
   });
 
   it('S2.10.8c-fix: falha em 1 coletor (dispensas) NÃO derruba a agenda', async () => {

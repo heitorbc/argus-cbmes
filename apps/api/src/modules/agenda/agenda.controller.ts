@@ -1,7 +1,8 @@
 import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
 import type { UserSession } from '@argus/shared-types';
-import { AgendaService } from './agenda.service';
+import { AgendaService, type AgendaTrace } from './agenda.service';
 import type { AgendaResponse } from '@argus/shared-types';
 
 @Controller('agenda')
@@ -50,6 +51,31 @@ export class AgendaController {
       throw new BadRequestException('range > 90 dias');
     }
     return this.svc.forMilitar(user.nf, inicio, fim, user.nome);
+  }
+
+  /**
+   * S2.10.11d — Diagnostic. Expõe passo-a-passo o que cada coletor da
+   * agenda viu para um militar (composicao com nf=null, atos da escala
+   * especial não-resolvidos pelo NomeMatcher, meses sem escala importada).
+   *
+   * Restrito a admin: revela amostra de militarRaw de outros militares
+   * (não dados sensíveis, mas operacional sensível).
+   *
+   * `?nf=` opcional — quando ausente usa o NF do usuário logado.
+   */
+  @Roles('admin')
+  @Get('_trace')
+  async trace(
+    @CurrentUser() user: UserSession,
+    @Query('nf') nfQuery?: string,
+    @Query('dias') diasParam?: string,
+  ): Promise<AgendaTrace> {
+    const nf = nfQuery && nfQuery.trim().length > 0 ? nfQuery.trim() : user.nf;
+    const dias = parsePositiveInt(diasParam, 30, 90);
+    const hoje = new Date();
+    const fim = new Date(hoje);
+    fim.setUTCDate(fim.getUTCDate() + dias);
+    return this.svc.traceForMilitar(nf, toIso(hoje), toIso(fim));
   }
 }
 

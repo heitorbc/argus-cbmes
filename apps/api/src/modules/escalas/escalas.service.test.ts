@@ -81,10 +81,23 @@ function makePrismaMock(): PrismaService {
       return null;
     },
     findMany: async ({
+      where: _where,
       orderBy: _orderBy,
       select: _select,
-    }: { orderBy?: unknown; select?: unknown } = {}) => {
+      include,
+    }: {
+      where?: unknown;
+      orderBy?: unknown;
+      select?: unknown;
+      include?: { composicaoEntries?: boolean };
+    } = {}) => {
       const arr = [...mesesById.values()].sort((a, b) => b.ano - a.ano || b.mes - a.mes);
+      if (include?.composicaoEntries) {
+        return arr.map((m) => ({
+          ...m,
+          composicaoEntries: entriesByMesId.get(m.id) ?? [],
+        }));
+      }
       return arr;
     },
     create: async ({
@@ -301,6 +314,151 @@ describe('EscalasService', () => {
     expect(dia20.entries[0]?.militar.nomeGuerra).toBe('SUBSTITUTO');
     const dia01 = await service.getEscaladosDoDia(2026, 5, '2026-05-01');
     expect(dia01.entries.find((e) => e.funcao === 'Ch')?.militar.nomeGuerra).toBe('BARCELLOS');
+  });
+});
+
+describe('EscalasService.listEscaladosDoMilitarNoRange (S2.10.11d)', () => {
+  let service: EscalasService;
+
+  beforeEach(() => {
+    service = makeSvc();
+  });
+
+  it('retorna entries quando militar.nf bate diretamente', async () => {
+    const composicao: ComposicaoEntry[] = [
+      {
+        equipe: 'C',
+        viatura: 'ABTS 01',
+        funcao: 'Ch',
+        militar: {
+          raw: '2º SGT BARCELLOS',
+          postoAbreviado: '2ºSGT',
+          nomeGuerra: 'BARCELLOS',
+          nf: '3037509',
+        },
+      },
+    ];
+    await service.save(
+      fakeEscala({
+        composicaoPorQuinzena: { q1: composicao, q2: composicao, ultimoDiaQ1: 14 },
+      }),
+    );
+    const r = await service.listEscaladosDoMilitarNoRange('3037509', '2026-05-01', '2026-05-31');
+    expect(r).toHaveLength(2); // 2026-05-01 (C) + 2026-05-20 (C)
+    expect(r[0]?.origem).toBe('composicao');
+    expect(r[0]?.resolvidoPor).toBe('nf-salvo');
+  });
+
+  it('resolve militarNf=null via NomeMatcher quando efetivo é passado', async () => {
+    // composicao com militar SEM nf preenchido (XLSX parser não conseguiu resolver)
+    const composicao: ComposicaoEntry[] = [
+      {
+        equipe: 'C',
+        viatura: 'ABTS 01',
+        funcao: 'Ch',
+        militar: { raw: '2º SGT BARCELLOS', postoAbreviado: '2ºSGT', nomeGuerra: 'BARCELLOS' },
+      },
+    ];
+    await service.save(
+      fakeEscala({
+        composicaoPorQuinzena: { q1: composicao, q2: composicao, ultimoDiaQ1: 14 },
+      }),
+    );
+    // Sem efetivo → NomeMatcher não roda, entry sumiu (regressão do bug original)
+    const semMatcher = await service.listEscaladosDoMilitarNoRange(
+      '3037509',
+      '2026-05-01',
+      '2026-05-31',
+    );
+    expect(semMatcher).toHaveLength(0);
+    // Com efetivo → NomeMatcher resolve "BARCELLOS" → NF 3037509
+    const comMatcher = await service.listEscaladosDoMilitarNoRange(
+      '3037509',
+      '2026-05-01',
+      '2026-05-31',
+      [
+        {
+          nf: '3037509',
+          posto: '2ºSGT',
+          nome: 'HEITOR BARCELLOS COELHO',
+          nomeGuerra: 'BARCELLOS',
+        } as never,
+      ],
+    );
+    expect(comMatcher).toHaveLength(2);
+    expect(comMatcher[0]?.resolvidoPor).toBe('nome-matcher');
+  });
+
+  it('inclui escalações em SALVAMAR (supervisor)', async () => {
+    const composicao: ComposicaoEntry[] = [];
+    await service.save(
+      fakeEscala({
+        diaEquipe: { '2026-05-10': 'C' },
+        composicaoPorQuinzena: { q1: composicao, q2: composicao, ultimoDiaQ1: 14 },
+        salvamar: {
+          equipesPorQuinzena: {
+            q1: {
+              E: {
+                letra: 'E',
+                supervisores: [
+                  {
+                    raw: '2º SGT BARCELLOS',
+                    postoAbreviado: '2ºSGT',
+                    nomeGuerra: 'BARCELLOS',
+                    nf: '3037509',
+                  },
+                ],
+              },
+            },
+            q2: {},
+            ultimoDiaQ1: 14,
+          },
+          porDia: { '2026-05-10': 'E' },
+        } as never,
+      }),
+    );
+    const r = await service.listEscaladosDoMilitarNoRange('3037509', '2026-05-01', '2026-05-31');
+    expect(r).toHaveLength(1);
+    expect(r[0]?.viatura).toBe('SALVAMAR 01');
+    expect(r[0]?.funcao).toBe('Ch');
+    expect(r[0]?.origem).toBe('salvamar');
+  });
+
+  it('inclui escalações em MERGULHO 01 (mergulhador)', async () => {
+    const composicao: ComposicaoEntry[] = [];
+    await service.save(
+      fakeEscala({
+        diaEquipe: { '2026-05-10': 'C' },
+        composicaoPorQuinzena: { q1: composicao, q2: composicao, ultimoDiaQ1: 14 },
+        mergulho: {
+          equipesPorQuinzena: {
+            q1: {
+              A: {
+                letra: 'A',
+                chefe: null,
+                motorista: null,
+                mergulhadores: [
+                  {
+                    raw: '2º SGT BARCELLOS',
+                    postoAbreviado: '2ºSGT',
+                    nomeGuerra: 'BARCELLOS',
+                    nf: '3037509',
+                  },
+                ],
+              },
+            },
+            q2: {},
+            ultimoDiaQ1: 14,
+          },
+          porDia: { '2026-05-10': { mergulho01: 'A' } },
+        } as never,
+      }),
+    );
+    const r = await service.listEscaladosDoMilitarNoRange('3037509', '2026-05-01', '2026-05-31');
+    expect(r).toHaveLength(1);
+    expect(r[0]?.viatura).toBe('MERGULHO 01');
+    expect(r[0]?.funcao).toBe('Merg1');
+    expect(r[0]?.origem).toBe('mergulho');
   });
 });
 

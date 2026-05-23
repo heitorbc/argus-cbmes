@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { AgendaConflito, AgendaItem, AgendaResponse } from '@argus/shared-types';
 import { MapaForcaService } from '../mapa-forca/mapa-forca.service';
 import { NomeMatcher } from '../mapa-forca/nome-matching';
+import type { EscaladoNoRange } from '../escalas/escalas.service';
 import { NotasServicoService } from '../notas-servico/notas-servico.service';
 import { ChefesOperacoesService } from '../chefes-operacoes/chefes-operacoes.service';
 import { IseoHospitaisService } from '../iseo-hospitais/iseo-hospitais.service';
@@ -13,6 +14,40 @@ import { EscalasEspeciaisService } from '../escalas-especiais/escalas-especiais.
 import { EscalasService } from '../escalas/escalas.service';
 import { EfetivoService } from '../efetivo/efetivo.service';
 import { parseMilitarCell } from '../escalas/escala-xlsx-parser';
+
+/**
+ * S2.10.11d — Trace diagnostic devolvido por `GET /agenda/_trace`. Útil
+ * para o Tech Lead diagnosticar por que um militar específico não aparece
+ * na agenda (composicao com nf=null, escala especial sem matcher, mês não
+ * importado, etc.).
+ */
+export interface AgendaTrace {
+  nf: string;
+  range: { inicio: string; fim: string; meses: Array<{ ano: number; mes: number }> };
+  escalaMensal: {
+    escalasEncontradas: Array<{
+      ano: number;
+      mes: number;
+      totalEntriesComposicao: number;
+      entriesComNfNull: number;
+      amostraNaoResolvidos: Array<{ militarRaw: string; viatura: string; funcao: string }>;
+    }>;
+    entriesDoMilitar: EscaladoNoRange[];
+  };
+  escalaEspecial: {
+    mesesSemEscala: Array<{ ano: number; mes: number }>;
+    atosDoMilitar: Array<{
+      data: string;
+      militarRaw: string;
+      funcao: string;
+      resolvidoPor: 'nf-salvo' | 'nome-matcher' | 'nao-resolvido';
+    }>;
+    atosNaoResolvidos: Array<{ data: string; militarRaw: string; funcao: string }>;
+  };
+  iseo: { count: number; dias: string[] };
+  chefeOperacoes: { count: number; dias: string[] };
+  notasServico: { count: number };
+}
 
 const CACHE_TTL_MS = 60_000;
 
@@ -79,12 +114,24 @@ export class AgendaService {
       return cached.response;
     }
 
+    // S2.10.11d — Carrega efetivo 1× e compartilha entre `coletarDoMapaForca`
+    // (resolve militarNf=null em composicao/mergulho/salvamar) e
+    // `coletarEscalaEspecial` (resolve militarRaw → NF via NomeMatcher).
+    // Falha não derruba a agenda: passa array vazio (mesmo fallback dos
+    // entries não-resolvidos hoje).
+    const efetivo = await this.efetivo
+      .getAll({ somente1aCia: false, incluirEfetivoOrfao: true })
+      .catch((err) => {
+        this.logger.warn(`forMilitar: efetivo.getAll falhou: ${(err as Error).message}`);
+        return [];
+      });
+
     // S2.10.8c-fix — Promise.allSettled em vez de Promise.all: 1 coletor que
     // falhe (ex: prisma.dispensa.findMany falhando em cold boot Supabase) NÃO
     // deve derrubar a agenda inteira com 500. Cada falha vira log warn + [].
     const settled = await Promise.allSettled([
-      this.coletarDoMapaForca(nf, dataInicioIso, dataFimIso),
-      this.coletarEscalaEspecial(nf, dataInicioIso, dataFimIso),
+      this.coletarDoMapaForca(nf, dataInicioIso, dataFimIso, efetivo),
+      this.coletarEscalaEspecial(nf, dataInicioIso, dataFimIso, efetivo),
       this.coletarNotasServico(nf, dataInicioIso, dataFimIso),
       this.coletarIseoHospitais(nf, dataInicioIso, dataFimIso),
       this.coletarChefesOperacoes(nf, dataInicioIso, dataFimIso),
@@ -157,8 +204,13 @@ export class AgendaService {
    * na composição (eram aplicadas via NomeMatcher pelo MapaForcaService).
    * Mantido em `coletarTrocasAutorizadas` (coletor separado).
    */
-  private async coletarDoMapaForca(nf: string, inicio: string, fim: string): Promise<AgendaItem[]> {
-    const escalados = await this.escalas.listEscaladosDoMilitarNoRange(nf, inicio, fim);
+  private async coletarDoMapaForca(
+    nf: string,
+    inicio: string,
+    fim: string,
+    efetivo: readonly import('@argus/shared-types').Militar[],
+  ): Promise<AgendaItem[]> {
+    const escalados = await this.escalas.listEscaladosDoMilitarNoRange(nf, inicio, fim, efetivo);
     return escalados.map((e) => {
       const sub: string[] = [e.viatura];
       if (e.funcao) sub.push(e.funcao);
@@ -178,27 +230,44 @@ export class AgendaService {
    * Escalas especiais (XLSM) — entries do militar. O parser do XLSM não
    * resolve `militarNf` (deixa undefined), por isso resolvemos sob demanda
    * via `NomeMatcher` cruzando `militarRaw` com o efetivo consolidado.
+   *
+   * S2.10.11d — Recebe `efetivo` já consolidado pelo `forMilitar` (evita
+   * 2× efetivo.getAll). Loga `warn` na 1ª vez que um `militarRaw` falha o
+   * matcher — Tech Lead consegue identificar atos com grafia que precisa
+   * ser corrigida na planilha (causa raiz do report 2026-05-23).
    */
   private async coletarEscalaEspecial(
     nf: string,
     inicio: string,
     fim: string,
+    efetivo: readonly import('@argus/shared-types').Militar[],
   ): Promise<AgendaItem[]> {
     const mesesNoRange = new Set<string>();
     for (const data of iterDias(inicio, fim)) {
       const [ano, mes] = parseDataIso(data);
       mesesNoRange.add(`${ano}-${mes}`);
     }
+    const mesesArr = [...mesesNoRange].map((k) => {
+      const [ano, mes] = k.split('-').map((s) => Number.parseInt(s, 10)) as [number, number];
+      return { ano, mes };
+    });
     const escalasRaw = await Promise.all(
-      [...mesesNoRange].map((k) => {
-        const [ano, mes] = k.split('-').map((s) => Number.parseInt(s, 10)) as [number, number];
-        return this.escalasEspeciais.get(ano, mes);
-      }),
+      mesesArr.map(({ ano, mes }) => this.escalasEspeciais.get(ano, mes)),
     );
     const escalas = escalasRaw.filter((e): e is NonNullable<typeof e> => e !== null);
-    if (escalas.length === 0) return [];
+    if (escalas.length === 0) {
+      // S2.10.11d — Diagnóstico: usuário pode ter esquecido de importar a
+      // planilha do mês. Log info (não warn) — é estado válido (nem todo
+      // mês tem escala especial), mas explica ausência no /agenda.
+      this.logger.log(
+        `coletarEscalaEspecial: nenhuma escala especial cadastrada para os meses ${mesesArr
+          .map((m) => `${String(m.mes).padStart(2, '0')}/${m.ano}`)
+          .join(', ')} (nf=${nf}).`,
+      );
+      return [];
+    }
 
-    let matcher: NomeMatcher | null = null;
+    const matcher = efetivo.length > 0 ? new NomeMatcher(efetivo) : null;
     const matcherCache = new Map<string, string | null>();
     const out: AgendaItem[] = [];
 
@@ -208,14 +277,7 @@ export class AgendaService {
         // 1) Se o ato já tem NF resolvido (importação futura), use-o.
         // 2) Caso contrário, parse `militarRaw` e resolva via NomeMatcher.
         let atoNf = ato.militarNf;
-        if (!atoNf) {
-          if (!matcher) {
-            const efetivoTotal = await this.efetivo.getAll({
-              somente1aCia: false,
-              incluirEfetivoOrfao: true,
-            });
-            matcher = new NomeMatcher(efetivoTotal);
-          }
+        if (!atoNf && matcher) {
           const cached = matcherCache.get(ato.militarRaw);
           if (cached !== undefined) {
             atoNf = cached ?? undefined;
@@ -224,6 +286,11 @@ export class AgendaService {
             const r = ref ? matcher.resolve(ref) : null;
             atoNf = r?.resolved?.nf;
             matcherCache.set(ato.militarRaw, atoNf ?? null);
+            if (!atoNf) {
+              this.logger.warn(
+                `coletarEscalaEspecial: NF não resolvido para ato "${ato.militarRaw}" em ${ato.data} (funcao=${ato.funcao}). Verificar grafia na planilha XLSM.`,
+              );
+            }
           }
         }
         if (atoNf !== nf) continue;
@@ -431,6 +498,122 @@ export class AgendaService {
       this.logger.warn(`coletarTrocasAutorizadas falhou: ${(err as Error).message}`);
     }
     return out;
+  }
+
+  /**
+   * S2.10.11d — Endpoint diagnostic `GET /agenda/_trace`. Expõe o que o
+   * pipeline silenciosamente descartava. Não substitui `forMilitar` —
+   * é uma janela de operação para o Tech Lead diagnosticar por que um
+   * militar específico não aparece (composicao com nf=null, escala
+   * especial sem matcher, mês não importado, etc.).
+   */
+  async traceForMilitar(nf: string, inicioIso: string, fimIso: string): Promise<AgendaTrace> {
+    const efetivo = await this.efetivo
+      .getAll({ somente1aCia: false, incluirEfetivoOrfao: true })
+      .catch(() => [] as readonly import('@argus/shared-types').Militar[]);
+
+    // ── Escala Mensal ──────────────────────────────────────────────
+    const escalasResumo = await this.escalas.traceEscalasNoRange(inicioIso, fimIso);
+    const entriesDoMilitar = await this.escalas.listEscaladosDoMilitarNoRange(
+      nf,
+      inicioIso,
+      fimIso,
+      efetivo,
+    );
+
+    // ── Escala Especial ────────────────────────────────────────────
+    const mesesSet = new Set<string>();
+    for (const data of iterDias(inicioIso, fimIso)) {
+      const [ano, mes] = parseDataIso(data);
+      mesesSet.add(`${ano}-${mes}`);
+    }
+    const mesesArr = [...mesesSet].map((k) => {
+      const [ano, mes] = k.split('-').map((s) => Number.parseInt(s, 10)) as [number, number];
+      return { ano, mes };
+    });
+    const escalasEsp = await Promise.all(
+      mesesArr.map(async ({ ano, mes }) => ({
+        ano,
+        mes,
+        escala: await this.escalasEspeciais.get(ano, mes),
+      })),
+    );
+    const mesesSemEscala = escalasEsp
+      .filter((e) => e.escala === null)
+      .map((e) => ({ ano: e.ano, mes: e.mes }));
+    const matcher = efetivo.length > 0 ? new NomeMatcher(efetivo) : null;
+    const atosDoMilitar: AgendaTrace['escalaEspecial']['atosDoMilitar'] = [];
+    const atosNaoResolvidos: AgendaTrace['escalaEspecial']['atosNaoResolvidos'] = [];
+    for (const { escala } of escalasEsp) {
+      if (!escala) continue;
+      for (const ato of escala.atos) {
+        if (ato.data < inicioIso || ato.data > fimIso) continue;
+        let atoNf = ato.militarNf;
+        let via: 'nf-salvo' | 'nome-matcher' | 'nao-resolvido' = 'nf-salvo';
+        if (!atoNf && matcher) {
+          const ref = parseMilitarCell(ato.militarRaw);
+          const r = ref ? matcher.resolve(ref) : null;
+          atoNf = r?.resolved?.nf;
+          via = atoNf ? 'nome-matcher' : 'nao-resolvido';
+        } else if (!atoNf) {
+          via = 'nao-resolvido';
+        }
+        if (!atoNf) {
+          if (atosNaoResolvidos.length < 10) {
+            atosNaoResolvidos.push({
+              data: ato.data,
+              militarRaw: ato.militarRaw,
+              funcao: ato.funcao,
+            });
+          }
+          continue;
+        }
+        if (atoNf !== nf) continue;
+        atosDoMilitar.push({
+          data: ato.data,
+          militarRaw: ato.militarRaw,
+          funcao: ato.funcao,
+          resolvidoPor: via,
+        });
+      }
+    }
+
+    // ── Demais coletores (contagens simples) ───────────────────────
+    const iseo = await this.iseoHospitais.listByMilitar(nf).catch(() => []);
+    const iseoNoRange = iseo.filter((e) => e.dataIso >= inicioIso && e.dataIso <= fimIso);
+    const ns = await this.notasServico.list({ militarNf: nf });
+    const nsNoRange = ns.filter((n) => n.data >= inicioIso && n.data <= fimIso);
+    let chopCount = 0;
+    const chopDias: string[] = [];
+    for (const data of iterDias(inicioIso, fimIso)) {
+      const [ano, mes, dia] = parseDataIsoCompleto(data);
+      try {
+        const chefes = await this.chefesOperacoes.getEscaladosDoDia(ano, mes, dia);
+        if (chefes.some((c) => c.nf === nf)) {
+          chopCount += 1;
+          chopDias.push(data);
+        }
+      } catch {
+        break;
+      }
+    }
+
+    return {
+      nf,
+      range: { inicio: inicioIso, fim: fimIso, meses: mesesArr },
+      escalaMensal: {
+        escalasEncontradas: escalasResumo,
+        entriesDoMilitar,
+      },
+      escalaEspecial: {
+        mesesSemEscala,
+        atosDoMilitar,
+        atosNaoResolvidos,
+      },
+      iseo: { count: iseoNoRange.length, dias: iseoNoRange.map((e) => e.dataIso) },
+      chefeOperacoes: { count: chopCount, dias: chopDias },
+      notasServico: { count: nsNoRange.length },
+    };
   }
 
   private detectarConflitos(itens: AgendaItem[]): AgendaConflito[] {

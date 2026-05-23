@@ -7,6 +7,8 @@ import type {
   EscalaMensal,
   LetraEquipe,
   LetraEquipeRotativa,
+  Militar,
+  MilitarRef,
 } from '@argus/shared-types';
 import type {
   ComposicaoEntry as PrismaComposicaoEntry,
@@ -18,6 +20,24 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { parseEscalaXlsx, parseFilename } from './escala-xlsx-parser';
 import { SheetsDbService } from '../sheets-db/sheets-db.service';
 import { rowsToEscalasMensais } from '../sheets-db/sheets-db-serializers';
+import { NomeMatcher } from '../mapa-forca/nome-matching';
+
+/**
+ * S2.10.11d — Tipos do retorno enriquecido de `listEscaladosDoMilitarNoRange`.
+ * `origem` indica de qual seção do XLSX veio o entry; `resolvidoPor` indica
+ * se a NF veio do parser (gravada no DB) ou foi resolvida em runtime via
+ * NomeMatcher. Útil para o endpoint diagnostic `/agenda/_trace`.
+ */
+export type OrigemEscalado = 'composicao' | 'mergulho' | 'salvamar';
+export type ResolvidoVia = 'nf-salvo' | 'nome-matcher' | 'nao-resolvido';
+export interface EscaladoNoRange {
+  data: string;
+  equipe: LetraEquipeRotativa;
+  viatura: string;
+  funcao: string;
+  origem: OrigemEscalado;
+  resolvidoPor: ResolvidoVia;
+}
 
 /**
  * Resolve a quinzena (1 ou 2) de um dia ISO usando a fronteira gravada na
@@ -271,24 +291,26 @@ export class EscalasService implements OnModuleInit {
    * `MapaForcaService.getMapaForcaDoDia()` 30× (10+ fontes cada),
    * lê direto de `EscalaMensal` filtrando pelo militar dentro do range.
    *
-   * Retorna 1 entry por dia em que o militar aparece na composição (de
-   * acordo com `diaEquipe` × `composicaoEntries` da quinzena correta).
+   * S2.10.11d — Cobre 3 lacunas reportadas pelo Tech Lead:
+   *  1. `c.militar.nf === null` (parser XLSX não resolveu) era descartado
+   *     silenciosamente. Agora cai num `NomeMatcher` quando o caller
+   *     passa o efetivo consolidado.
+   *  2. Mergulho/Salvamar não eram varridos — o militar podia estar
+   *     escalado como chefe/motorista/mergulhador/supervisor e nunca
+   *     aparecer. Agora a varredura cobre os 2 campos JSON com a mesma
+   *     regra de quinzena.
+   *  3. O retorno agora carrega `origem` + `resolvidoPor` (útil para
+   *     o endpoint diagnostic GET /agenda/_trace).
    *
-   * Custo: 1-2 queries Prisma totais (1 por mês no range) em vez de 30
-   * chamadas × 15-20 queries cada.
+   * Custo: 1 query Prisma + (opcional) 1 instância de NomeMatcher já
+   * passada pelo caller (efetivo carregado 1× por request).
    */
   async listEscaladosDoMilitarNoRange(
     nf: string,
     inicioIso: string,
     fimIso: string,
-  ): Promise<
-    Array<{
-      data: string;
-      equipe: LetraEquipeRotativa;
-      viatura: string;
-      funcao: string;
-    }>
-  > {
+    efetivo?: readonly Militar[],
+  ): Promise<EscaladoNoRange[]> {
     // Identifica os meses do range. Tipicamente 1-4 meses.
     const meses = mesesNoRange(inicioIso, fimIso);
     if (meses.length === 0) return [];
@@ -301,31 +323,154 @@ export class EscalasService implements OnModuleInit {
       include: { composicaoEntries: true },
     });
 
-    const out: Array<{
-      data: string;
-      equipe: LetraEquipeRotativa;
-      viatura: string;
-      funcao: string;
-    }> = [];
+    const matcher = efetivo && efetivo.length > 0 ? new NomeMatcher(efetivo) : null;
+    const out: EscaladoNoRange[] = [];
+
+    // Resolve a NF a partir de uma MilitarRef, primeiro pelo campo `nf`
+    // direto (preenchido na importação), depois caindo no matcher.
+    const resolveRefNf = (ref: MilitarRef): { nf: string | null; via: ResolvidoVia } => {
+      if (ref.nf) return { nf: ref.nf, via: 'nf-salvo' };
+      if (!matcher) return { nf: null, via: 'nao-resolvido' };
+      const r = matcher.resolve(ref);
+      if (r.resolved?.nf) return { nf: r.resolved.nf, via: 'nome-matcher' };
+      return { nf: null, via: 'nao-resolvido' };
+    };
 
     for (const row of rows) {
       const escala = toEscalaMensal(row);
-      // diaEquipe é Record<string, LetraEquipeRotativa>. Filtrar pelos dias
-      // no range que tenham equipe atribuída.
+
+      // ── Composição principal (A/B/C/D) ───────────────────────────
       for (const [data, equipe] of Object.entries(escala.diaEquipe)) {
         if (data < inicioIso || data > fimIso) continue;
         const q = quinzenaDoDia(data, escala);
         const bucket = q === 1 ? escala.composicaoPorQuinzena.q1 : escala.composicaoPorQuinzena.q2;
         for (const c of bucket) {
           if (c.equipe !== equipe) continue;
-          if (c.militar.nf !== nf) continue;
-          out.push({ data, equipe, viatura: c.viatura, funcao: c.funcao });
+          const { nf: entryNf, via } = resolveRefNf(c.militar);
+          if (entryNf !== nf) continue;
+          out.push({
+            data,
+            equipe,
+            viatura: c.viatura,
+            funcao: c.funcao,
+            origem: 'composicao',
+            resolvidoPor: via,
+          });
+        }
+      }
+
+      // ── Mergulho (recursos MERGULHO 01 / 02) ─────────────────────
+      // Defensivo: `Prisma.JsonNull` é um sentinel truthy mas sem
+      // `.porDia` — checa o sub-campo antes de iterar.
+      if (escala.mergulho?.porDia) {
+        for (const [data, schedule] of Object.entries(escala.mergulho.porDia)) {
+          if (data < inicioIso || data > fimIso) continue;
+          const equipeRotativa = escala.diaEquipe[data];
+          if (!equipeRotativa) continue;
+          const diaNum = Number.parseInt(data.slice(8, 10), 10);
+          const equipesMergulho =
+            diaNum <= escala.mergulho.equipesPorQuinzena.ultimoDiaQ1
+              ? escala.mergulho.equipesPorQuinzena.q1
+              : escala.mergulho.equipesPorQuinzena.q2;
+          for (const slot of ['mergulho01', 'mergulho02'] as const) {
+            const letra = schedule[slot];
+            if (!letra) continue;
+            const eq = equipesMergulho[letra];
+            if (!eq) continue;
+            const viatura = slot === 'mergulho01' ? 'MERGULHO 01' : 'MERGULHO 02';
+            const pushIfMatch = (ref: MilitarRef, funcao: string): void => {
+              const { nf: entryNf, via } = resolveRefNf(ref);
+              if (entryNf !== nf) return;
+              out.push({
+                data,
+                equipe: equipeRotativa,
+                viatura,
+                funcao,
+                origem: 'mergulho',
+                resolvidoPor: via,
+              });
+            };
+            if (eq.chefe) pushIfMatch(eq.chefe, 'Ch');
+            if (eq.motorista) pushIfMatch(eq.motorista, 'Mot');
+            eq.mergulhadores.forEach((m, i) => pushIfMatch(m, `Merg${i + 1}`));
+          }
+        }
+      }
+
+      // ── Salvamar (recurso SALVAMAR 01) ───────────────────────────
+      if (escala.salvamar?.porDia) {
+        for (const [data, letra] of Object.entries(escala.salvamar.porDia)) {
+          if (data < inicioIso || data > fimIso) continue;
+          const equipeRotativa = escala.diaEquipe[data];
+          if (!equipeRotativa) continue;
+          const diaNum = Number.parseInt(data.slice(8, 10), 10);
+          const equipesSalvamar =
+            diaNum <= escala.salvamar.equipesPorQuinzena.ultimoDiaQ1
+              ? escala.salvamar.equipesPorQuinzena.q1
+              : escala.salvamar.equipesPorQuinzena.q2;
+          const eq = equipesSalvamar[letra];
+          if (!eq) continue;
+          const [chefe, ...operadores] = eq.supervisores;
+          const pushIfMatch = (ref: MilitarRef, funcao: string): void => {
+            const { nf: entryNf, via } = resolveRefNf(ref);
+            if (entryNf !== nf) return;
+            out.push({
+              data,
+              equipe: equipeRotativa,
+              viatura: 'SALVAMAR 01',
+              funcao,
+              origem: 'salvamar',
+              resolvidoPor: via,
+            });
+          };
+          if (chefe) pushIfMatch(chefe, 'Ch');
+          operadores.forEach((m, i) => pushIfMatch(m, `Op${i + 1}`));
         }
       }
     }
 
-    out.sort((a, b) => a.data.localeCompare(b.data));
+    out.sort((a, b) => a.data.localeCompare(b.data) || a.viatura.localeCompare(b.viatura));
     return out;
+  }
+
+  /**
+   * S2.10.11d — Diagnostic helper: para o endpoint `/agenda/_trace`,
+   * devolve contagens e amostras dos entries não-resolvidos por mês.
+   * Pode ser invocado independentemente do `listEscaladosDoMilitarNoRange`.
+   */
+  async traceEscalasNoRange(
+    inicioIso: string,
+    fimIso: string,
+  ): Promise<
+    Array<{
+      ano: number;
+      mes: number;
+      totalEntriesComposicao: number;
+      entriesComNfNull: number;
+      amostraNaoResolvidos: Array<{ militarRaw: string; viatura: string; funcao: string }>;
+    }>
+  > {
+    const meses = mesesNoRange(inicioIso, fimIso);
+    if (meses.length === 0) return [];
+    const rows = await this.prisma.escalaMensal.findMany({
+      where: { OR: meses.map(({ ano, mes }) => ({ ano, mes })) },
+      include: { composicaoEntries: true },
+    });
+    return rows.map((row) => {
+      const total = row.composicaoEntries.length;
+      const naoResolvidos = row.composicaoEntries.filter((e) => !e.militarNf);
+      return {
+        ano: row.ano,
+        mes: row.mes,
+        totalEntriesComposicao: total,
+        entriesComNfNull: naoResolvidos.length,
+        amostraNaoResolvidos: naoResolvidos.slice(0, 10).map((e) => ({
+          militarRaw: e.militarRaw,
+          viatura: e.viatura,
+          funcao: e.funcao,
+        })),
+      };
+    });
   }
 
   async updateDiaEquipe(
