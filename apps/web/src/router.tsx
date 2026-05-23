@@ -15,6 +15,8 @@ import { DesktopHomePage } from '@/pages/desktop/home';
 import { DesktopEscalasPage } from '@/pages/desktop/escalas';
 import { DesktopDispensasPage } from '@/pages/desktop/dispensas';
 import { DesktopAtestadosPage } from '@/pages/desktop/atestados';
+import { DesktopTrocasPage } from '@/pages/desktop/trocas';
+import { DesktopNotasServicoPage } from '@/pages/desktop/notas-servico';
 import { LoginPage } from '@/pages/login';
 import { EsqueciASenhaPage } from '@/pages/esqueci-a-senha';
 import { ResetPasswordPage } from '@/pages/reset-password';
@@ -187,14 +189,22 @@ export const router = createBrowserRouter([
                 element: <ByMode mobile={<DispensasPage />} desktop={<DesktopDispensasPage />} />,
               },
               { path: '/cadastros/ferias', element: <FeriasPage /> },
-              { path: '/cadastros/trocas', element: <TrocasPage /> },
+              {
+                path: '/cadastros/trocas',
+                element: <ByMode mobile={<TrocasPage />} desktop={<DesktopTrocasPage />} />,
+              },
               { path: '/cadastros/iseo-hospitais', element: <IseoHospitaisPage /> },
               { path: '/cadastros/chefes-operacoes', element: <ChefesOperacoesPage /> },
               {
                 path: '/cadastros/atestados',
                 element: <ByMode mobile={<AtestadosPage />} desktop={<DesktopAtestadosPage />} />,
               },
-              { path: '/cadastros/notas-servico', element: <NotasServicoPage /> },
+              {
+                path: '/cadastros/notas-servico',
+                element: (
+                  <ByMode mobile={<NotasServicoPage />} desktop={<DesktopNotasServicoPage />} />
+                ),
+              },
               { path: '/cadastros/locais-faxina', element: <LocaisFaxinaPage /> },
               { path: '/configuracoes/unidades', element: <UnidadesPage /> },
               { path: '/configuracoes/usuarios', element: <UsuariosPage /> },
