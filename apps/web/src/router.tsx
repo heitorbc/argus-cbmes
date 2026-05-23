@@ -11,6 +11,7 @@ import { canAccessRoute } from '@/lib/permissions';
 import { MobileShell } from '@/components/shells/MobileShell';
 import { WebShell } from '@/components/shells/WebShell';
 import { ModePickerPage } from '@/pages/mode-picker';
+import { DesktopHomePage } from '@/pages/desktop/home';
 import { LoginPage } from '@/pages/login';
 import { EsqueciASenhaPage } from '@/pages/esqueci-a-senha';
 import { ResetPasswordPage } from '@/pages/reset-password';
@@ -100,6 +101,17 @@ function ShellLayout() {
   return isWeb ? <WebShell /> : <MobileShell />;
 }
 
+/**
+ * S2.10.12b — Helper que escolhe entre componente mobile e desktop
+ * baseado no modo atual. Páginas dispatched: home (S2.10.12b),
+ * escalas (S2.10.12c), dispensas/atestados (S2.10.12d), trocas/NS
+ * (S2.10.12e).
+ */
+function ByMode({ mobile, desktop }: { mobile: React.ReactNode; desktop: React.ReactNode }) {
+  const { isWeb } = useUIMode();
+  return <>{isWeb ? desktop : mobile}</>;
+}
+
 function PublicOnlyRoute() {
   const { user, loading } = useAuth();
   if (loading) return <FullScreenLoader />;
@@ -151,7 +163,10 @@ export const router = createBrowserRouter([
           {
             element: <ShellLayout />,
             children: [
-              { path: '/', element: <HomePage /> },
+              {
+                path: '/',
+                element: <ByMode mobile={<HomePage />} desktop={<DesktopHomePage />} />,
+              },
               { path: '/agenda', element: <AgendaPage /> },
               { path: '/cadastros/efetivo', element: <EfetivoPage /> },
               { path: '/cadastros/efetivo/:nf', element: <EfetivoDetalhePage /> },
