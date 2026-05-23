@@ -12,6 +12,7 @@ import { MobileShell } from '@/components/shells/MobileShell';
 import { WebShell } from '@/components/shells/WebShell';
 import { ModePickerPage } from '@/pages/mode-picker';
 import { DesktopHomePage } from '@/pages/desktop/home';
+import { DesktopEscalasPage } from '@/pages/desktop/escalas';
 import { LoginPage } from '@/pages/login';
 import { EsqueciASenhaPage } from '@/pages/esqueci-a-senha';
 import { ResetPasswordPage } from '@/pages/reset-password';
@@ -174,7 +175,10 @@ export const router = createBrowserRouter([
               { path: '/cadastros/viaturas/:prefixo', element: <ViaturasDetalhePage /> },
               { path: '/cadastros/fiscais', element: <FiscaisPage /> },
               { path: '/cadastros/ideo', element: <IdeoPage /> },
-              { path: '/cadastros/escalas', element: <EscalasPage /> },
+              {
+                path: '/cadastros/escalas',
+                element: <ByMode mobile={<EscalasPage />} desktop={<DesktopEscalasPage />} />,
+              },
               { path: '/cadastros/escalas-especiais', element: <EscalasEspeciaisPage /> },
               { path: '/cadastros/dispensas', element: <DispensasPage /> },
               { path: '/cadastros/ferias', element: <FeriasPage /> },
