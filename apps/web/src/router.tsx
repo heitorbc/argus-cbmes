@@ -6,7 +6,11 @@ import {
   useLocation,
 } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
+import { UIModeProvider, useUIMode } from '@/lib/ui-mode';
 import { canAccessRoute } from '@/lib/permissions';
+import { MobileShell } from '@/components/shells/MobileShell';
+import { WebShell } from '@/components/shells/WebShell';
+import { ModePickerPage } from '@/pages/mode-picker';
 import { LoginPage } from '@/pages/login';
 import { EsqueciASenhaPage } from '@/pages/esqueci-a-senha';
 import { ResetPasswordPage } from '@/pages/reset-password';
@@ -54,6 +58,7 @@ function FullScreenLoader() {
 
 function ProtectedRoute() {
   const { user, loading } = useAuth();
+  const { hasChosen } = useUIMode();
   const location = useLocation();
 
   if (loading) return <FullScreenLoader />;
@@ -67,12 +72,32 @@ function ProtectedRoute() {
     return <Navigate to="/trocar-senha" replace />;
   }
 
+  // S2.10.12 — Mode picker: 1ª visita pós-login redireciona para escolher
+  // entre MOBILE e WEB. Reset de senha + mode picker são as únicas exceções.
+  if (
+    !hasChosen &&
+    location.pathname !== '/escolher-modo' &&
+    location.pathname !== '/trocar-senha'
+  ) {
+    return <Navigate to="/escolher-modo" replace />;
+  }
+
   // S6f — RBAC por seção: redireciona para `/` se a rota for de seção não permitida.
   if (!canAccessRoute(user.papeis, location.pathname)) {
     return <Navigate to="/" replace />;
   }
 
   return <Outlet />;
+}
+
+/**
+ * S2.10.12 — Seleciona o shell de acordo com o `mode` escolhido. Páginas
+ * sem versão WEB ainda renderizam suas próprias mobile components dentro
+ * do WebShell (fallback graceful).
+ */
+function ShellLayout() {
+  const { isWeb } = useUIMode();
+  return isWeb ? <WebShell /> : <MobileShell />;
 }
 
 function PublicOnlyRoute() {
@@ -87,7 +112,9 @@ function PublicOnlyRoute() {
 function RootLayout() {
   return (
     <AuthProvider>
-      <Outlet />
+      <UIModeProvider>
+        <Outlet />
+      </UIModeProvider>
     </AuthProvider>
   );
 }
@@ -116,45 +143,54 @@ export const router = createBrowserRouter([
       {
         element: <ProtectedRoute />,
         children: [
-          { path: '/', element: <HomePage /> },
-          { path: '/agenda', element: <AgendaPage /> },
+          // S2.10.12 — Mode picker e trocar-senha NÃO usam shell (full-screen).
+          { path: '/escolher-modo', element: <ModePickerPage /> },
           { path: '/trocar-senha', element: <TrocarSenhaPage /> },
-          { path: '/cadastros/efetivo', element: <EfetivoPage /> },
-          { path: '/cadastros/efetivo/:nf', element: <EfetivoDetalhePage /> },
-          { path: '/cadastros/viaturas', element: <ViaturasPage /> },
-          { path: '/cadastros/viaturas/:prefixo', element: <ViaturasDetalhePage /> },
-          { path: '/cadastros/fiscais', element: <FiscaisPage /> },
-          { path: '/cadastros/ideo', element: <IdeoPage /> },
-          { path: '/cadastros/escalas', element: <EscalasPage /> },
-          { path: '/cadastros/escalas-especiais', element: <EscalasEspeciaisPage /> },
-          { path: '/cadastros/dispensas', element: <DispensasPage /> },
-          { path: '/cadastros/ferias', element: <FeriasPage /> },
-          { path: '/cadastros/trocas', element: <TrocasPage /> },
-          { path: '/cadastros/iseo-hospitais', element: <IseoHospitaisPage /> },
-          { path: '/cadastros/chefes-operacoes', element: <ChefesOperacoesPage /> },
-          { path: '/cadastros/atestados', element: <AtestadosPage /> },
-          { path: '/cadastros/notas-servico', element: <NotasServicoPage /> },
-          { path: '/cadastros/locais-faxina', element: <LocaisFaxinaPage /> },
-          { path: '/configuracoes/unidades', element: <UnidadesPage /> },
-          { path: '/configuracoes/usuarios', element: <UsuariosPage /> },
-          { path: '/configuracoes/recursos', element: <RecursosPage /> },
-          { path: '/configuracoes/integracoes', element: <IntegracoesPage /> },
+          // Demais páginas protegidas vivem dentro do ShellLayout, que
+          // escolhe WebShell ou MobileShell de acordo com `useUIMode`.
           {
-            path: '/configuracoes/compartimentos-materiais',
-            element: <CompartimentosMateriaisPage />,
+            element: <ShellLayout />,
+            children: [
+              { path: '/', element: <HomePage /> },
+              { path: '/agenda', element: <AgendaPage /> },
+              { path: '/cadastros/efetivo', element: <EfetivoPage /> },
+              { path: '/cadastros/efetivo/:nf', element: <EfetivoDetalhePage /> },
+              { path: '/cadastros/viaturas', element: <ViaturasPage /> },
+              { path: '/cadastros/viaturas/:prefixo', element: <ViaturasDetalhePage /> },
+              { path: '/cadastros/fiscais', element: <FiscaisPage /> },
+              { path: '/cadastros/ideo', element: <IdeoPage /> },
+              { path: '/cadastros/escalas', element: <EscalasPage /> },
+              { path: '/cadastros/escalas-especiais', element: <EscalasEspeciaisPage /> },
+              { path: '/cadastros/dispensas', element: <DispensasPage /> },
+              { path: '/cadastros/ferias', element: <FeriasPage /> },
+              { path: '/cadastros/trocas', element: <TrocasPage /> },
+              { path: '/cadastros/iseo-hospitais', element: <IseoHospitaisPage /> },
+              { path: '/cadastros/chefes-operacoes', element: <ChefesOperacoesPage /> },
+              { path: '/cadastros/atestados', element: <AtestadosPage /> },
+              { path: '/cadastros/notas-servico', element: <NotasServicoPage /> },
+              { path: '/cadastros/locais-faxina', element: <LocaisFaxinaPage /> },
+              { path: '/configuracoes/unidades', element: <UnidadesPage /> },
+              { path: '/configuracoes/usuarios', element: <UsuariosPage /> },
+              { path: '/configuracoes/recursos', element: <RecursosPage /> },
+              { path: '/configuracoes/integracoes', element: <IntegracoesPage /> },
+              {
+                path: '/configuracoes/compartimentos-materiais',
+                element: <CompartimentosMateriaisPage />,
+              },
+              { path: '/conferencia-materiais', element: <ConferenciaMateriaisPage /> },
+              { path: '/mapa-forca', element: <MapaForcaPage /> },
+              { path: '/mapa-forca/:data', element: <MapaForcaDetalhePage /> },
+              // Redirect curto para bookmarks antigos (S0.x/rename-mapa-forca).
+              { path: '/previa', element: <Navigate to="/mapa-forca" replace /> },
+              { path: '/parte-diaria', element: <ParteDiariaPage /> },
+              { path: '/servico/:data/conferencia-equipe', element: <ConferenciaEquipePage /> },
+              {
+                path: '/servico/:data/conferencia-viatura/:vtrPrefixo',
+                element: <ConferenciaViaturaPage />,
+              },
+              { path: '/servico/:data/ideo', element: <ServicoIdeoPage /> },
+            ],
           },
-          { path: '/conferencia-materiais', element: <ConferenciaMateriaisPage /> },
-          { path: '/mapa-forca', element: <MapaForcaPage /> },
-          { path: '/mapa-forca/:data', element: <MapaForcaDetalhePage /> },
-          // Redirect curto para bookmarks antigos (S0.x/rename-mapa-forca).
-          { path: '/previa', element: <Navigate to="/mapa-forca" replace /> },
-          { path: '/parte-diaria', element: <ParteDiariaPage /> },
-          { path: '/servico/:data/conferencia-equipe', element: <ConferenciaEquipePage /> },
-          {
-            path: '/servico/:data/conferencia-viatura/:vtrPrefixo',
-            element: <ConferenciaViaturaPage />,
-          },
-          { path: '/servico/:data/ideo', element: <ServicoIdeoPage /> },
         ],
       },
       { path: '*', element: <Navigate to="/" replace /> },
