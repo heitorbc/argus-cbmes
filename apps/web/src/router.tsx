@@ -13,6 +13,8 @@ import { WebShell } from '@/components/shells/WebShell';
 import { ModePickerPage } from '@/pages/mode-picker';
 import { DesktopHomePage } from '@/pages/desktop/home';
 import { DesktopEscalasPage } from '@/pages/desktop/escalas';
+import { DesktopDispensasPage } from '@/pages/desktop/dispensas';
+import { DesktopAtestadosPage } from '@/pages/desktop/atestados';
 import { LoginPage } from '@/pages/login';
 import { EsqueciASenhaPage } from '@/pages/esqueci-a-senha';
 import { ResetPasswordPage } from '@/pages/reset-password';
@@ -180,12 +182,18 @@ export const router = createBrowserRouter([
                 element: <ByMode mobile={<EscalasPage />} desktop={<DesktopEscalasPage />} />,
               },
               { path: '/cadastros/escalas-especiais', element: <EscalasEspeciaisPage /> },
-              { path: '/cadastros/dispensas', element: <DispensasPage /> },
+              {
+                path: '/cadastros/dispensas',
+                element: <ByMode mobile={<DispensasPage />} desktop={<DesktopDispensasPage />} />,
+              },
               { path: '/cadastros/ferias', element: <FeriasPage /> },
               { path: '/cadastros/trocas', element: <TrocasPage /> },
               { path: '/cadastros/iseo-hospitais', element: <IseoHospitaisPage /> },
               { path: '/cadastros/chefes-operacoes', element: <ChefesOperacoesPage /> },
-              { path: '/cadastros/atestados', element: <AtestadosPage /> },
+              {
+                path: '/cadastros/atestados',
+                element: <ByMode mobile={<AtestadosPage />} desktop={<DesktopAtestadosPage />} />,
+              },
               { path: '/cadastros/notas-servico', element: <NotasServicoPage /> },
               { path: '/cadastros/locais-faxina', element: <LocaisFaxinaPage /> },
               { path: '/configuracoes/unidades', element: <UnidadesPage /> },
