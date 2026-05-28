@@ -15,7 +15,9 @@ interface CacheEntry {
  *
  * Diferenças vs `QdiService`:
  * - Lê outra aba (DADOS, não 1ª1º)
- * - Aba DADOS é a tabela completa do CBMES — filtro por LOCAL == "1ª1º" no parser
+ * - Aba DADOS é a tabela completa do CBMES — **multi-unidade desde S2.10.13b**
+ *   (sem filtro LOCAL no parser; popular Militar.unidade a partir do campo
+ *   LOCAL e deixar o frontend filtrar via dropdown).
  * - Tem campos extras: classe, conceito disciplinar, pontos, CNH, incorporação, plano férias, etc.
  *
  * ADR-008 (S6a): DADOS > 1ª1º > EFETIVO em prioridade na consolidação.
@@ -144,9 +146,12 @@ export class QdiDadosService {
 
   private async fetchAndParse(): Promise<CacheEntry> {
     const csv = await this.fetchRawCsv();
+    // S2.10.13b — default `[]` no parser = aceita todas as unidades.
+    // Multi-unidade: militares de CG, CEPDEC, DAL, CORREG, DGP, 1ª1º, 2ª1º,
+    // etc. são todos consolidados; frontend filtra via dropdown.
     const militares = parseQdiDadosCsv(csv);
     if (militares.length === 0) {
-      throw new Error('QDI/DADOS retornou 0 militares após filtro LOCAL — formato pode ter mudado');
+      throw new Error('QDI/DADOS retornou 0 militares — formato da planilha pode ter mudado');
     }
 
     const byNf = new Map<string, MilitarDados>();

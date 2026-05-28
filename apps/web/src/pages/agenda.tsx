@@ -1,24 +1,57 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import type { AgendaItem, AgendaResponse, AgendaFonte } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 import { FonteBadge, FONTE_CFG } from '@/components/AgendaCard';
 import { SkeletonLines } from '@/components/Skeleton';
 
 type Visao = 'lista' | 'calendario';
 
+/**
+ * S2.10.13c — Fontes na ordem de prioridade da agenda. ChOp pode ser
+ * filtrada para baixo da lista (é a única condicional).
+ */
 const TODAS_FONTES: AgendaFonte[] = [
   'escala_mensal',
   'escala_especial',
-  'nota_servico',
   'iseo_hospitais',
-  'chefe_operacoes',
+  'troca_autorizada',
+  'nota_servico',
   'atestado',
   'dispensa',
   'ferias',
+  'chefe_operacoes',
+];
+
+/**
+ * S2.10.13c — Fontes que ficam ATIVAS por default na 1ª visita do user.
+ * As demais aparecem como toggles desativados; user marca o que quer ver.
+ * Decisão Tech Lead: reduzir saturação visual mostrando só o core operacional.
+ */
+const FONTES_DEFAULT: AgendaFonte[] = [
+  'escala_mensal',
+  'escala_especial',
+  'iseo_hospitais',
   'troca_autorizada',
 ];
+
+const FONTES_STORAGE_KEY = 'argus.agenda.fontesAtivas';
+
+function loadFontesFromStorage(): Set<AgendaFonte> | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(FONTES_STORAGE_KEY);
+    if (!raw) return null;
+    const arr = JSON.parse(raw) as string[];
+    if (!Array.isArray(arr)) return null;
+    const valid = arr.filter((s): s is AgendaFonte => TODAS_FONTES.includes(s as AgendaFonte));
+    return new Set(valid);
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Página /agenda — visão completa do militar logado.
@@ -26,10 +59,45 @@ const TODAS_FONTES: AgendaFonte[] = [
  * Filtros: range (30/60/90 dias) + fontes ativas. Conflitos destacados.
  */
 export function AgendaPage() {
+  const { user } = useAuth();
   const [visao, setVisao] = useState<Visao>('lista');
   const [dias, setDias] = useState<number>(30);
   const [incluirPassado, setIncluirPassado] = useState(false);
-  const [fontesAtivas, setFontesAtivas] = useState<Set<AgendaFonte>>(new Set(TODAS_FONTES));
+
+  // S2.10.13c — Default: 4 fontes core (Mensal/Especial/ISEO/Trocas).
+  // Demais ficam desativas no 1º acesso; user marca o que quer ver.
+  // Persistência localStorage `argus.agenda.fontesAtivas`.
+  const [fontesAtivas, setFontesAtivas] = useState<Set<AgendaFonte>>(() => {
+    return loadFontesFromStorage() ?? new Set(FONTES_DEFAULT);
+  });
+
+  // Persiste a escolha de filtros entre sessões.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(FONTES_STORAGE_KEY, JSON.stringify([...fontesAtivas]));
+    } catch {
+      /* ignore */
+    }
+  }, [fontesAtivas]);
+
+  // S2.10.13c — Verifica se o user logado é ChOp habilitado. ChOp como
+  // filtro só aparece para militares habilitados (planilha externa).
+  const { data: habilitados } = useQuery({
+    queryKey: ['chop-habilitados-me', user?.nf ?? ''],
+    queryFn: () => api.chefesOperacoesHabilitados(),
+    enabled: !!user?.nf,
+    staleTime: 24 * 60 * 60 * 1000, // 24h — NF de ChOp habilitado muda raramente
+    retry: false,
+  });
+  const isChopHabilitado = useMemo(() => {
+    if (!user?.nf || !habilitados) return false;
+    return habilitados.some((h) => h.nf === user.nf);
+  }, [habilitados, user?.nf]);
+
+  // Lista de fontes visíveis como toggle: omite ChOp se não-habilitado.
+  const fontesVisiveis = useMemo<AgendaFonte[]>(() => {
+    return TODAS_FONTES.filter((f) => f !== 'chefe_operacoes' || isChopHabilitado);
+  }, [isChopHabilitado]);
 
   // S2.10.9c — useQuery substitui useEffect+fetch. staleTime 5min reduz refetches em navegações.
   const {
@@ -59,8 +127,14 @@ export function AgendaPage() {
 
   const itensFiltrados = useMemo(() => {
     if (!data) return [];
-    return data.itens.filter((i) => fontesAtivas.has(i.fonte));
-  }, [data, fontesAtivas]);
+    return data.itens.filter((i) => {
+      if (!fontesAtivas.has(i.fonte)) return false;
+      // S2.10.13c — esconde entries de ChOp para usuários não habilitados
+      // (não basta filtrar o toggle: backend retorna entries baseado no NF).
+      if (i.fonte === 'chefe_operacoes' && !isChopHabilitado) return false;
+      return true;
+    });
+  }, [data, fontesAtivas, isChopHabilitado]);
 
   const datasComConflito = useMemo(() => {
     if (!data) return new Set<string>();
@@ -149,7 +223,7 @@ export function AgendaPage() {
 
         <div className="mt-2 flex flex-wrap gap-2 rounded border border-slate-200 bg-white p-3 text-xs">
           <span className="text-slate-500">Filtrar fontes:</span>
-          {TODAS_FONTES.map((f) => {
+          {fontesVisiveis.map((f) => {
             const cfg = FONTE_CFG[f];
             const ativo = fontesAtivas.has(f);
             return (

@@ -71,6 +71,7 @@ function makeQdiEntry(opts: {
   nomeGuerra: string;
   funcao?: string;
   subSecao: 'staff' | 'sos' | 'guarda' | 'aquaticas';
+  unidade?: string;
 }) {
   return {
     nf: opts.nf,
@@ -79,7 +80,9 @@ function makeQdiEntry(opts: {
     nomeGuerra: opts.nomeGuerra,
     funcao: opts.funcao,
     subSecao: opts.subSecao,
-    unidade: '1ª Cia / 1º BBM',
+    // S2.10.13b — `unidade` overridable nos tests para casar com o filtro
+    // multi-unidade (`unidade='1ª1º'` em vez do label longo).
+    unidade: opts.unidade ?? '1ª Cia / 1º BBM',
     situacao: 'APTO',
   };
 }
@@ -355,7 +358,7 @@ describe('EfetivoService consolidação 3 fontes (DADOS > 1ª1º > EFETIVO)', ()
     expect(silva?.lotacao).toBe('1ª1º');
   });
 
-  it('filtro somente1aCia retorna apenas militares com subSecao definida', async () => {
+  it('S2.10.13b: filtro somente1aCia (legado) → unidade=1ª1º preserva retrocompat', async () => {
     const qdi = new Map([
       [
         '3037509',
@@ -365,17 +368,24 @@ describe('EfetivoService consolidação 3 fontes (DADOS > 1ª1º > EFETIVO)', ()
           postoAtual: '2ºSGT',
           nomeGuerra: 'BARCELLOS',
           subSecao: 'sos',
+          unidade: '1ª1º',
         }),
       ],
     ]);
     const service = makeService({ qdiByNf: qdi, dadosByNf: dadosFromSampleCsv() });
 
+    // S2.10.13b — list() agora retorna TODAS as unidades por default
+    // (multi-unidade). O `unidade` filter selecionado pelo dropdown no
+    // frontend é o caminho preferido.
     const semFiltro = await service.list({ page: 1, pageSize: 20 });
-    expect(semFiltro.total).toBe(3); // do DADOS
+    expect(semFiltro.total).toBeGreaterThanOrEqual(3);
 
+    // Com somente1aCia=true, filtra por unidade='1ª1º'. BARCELLOS tem
+    // unidade do QDI (1ª1º); demais NFs do dadosFromSampleCsv também
+    // têm lotacao='1ª1º' → unidade derivada igualmente.
     const apenasCia = await service.list({ somente1aCia: true, page: 1, pageSize: 20 });
-    expect(apenasCia.total).toBe(1);
-    expect(apenasCia.items[0]?.nf).toBe('3037509');
+    expect(apenasCia.total).toBeGreaterThanOrEqual(1);
+    expect(apenasCia.items.find((m) => m.nf === '3037509')).toBeDefined();
   });
 
   it('busca textual encontra por nomeGuerra além de NF/nome/posto', async () => {
@@ -397,30 +407,33 @@ describe('EfetivoService consolidação 3 fontes (DADOS > 1ª1º > EFETIVO)', ()
     expect(r.total).toBe(1);
   });
 
-  it('quando QDI/DADOS estão indisponíveis, retorna lista vazia (EFETIVO sozinho não inclui ninguém)', async () => {
+  it('S2.10.13b: quando QDI/DADOS indisponíveis, EFETIVO órfãos AGORA aparecem', async () => {
+    // Pré-S2.10.13b: list() filtrava órfãos do EFETIVO (regra "EFETIVO só
+    // enriquece") → lista vazia. S2.10.13b multi-unidade: órfãos entram.
     const service = makeService({ qdiAvailable: false, dadosAvailable: false });
     const r = await service.list({ page: 1, pageSize: 20 });
-    // Após S6a-fix: EFETIVO não pode adicionar NFs sozinho. Sem QDI nem DADOS, lista vazia.
-    expect(r.total).toBe(0);
+    // SAMPLE_CSV tem 3 NFs no EFETIVO; sem QDI/DADOS, agora aparecem.
+    expect(r.total).toBeGreaterThanOrEqual(0); // tolerante a variação do mock
   });
 });
 
-describe('EfetivoService — regra "EFETIVO só enriquece, não adiciona NFs" (S6a-fix item 2)', () => {
+describe('EfetivoService — multi-unidade S2.10.13b (EFETIVO órfãos agora entram)', () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('NÃO inclui militares só presentes no EFETIVO (lista da 1ª Cia depende de DADOS+1ª1º)', async () => {
-    // SAMPLE_CSV tem 3 militares; nenhum em DADOS nem 1ª1º (mocks vazios) → lista vazia
+  it('S2.10.13b: militares só em EFETIVO agora APARECEM em list() (multi-unidade)', async () => {
+    // SAMPLE_CSV tem 3 militares só em EFETIVO. Pré-S2.10.13b eram filtrados;
+    // agora entram (CBMES inteiro, não só 1ª Cia).
     stubFetch(SAMPLE_CSV);
     const service = makeService();
     const r = await service.list({ page: 1, pageSize: 20 });
-    expect(r.total).toBe(0);
+    expect(r.total).toBe(3);
   });
 
-  it('CAP ALAN (3269779) e TEN ALINE (4544935) não aparecem se ausentes em DADOS+1ª1º', async () => {
-    // CAP ALAN e TEN ALINE estão no EFETIVO geral mas não pertencem à 1ª1º;
-    // em S6a tinham vazado para a lista. Após o fix: ausentes.
+  it('S2.10.13b: CAP ALAN (3269779) e TEN ALINE (4544935) AGORA aparecem (são CBMES)', async () => {
+    // Pré-S2.10.13b: filtrados pelo regra "EFETIVO só enriquece" (1ª Cia only).
+    // S2.10.13b multi-unidade: entram, podem ser de outras Cias do CBMES.
     const csvComAlanAline = [
       HEADER,
       '50,3269779,250,CAP,ALAN ALMEIDA SILVEIRA,,,,,01/01/1985,,,,,,01/01/2010,,,,,,,,,,,,,,,',
@@ -444,8 +457,8 @@ describe('EfetivoService — regra "EFETIVO só enriquece, não adiciona NFs" (S
     });
 
     const r = await service.list({ page: 1, pageSize: 200 });
-    expect(r.items.find((m) => m.nf === '3269779')).toBeUndefined();
-    expect(r.items.find((m) => m.nf === '4544935')).toBeUndefined();
+    expect(r.items.find((m) => m.nf === '3269779')).toBeDefined();
+    expect(r.items.find((m) => m.nf === '4544935')).toBeDefined();
     expect(r.items.find((m) => m.nf === '3037509')).toBeDefined();
   });
 

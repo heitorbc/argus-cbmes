@@ -235,9 +235,15 @@ export const api = {
     if (query.q) params.set('q', query.q);
     if (query.page) params.set('page', String(query.page));
     if (query.pageSize) params.set('pageSize', String(query.pageSize));
+    // S2.10.13b — `unidade` é o caminho preferido (multi-unidade).
+    // `somente1aCia` mantido para retrocompat curto prazo.
+    if (query.unidade) params.set('unidade', query.unidade);
     if (query.somente1aCia) params.set('somente1aCia', 'true');
     return request<EfetivoListResponse>(`/efetivo?${params.toString()}`);
   },
+
+  // S2.10.13b — Lista de unidades distintas para o `<select>` filtro.
+  efetivoUnidades: () => request<{ unidades: string[] }>('/efetivo/unidades'),
 
   efetivoFindByNf: (nf: string) => request<Militar>(`/efetivo/${nf}`),
 
