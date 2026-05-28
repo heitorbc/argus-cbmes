@@ -118,6 +118,9 @@ model Militar {
 
   @@index([subSecao])
   @@index([papelEspecial])
+  // S2.10.13b — índice para filtrar por unidade na página /cadastros/efetivo
+  // (multi-unidade: CG, CEPDEC, DAL, CORREG, DGP, 1ª1º, etc.)
+  @@index([unidade])
   @@map("militares")
 }
 

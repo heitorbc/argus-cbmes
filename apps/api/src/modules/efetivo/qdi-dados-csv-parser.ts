@@ -38,10 +38,14 @@ import type { Militar } from '@argus/shared-types';
  * | 27  | INCORPORAÇÃO                   | "19/03/2001"                    |
  * | 28  | PLANO DE FÉRIAS                | "NOV"                           |
  *
- * Filtro padrão: `LOCAL == "1ª1º"` (apenas militares lotados na 1ª Cia/1º BBM).
+ * Filtro padrão: **aceita todas as unidades** (S2.10.13b — multi-unidade).
+ * Anteriormente filtrava por `LOCAL == "1ª1º"`; agora o caller pode passar
+ * `locaisAceitos` específico se quiser apenas 1 unidade, ou `[]` (default)
+ * para trazer TODOS os militares do CBMES (CG, CEPDEC, DAL, CORREG, DGP,
+ * 1ª1º, 2ª1º, etc.) e o frontend filtra por dropdown na página /cadastros/efetivo.
  *
  * Diferenças vs `qdi-csv-parser.ts` (aba 1ª1º):
- * - Aba DADOS é **a tabela completa do CBMES**; precisa filtrar por LOCAL.
+ * - Aba DADOS é **a tabela completa do CBMES**.
  * - Aba 1ª1º já está pré-filtrada e tem agrupamento por seção (staff/sos/guarda/aquaticas).
  * - Em S6a, DADOS vira primária; aba 1ª1º complementa (mais atualizada por DRH); EFETIVO fallback.
  */
@@ -70,15 +74,14 @@ const HEADER_HINTS = [
 ];
 
 /**
- * Faz o parse de um CSV inteiro da aba DADOS e retorna a lista de militares filtrada por LOCAL.
+ * Faz o parse de um CSV inteiro da aba DADOS e retorna a lista de militares.
  *
  * @param csv Conteúdo do CSV.
- * @param locaisAceitos Filtro de lotação (ex.: ["1ª1º"]). Default: aceita 1ª1º + variações comuns.
+ * @param locaisAceitos Filtro opcional de lotação. Default `[]` = aceita TODAS
+ *   as unidades (S2.10.13b — multi-unidade). Para retrocompat, passe
+ *   `['1ª1º', '1ª/1º']` se quiser apenas militares da 1ª Cia.
  */
-export function parseQdiDadosCsv(
-  csv: string,
-  locaisAceitos: string[] = ['1ª1º', '1ª/1º'],
-): MilitarDados[] {
+export function parseQdiDadosCsv(csv: string, locaisAceitos: string[] = []): MilitarDados[] {
   const rows = parse(csv, {
     columns: false,
     skip_empty_lines: false,
