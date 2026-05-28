@@ -314,6 +314,85 @@ describe('EscalasService', () => {
     const dia01 = await service.getEscaladosDoDia(2026, 5, '2026-05-01');
     expect(dia01.entries.find((e) => e.funcao === 'Ch')?.militar.nomeGuerra).toBe('BARCELLOS');
   });
+
+  // S2.12b — Round-trip mergulho/salvamar/avisos via JSONB. Persistência foi
+  // adicionada já em S2.10.1 (colunas Json? no schema), mas faltava verificação
+  // explícita de que upsert + read preservam a estrutura completa.
+  it('S2.12b round-trip: mergulho.porDia + .equipesPorQuinzena sobrevivem upsert', async () => {
+    const escala = fakeEscala({
+      mergulho: {
+        equipesPorQuinzena: {
+          ultimoDiaQ1: 14,
+          q1: {
+            A: {
+              letra: 'A',
+              chefe: { raw: '1º SGT CHEFE-A', postoAbreviado: '1ºSGT', nomeGuerra: 'CHEFE-A' },
+              motorista: {
+                raw: '3º SGT MOT-A',
+                postoAbreviado: '3ºSGT',
+                nomeGuerra: 'MOT-A',
+              },
+              mergulhadores: [{ raw: 'CB BM MG-A1', postoAbreviado: 'CB', nomeGuerra: 'MG-A1' }],
+            },
+          },
+          q2: {},
+        },
+        porDia: {
+          '2026-05-01': { mergulho01: 'A' },
+          '2026-05-15': { mergulho01: 'A', mergulho02: 'B' },
+        },
+      },
+    });
+    await service.save(escala);
+    const got = await service.get(2026, 5);
+    expect(got?.mergulho?.porDia['2026-05-01']?.mergulho01).toBe('A');
+    expect(got?.mergulho?.porDia['2026-05-15']?.mergulho02).toBe('B');
+    expect(got?.mergulho?.equipesPorQuinzena.q1.A?.chefe.nomeGuerra).toBe('CHEFE-A');
+    expect(got?.mergulho?.equipesPorQuinzena.q1.A?.mergulhadores).toHaveLength(1);
+  });
+
+  it('S2.12b round-trip: salvamar.porDia + .equipesPorQuinzena sobrevivem upsert', async () => {
+    const escala = fakeEscala({
+      salvamar: {
+        equipesPorQuinzena: {
+          ultimoDiaQ1: 14,
+          q1: {
+            E: {
+              letra: 'E',
+              supervisores: [{ raw: '2º SGT SUP-E', postoAbreviado: '2ºSGT', nomeGuerra: 'SUP-E' }],
+            },
+          },
+          q2: {
+            F: {
+              letra: 'F',
+              supervisores: [
+                { raw: '3º SGT SUP-F1', postoAbreviado: '3ºSGT', nomeGuerra: 'SUP-F1' },
+                { raw: '3º SGT SUP-F2', postoAbreviado: '3ºSGT', nomeGuerra: 'SUP-F2' },
+              ],
+            },
+          },
+        },
+        porDia: { '2026-05-02': 'E', '2026-05-20': 'F' },
+      },
+    });
+    await service.save(escala);
+    const got = await service.get(2026, 5);
+    expect(got?.salvamar?.porDia['2026-05-02']).toBe('E');
+    expect(got?.salvamar?.porDia['2026-05-20']).toBe('F');
+    expect(got?.salvamar?.equipesPorQuinzena.q2.F?.supervisores).toHaveLength(2);
+  });
+
+  it('S2.12b round-trip: avisos[] do parser sobrevivem upsert', async () => {
+    const escala = fakeEscala({
+      avisos: ['Aviso 1 — dia 15 sem chefe escalado', 'Aviso 2 — Mergulho 02 vago na 2ª quinzena'],
+    });
+    await service.save(escala);
+    const got = await service.get(2026, 5);
+    expect(got?.avisos).toEqual([
+      'Aviso 1 — dia 15 sem chefe escalado',
+      'Aviso 2 — Mergulho 02 vago na 2ª quinzena',
+    ]);
+  });
 });
 
 describe('EscalasService.listEscaladosDoMilitarNoRange (S2.10.14)', () => {
