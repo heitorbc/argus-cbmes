@@ -50,7 +50,7 @@ describe('HealthController.status (S2.6 / S2.10.13a)', () => {
     expect(r.geradoEm).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
-  it('NÃO contém mais o campo sheetsDb (removido em S2.10.13a)', async () => {
+  it('NÃO contém mais o campo sheetsDb (Sheets-DB removido em S2.10.14)', async () => {
     const controller = new HealthController(makeMapaForcaMock(okSnap), makePrismaMock());
     const r = await controller.status();
     expect((r as unknown as Record<string, unknown>).sheetsDb).toBeUndefined();

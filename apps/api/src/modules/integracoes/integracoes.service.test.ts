@@ -164,7 +164,7 @@ describe('IntegracoesService (S2.10.9d — 12 sources, 11 persistidos)', () => {
     );
   });
 
-  it('S2.10.9d — lista as 12 integrações (após remoção do sheets-db)', async () => {
+  it('lista as 12 integrações (Sheets-DB removido em S2.10.14)', async () => {
     const result = await svc.list();
     expect(result).toHaveLength(12);
     expect(result.map((r) => r.id).sort()).toEqual([

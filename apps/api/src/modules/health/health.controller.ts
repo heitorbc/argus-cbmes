@@ -25,13 +25,11 @@ export class HealthController {
   }
 
   /**
-   * S2.6 / S2.10.13a — Status agregado dos 3 serviços críticos. Lido pelo
-   * `StatusBar` na home e no `Footer` do app. Endpoint `@Public` (não
-   * exige auth) para aparecer mesmo na tela de login durante cold start.
-   *
-   * S2.10.13a removeu `sheetsDb` (Sheets-DB encerrado em S2.10.9d) e
-   * implementou check real do Supabase via `prisma.$queryRaw\`SELECT 1\``
-   * com timeout 2s + threshold 1s para 'degraded'.
+   * Status agregado dos 3 serviços críticos (api, mapaForcaCiodes, supabase).
+   * Lido pelo `StatusBar` na home e no `Footer` do app. Endpoint `@Public`
+   * (não exige auth) para aparecer mesmo na tela de login durante cold
+   * start. Check Supabase usa `prisma.$queryRaw\`SELECT 1\`` com timeout
+   * 2s + threshold 1s para 'degraded'. Sheets-DB foi removido em S2.10.14.
    */
   @Public()
   @Get('status')

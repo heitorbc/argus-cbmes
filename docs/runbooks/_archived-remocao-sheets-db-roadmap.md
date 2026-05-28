@@ -1,8 +1,15 @@
-# Roadmap S2.10.14 — Remoção total do Sheets-DB
+# [CONCLUÍDO em 2026-05-28] Roadmap S2.10.14 — Remoção total do Sheets-DB
 
-**Data:** 2026-05-28
+> **Status:** Executado integralmente em 2026-05-28 via PRs #103 (S2.10.14a),
+> #104 (S2.10.14b) e #105 (S2.10.14c). Documento mantido como referência
+> histórica do planejamento que dirigiu a remoção.
+>
+> Sprint logs: [s2.10.14a](../sprint-logs/s2.10.14a.md), [s2.10.14b](../sprint-logs/s2.10.14b.md), [s2.10.14c](../sprint-logs/s2.10.14c.md).
+> Estado pós-execução documentado em [s2.12-scope.md](../sprint-logs/s2.12-scope.md).
+
+**Data original:** 2026-05-28
 **Tech Lead:** 2º SGT Heitor Barcellos Coelho — NF 3037509
-**Status:** Planejamento (sub-sprints S2.10.14a–c a executar)
+**Status original:** Planejamento (sub-sprints S2.10.14a–c a executar)
 **Decisão estratégica:** Eliminar TODAS as integrações diretas com planilhas
 Google em runtime, **exceto Mapa Força CIODES** (exceção única — real-time
 do efetivo escalado).
