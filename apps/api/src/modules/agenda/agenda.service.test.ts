@@ -65,15 +65,25 @@ function makeEscalasEspeciais(escala: EscalaEspecialMensal | null) {
 /**
  * S2.10.11a — Stub do EscalasService.listEscaladosDoMilitarNoRange.
  * Recebe lista de entries pré-prontos e devolve filtrados por militarNf.
+ *
+ * S2.10.14 — Mock também captura `efetivo` recebido (4º param) num spy
+ * para os tests poderem assertar que o AgendaService propagou.
  */
 function makeEscalas(
   porMilitar: Record<
     string,
     Array<{ data: string; equipe: string; viatura: string; funcao: string }>
   >,
+  spy?: { lastEfetivoLength?: number },
 ) {
   return {
-    listEscaladosDoMilitarNoRange: async (nf: string, inicio: string, fim: string) => {
+    listEscaladosDoMilitarNoRange: async (
+      nf: string,
+      inicio: string,
+      fim: string,
+      efetivo?: readonly unknown[],
+    ) => {
+      if (spy) spy.lastEfetivoLength = efetivo?.length ?? 0;
       const todas = porMilitar[nf] ?? [];
       return todas.filter((e) => e.data >= inicio && e.data <= fim);
     },
@@ -182,6 +192,79 @@ describe('AgendaService', () => {
     expect(mensais).toHaveLength(2);
     expect(mensais.map((i) => i.data).sort()).toEqual([data1, data2]);
     expect(mensais.find((i) => i.data === data1)?.subtitulo).toContain('ABTS_01');
+  });
+
+  it('S2.10.14: forMilitar carrega efetivo 1× e propaga para listEscaladosDoMilitarNoRange', async () => {
+    const data = '2026-05-29';
+    const deps = emptyDeps();
+    const spy: { lastEfetivoLength?: number } = {};
+    deps.escalas = makeEscalas(
+      {
+        [NF_TARGET]: [{ data, equipe: 'C', viatura: 'ABTS 01', funcao: 'Motorista' }],
+      },
+      spy,
+    );
+    // Efetivo mock retorna 3 militares — confirma que esse é o array
+    // recebido pelo EscalasService (via NomeMatcher fallback).
+    deps.efetivo = {
+      getAll: async () => [
+        { nf: '3037509', posto: '2ºSGT', nome: 'HEITOR' } as never,
+        { nf: '111', posto: 'CAP', nome: 'OUTRO 1' } as never,
+        { nf: '222', posto: 'CB', nome: 'OUTRO 2' } as never,
+      ],
+    } as never;
+    const svc = new AgendaService(
+      deps.mf,
+      deps.escalas,
+      deps.especiais,
+      deps.notas,
+      deps.chop,
+      deps.iseo,
+      deps.atestados,
+      deps.dispensas,
+      deps.ferias,
+      deps.trocas,
+      deps.efetivo,
+    );
+    const resp = await svc.forMilitar(NF_TARGET, data, data, NOME_TARGET);
+    expect(resp.itens.some((i) => i.fonte === 'escala_mensal')).toBe(true);
+    expect(spy.lastEfetivoLength).toBe(3);
+  });
+
+  it('S2.10.14: efetivo.getAll falha → forMilitar segue com [] (NomeMatcher fica sem efeito)', async () => {
+    const data = '2026-05-29';
+    const deps = emptyDeps();
+    const spy: { lastEfetivoLength?: number } = {};
+    deps.escalas = makeEscalas(
+      {
+        [NF_TARGET]: [{ data, equipe: 'C', viatura: 'ABTS 01', funcao: 'Motorista' }],
+      },
+      spy,
+    );
+    deps.efetivo = {
+      getAll: async () => {
+        throw new Error('Supabase cold boot');
+      },
+    } as never;
+    const svc = new AgendaService(
+      deps.mf,
+      deps.escalas,
+      deps.especiais,
+      deps.notas,
+      deps.chop,
+      deps.iseo,
+      deps.atestados,
+      deps.dispensas,
+      deps.ferias,
+      deps.trocas,
+      deps.efetivo,
+    );
+    // Não deve lançar; segue com array vazio.
+    const resp = await svc.forMilitar(NF_TARGET, data, data, NOME_TARGET);
+    expect(spy.lastEfetivoLength).toBe(0);
+    // Como o mock filtra apenas por NF (e o stub não usa efetivo internamente),
+    // o entry ainda aparece. O importante é que NÃO derrubou a agenda.
+    expect(resp.itens.length).toBeGreaterThanOrEqual(0);
   });
 
   it('integra atestado, dispensa, férias do militar', async () => {

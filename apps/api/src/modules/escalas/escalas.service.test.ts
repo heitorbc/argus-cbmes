@@ -83,8 +83,20 @@ function makePrismaMock(): PrismaService {
     findMany: async ({
       orderBy: _orderBy,
       select: _select,
-    }: { orderBy?: unknown; select?: unknown } = {}) => {
+      include,
+      where: _where,
+    }: {
+      orderBy?: unknown;
+      select?: unknown;
+      include?: { composicaoEntries?: boolean };
+      where?: unknown;
+    } = {}) => {
       const arr = [...mesesById.values()].sort((a, b) => b.ano - a.ano || b.mes - a.mes);
+      // S2.10.14 — suporta include.composicaoEntries (usado por
+      // `listEscaladosDoMilitarNoRange`).
+      if (include?.composicaoEntries) {
+        return arr.map((m) => ({ ...m, composicaoEntries: entriesByMesId.get(m.id) ?? [] }));
+      }
       return arr;
     },
     create: async ({
@@ -301,6 +313,143 @@ describe('EscalasService', () => {
     expect(dia20.entries[0]?.militar.nomeGuerra).toBe('SUBSTITUTO');
     const dia01 = await service.getEscaladosDoDia(2026, 5, '2026-05-01');
     expect(dia01.entries.find((e) => e.funcao === 'Ch')?.militar.nomeGuerra).toBe('BARCELLOS');
+  });
+});
+
+describe('EscalasService.listEscaladosDoMilitarNoRange (S2.10.14)', () => {
+  let service: EscalasService;
+
+  beforeEach(() => {
+    service = makeSvc();
+  });
+
+  /**
+   * S2.10.14 — Fix do bug "escalas mensais sumindo": ComposicaoEntry no
+   * Postgres tem `militarNf=null` (parser XLSX nunca preenche). O filtro
+   * antigo `c.militar.nf !== nf` descartava todas as entries. Fix:
+   * passar efetivo, instancia NomeMatcher para resolver via militarRaw.
+   */
+  it('com efetivo: resolve militarNf=null via NomeMatcher e retorna dias escalados', async () => {
+    // Escala com BARCELLOS NF=undefined na composição (parser XLSX padrão).
+    await service.save({
+      ano: 2026,
+      mes: 5,
+      origemArquivo: 'fake.xlsx',
+      importadoEm: new Date().toISOString(),
+      diaEquipe: { '2026-05-29': 'C' },
+      composicaoPorQuinzena: {
+        q1: [],
+        q2: [
+          // 29/05 > ultimoDiaQ1=14 → quinzena 2
+          {
+            equipe: 'C',
+            viatura: 'ABTS 01',
+            funcao: 'Ch',
+            militar: {
+              raw: '2º SGT BARCELLOS',
+              postoAbreviado: '2ºSGT',
+              nomeGuerra: 'BARCELLOS',
+              // Note: nf undefined! (caso real do parser XLSX)
+            },
+          },
+        ],
+        ultimoDiaQ1: 14,
+      },
+      avisos: [],
+    });
+
+    // Efetivo consolidado: BARCELLOS NF 3037509 está no efetivo.
+    const efetivo = [
+      {
+        nf: '3037509',
+        nome: 'HEITOR BARCELLOS COELHO',
+        nomeGuerra: 'BARCELLOS',
+        posto: '2ºSGT',
+        ant: 419,
+      } as never,
+    ];
+
+    const r = await service.listEscaladosDoMilitarNoRange(
+      '3037509',
+      '2026-05-29',
+      '2026-05-29',
+      efetivo,
+    );
+
+    // Esperado: 29/05 (Charlie escalada com BARCELLOS resolvido via matcher)
+    expect(r).toHaveLength(1);
+    expect(r[0]?.data).toBe('2026-05-29');
+    expect(r[0]?.equipe).toBe('C');
+    expect(r[0]?.viatura).toBe('ABTS 01');
+  });
+
+  it('sem efetivo: comportamento legado — NF=null descartado (back-compat)', async () => {
+    await service.save({
+      ano: 2026,
+      mes: 5,
+      origemArquivo: 'fake.xlsx',
+      importadoEm: new Date().toISOString(),
+      diaEquipe: { '2026-05-29': 'C' },
+      composicaoPorQuinzena: {
+        q1: [
+          {
+            equipe: 'C',
+            viatura: 'ABTS 01',
+            funcao: 'Ch',
+            militar: {
+              raw: '2º SGT BARCELLOS',
+              postoAbreviado: '2ºSGT',
+              nomeGuerra: 'BARCELLOS',
+            },
+          },
+        ],
+        q2: [],
+        ultimoDiaQ1: 14,
+      },
+      avisos: [],
+    });
+
+    // Sem efetivo, NF=undefined → entry descartada.
+    const r = await service.listEscaladosDoMilitarNoRange('3037509', '2026-05-29', '2026-05-29');
+    expect(r).toEqual([]);
+  });
+
+  it('com efetivo + NF salvo no entry: usa direto (NomeMatcher não é necessário)', async () => {
+    await service.save({
+      ano: 2026,
+      mes: 5,
+      origemArquivo: 'fake.xlsx',
+      importadoEm: new Date().toISOString(),
+      diaEquipe: { '2026-05-29': 'C' },
+      composicaoPorQuinzena: {
+        q1: [],
+        q2: [
+          {
+            equipe: 'C',
+            viatura: 'ABTS 01',
+            funcao: 'Ch',
+            militar: {
+              raw: '2º SGT BARCELLOS',
+              postoAbreviado: '2ºSGT',
+              nomeGuerra: 'BARCELLOS',
+              nf: '3037509', // NF salvo (caso ideal pós-enrichment futuro)
+            },
+          },
+        ],
+        ultimoDiaQ1: 14,
+      },
+      avisos: [],
+    });
+
+    // Efetivo vazio mesmo — não importa, NF já está no entry.
+    const r = await service.listEscaladosDoMilitarNoRange(
+      '3037509',
+      '2026-05-29',
+      '2026-05-29',
+      [],
+    );
+    expect(r).toHaveLength(1);
+    expect(r[0]?.data).toBe('2026-05-29');
   });
 });
 

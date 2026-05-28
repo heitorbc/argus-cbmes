@@ -57,8 +57,14 @@ export function makeEscalasPrismaMock(): PrismaService {
       }
       return null;
     },
-    findMany: async () => {
-      return [...emById.values()].sort((a, b) => b.ano - a.ano || b.mes - a.mes);
+    findMany: async (args?: { include?: { composicaoEntries?: boolean } }) => {
+      const rows = [...emById.values()].sort((a, b) => b.ano - a.ano || b.mes - a.mes);
+      // S2.10.14 — suporta include.composicaoEntries (usado por
+      // `listEscaladosDoMilitarNoRange`).
+      if (args?.include?.composicaoEntries) {
+        return rows.map((m) => ({ ...m, composicaoEntries: ceByEmId.get(m.id) ?? [] }));
+      }
+      return rows;
     },
     create: async ({ data }: { data: Record<string, unknown> }) => {
       const id = `em-${emCounter++}`;

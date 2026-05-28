@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { addDays, endOfMonth, format, startOfMonth, subMonths } from 'date-fns';
 import type { AgendaItem, AgendaResponse, AgendaFonte } from '@argus/shared-types';
 import { ApiError, api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
@@ -54,6 +55,90 @@ function loadFontesFromStorage(): Set<AgendaFonte> | null {
 }
 
 /**
+ * S2.10.14 — Filtros de tempo da agenda.
+ *
+ * Substitui os botões 30d/60d/90d + checkbox "Incluir passado" anteriores
+ * (decisão Tech Lead 2026-05-28):
+ *  - `dias15` (default): próximos 15 dias a partir de hoje
+ *  - `mesAtual`: do 1º ao último dia do mês corrente
+ *  - `mesAnterior`: do 1º ao último dia do mês anterior
+ *  - `custom`: range arbitrário escolhido via 2 date pickers (≤ 90 dias)
+ */
+type RangePreference =
+  | { tipo: 'dias15' }
+  | { tipo: 'mesAtual' }
+  | { tipo: 'mesAnterior' }
+  | { tipo: 'custom'; inicio: string; fim: string };
+
+const RANGE_STORAGE_KEY = 'argus.agenda.rangePreference';
+const DEFAULT_RANGE: RangePreference = { tipo: 'dias15' };
+const MAX_RANGE_DIAS = 90; // alinhado com limite do backend (/agenda/range)
+
+function toIso(d: Date): string {
+  return format(d, 'yyyy-MM-dd');
+}
+
+function computeRange(pref: RangePreference): { inicio: string; fim: string } {
+  const hoje = new Date();
+  switch (pref.tipo) {
+    case 'dias15':
+      return { inicio: toIso(hoje), fim: toIso(addDays(hoje, 15)) };
+    case 'mesAtual':
+      return { inicio: toIso(startOfMonth(hoje)), fim: toIso(endOfMonth(hoje)) };
+    case 'mesAnterior': {
+      const mesAnt = subMonths(hoje, 1);
+      return { inicio: toIso(startOfMonth(mesAnt)), fim: toIso(endOfMonth(mesAnt)) };
+    }
+    case 'custom':
+      return { inicio: pref.inicio, fim: pref.fim };
+  }
+}
+
+function diffDays(inicioIso: string, fimIso: string): number {
+  const a = new Date(inicioIso + 'T00:00:00Z').getTime();
+  const b = new Date(fimIso + 'T00:00:00Z').getTime();
+  return Math.round((b - a) / 86_400_000);
+}
+
+function isValidCustom(inicio: string, fim: string): boolean {
+  if (!inicio || !fim) return false;
+  const d = diffDays(inicio, fim);
+  return d >= 0 && d <= MAX_RANGE_DIAS;
+}
+
+function loadRangeFromStorage(): RangePreference {
+  if (typeof window === 'undefined') return DEFAULT_RANGE;
+  try {
+    const raw = window.localStorage.getItem(RANGE_STORAGE_KEY);
+    if (!raw) return DEFAULT_RANGE;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return DEFAULT_RANGE;
+    const obj = parsed as { tipo?: unknown; inicio?: unknown; fim?: unknown };
+    if (obj.tipo === 'dias15') return { tipo: 'dias15' };
+    if (obj.tipo === 'mesAtual') return { tipo: 'mesAtual' };
+    if (obj.tipo === 'mesAnterior') return { tipo: 'mesAnterior' };
+    if (
+      obj.tipo === 'custom' &&
+      typeof obj.inicio === 'string' &&
+      typeof obj.fim === 'string' &&
+      isValidCustom(obj.inicio, obj.fim)
+    ) {
+      return { tipo: 'custom', inicio: obj.inicio, fim: obj.fim };
+    }
+    return DEFAULT_RANGE;
+  } catch {
+    return DEFAULT_RANGE;
+  }
+}
+
+const RANGE_LABELS: Record<RangePreference['tipo'], string> = {
+  dias15: '15d (padrão)',
+  mesAtual: 'Mês atual',
+  mesAnterior: 'Mês anterior',
+  custom: 'Personalizado',
+};
+
+/**
  * Página /agenda — visão completa do militar logado.
  * Toggle entre lista cronológica e grade de calendário mensal.
  * Filtros: range (30/60/90 dias) + fontes ativas. Conflitos destacados.
@@ -61,8 +146,25 @@ function loadFontesFromStorage(): Set<AgendaFonte> | null {
 export function AgendaPage() {
   const { user } = useAuth();
   const [visao, setVisao] = useState<Visao>('lista');
-  const [dias, setDias] = useState<number>(30);
-  const [incluirPassado, setIncluirPassado] = useState(false);
+
+  // S2.10.14 — Filtros de tempo: 15d (default) / Mês atual / Mês anterior / Personalizado.
+  const [rangePref, setRangePref] = useState<RangePreference>(() => loadRangeFromStorage());
+  // Drafts dos inputs custom (mantidos separados para validar antes de aplicar).
+  const [customInicio, setCustomInicio] = useState<string>(() =>
+    rangePref.tipo === 'custom' ? rangePref.inicio : toIso(new Date()),
+  );
+  const [customFim, setCustomFim] = useState<string>(() =>
+    rangePref.tipo === 'custom' ? rangePref.fim : toIso(addDays(new Date(), 15)),
+  );
+
+  // Persiste preferência sempre que muda.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(RANGE_STORAGE_KEY, JSON.stringify(rangePref));
+    } catch {
+      /* ignore */
+    }
+  }, [rangePref]);
 
   // S2.10.13c — Default: 4 fontes core (Mensal/Especial/ISEO/Trocas).
   // Demais ficam desativas no 1º acesso; user marca o que quer ver.
@@ -99,24 +201,18 @@ export function AgendaPage() {
     return TODAS_FONTES.filter((f) => f !== 'chefe_operacoes' || isChopHabilitado);
   }, [isChopHabilitado]);
 
+  // S2.10.14 — Range efetivo aplicado ao backend. Sempre usa /agenda/range
+  // (mais flexível que /agenda?dias=N, mesmo no caso dias15).
+  const range = useMemo(() => computeRange(rangePref), [rangePref]);
+
   // S2.10.9c — useQuery substitui useEffect+fetch. staleTime 5min reduz refetches em navegações.
   const {
     data,
     isLoading: loading,
     error: queryError,
   } = useQuery<AgendaResponse>({
-    queryKey: ['agenda', dias, incluirPassado],
-    queryFn: () => {
-      if (incluirPassado) {
-        const hoje = new Date();
-        const inicio = new Date(hoje);
-        inicio.setUTCDate(inicio.getUTCDate() - 30);
-        const fim = new Date(hoje);
-        fim.setUTCDate(fim.getUTCDate() + dias);
-        return api.agendaRange(inicio.toISOString().slice(0, 10), fim.toISOString().slice(0, 10));
-      }
-      return api.agendaProxima(dias);
-    },
+    queryKey: ['agenda', range.inicio, range.fim],
+    queryFn: () => api.agendaRange(range.inicio, range.fim),
     staleTime: 5 * 60 * 1000,
   });
   const error = queryError
@@ -195,31 +291,86 @@ export function AgendaPage() {
             </button>
           </div>
 
-          <div className="ml-auto flex items-center gap-2 text-xs">
-            <label className="flex items-center gap-1">
-              <input
-                type="checkbox"
-                checked={incluirPassado}
-                onChange={(e) => setIncluirPassado(e.target.checked)}
-                className="h-4 w-4"
-              />
-              <span className="text-slate-700">Incluir passado (30d)</span>
-            </label>
-            <span className="text-slate-500">Range:</span>
-            {[30, 60, 90].map((n) => (
-              <button
-                key={n}
-                type="button"
-                onClick={() => setDias(n)}
-                className={`rounded px-2 py-1 ${
-                  dias === n ? 'bg-cbmes-blue text-white' : 'border border-slate-300 text-slate-700'
-                }`}
-              >
-                {n}d
-              </button>
-            ))}
+          {/* S2.10.14 — Filtros de tempo: 15d (default) / Mês atual / Mês anterior / Personalizado */}
+          <div className="ml-auto flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-slate-500">Período:</span>
+            {(['dias15', 'mesAtual', 'mesAnterior', 'custom'] as const).map((t) => {
+              const ativo = rangePref.tipo === t;
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => {
+                    if (t === 'custom') {
+                      // Mantém valores atuais se ainda inválidos; aplica só ao clicar "Aplicar".
+                      if (isValidCustom(customInicio, customFim)) {
+                        setRangePref({ tipo: 'custom', inicio: customInicio, fim: customFim });
+                      } else {
+                        // Inicializa drafts com range válido se eram inválidos.
+                        const hoje = new Date();
+                        const i = toIso(hoje);
+                        const f = toIso(addDays(hoje, 15));
+                        setCustomInicio(i);
+                        setCustomFim(f);
+                        setRangePref({ tipo: 'custom', inicio: i, fim: f });
+                      }
+                    } else {
+                      setRangePref({ tipo: t });
+                    }
+                  }}
+                  className={`rounded-button px-3 py-1 ${
+                    ativo
+                      ? 'bg-cbmes-blue text-white font-medium'
+                      : 'border border-slate-300 bg-white text-slate-700'
+                  }`}
+                >
+                  {RANGE_LABELS[t]}
+                </button>
+              );
+            })}
           </div>
         </div>
+
+        {/* Inputs de range custom (renderizam só quando Personalizado selecionado) */}
+        {rangePref.tipo === 'custom' && (
+          <div className="mt-2 flex flex-wrap items-end gap-2 rounded border border-slate-200 bg-white p-3 text-xs">
+            <label className="flex flex-col gap-1">
+              <span className="text-slate-600">De:</span>
+              <input
+                type="date"
+                value={customInicio}
+                onChange={(e) => setCustomInicio(e.target.value)}
+                className="rounded border border-slate-300 px-2 py-1 text-sm"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-slate-600">Até:</span>
+              <input
+                type="date"
+                value={customFim}
+                onChange={(e) => setCustomFim(e.target.value)}
+                className="rounded border border-slate-300 px-2 py-1 text-sm"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => setRangePref({ tipo: 'custom', inicio: customInicio, fim: customFim })}
+              disabled={!isValidCustom(customInicio, customFim)}
+              className="rounded-button bg-cbmes-blue px-3 py-1.5 text-white disabled:opacity-50"
+            >
+              Aplicar
+            </button>
+            {!isValidCustom(customInicio, customFim) && (
+              <span className="text-feedback-error">
+                {!customInicio || !customFim
+                  ? 'Selecione data de início e fim'
+                  : diffDays(customInicio, customFim) < 0
+                    ? 'Fim deve ser ≥ Início'
+                    : `Range máximo ${MAX_RANGE_DIAS} dias`}
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="mt-2 flex flex-wrap gap-2 rounded border border-slate-200 bg-white p-3 text-xs">
           <span className="text-slate-500">Filtrar fontes:</span>
@@ -246,7 +397,11 @@ export function AgendaPage() {
         ) : visao === 'lista' ? (
           <ListaView itens={itensFiltrados} datasConflito={datasComConflito} />
         ) : (
-          <CalendarioView itens={itensFiltrados} datasConflito={datasComConflito} dias={dias} />
+          <CalendarioView
+            itens={itensFiltrados}
+            datasConflito={datasComConflito}
+            dias={diffDays(range.inicio, range.fim) + 1}
+          />
         )}
       </section>
     </main>
