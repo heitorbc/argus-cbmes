@@ -121,4 +121,45 @@ describe('NomeMatcher', () => {
     expect(r.resolved).toBeNull();
     expect(r.ambiguidade).toBe(false);
   });
+
+  // S2.12c — divergência estrutural: NF casa, mas posto e/ou nomeGuerra na
+  // referência (XLSX/planilha) estão diferentes do efetivo (QDI). Caller decide
+  // se loga, marca o ato pra correção, etc — match continua válido.
+  it('S2.12c: marca divergencia quando NF casa mas nomeGuerra é diferente', () => {
+    const r = matcher.resolve({
+      raw: '2º SGT BARCELOS',
+      postoAbreviado: '2ºSGT',
+      nomeGuerra: 'BARCELOS', // grafia errada no XLSX (sem dois L)
+      nf: '3037509',
+    });
+    expect(r.resolved?.nf).toBe('3037509');
+    expect(r.ambiguidade).toBe(false);
+    expect(r.divergencia).toBeDefined();
+    expect(r.divergencia?.nomeGuerraRef).toBe('BARCELOS');
+    expect(r.divergencia?.nomeGuerraEfetivo).toBe('BARCELLOS');
+  });
+
+  it('S2.12c: marca divergencia quando posto na ref é diferente do efetivo', () => {
+    const r = matcher.resolve({
+      raw: '3º SGT BARCELLOS',
+      postoAbreviado: '3ºSGT', // posto desatualizado (Heitor promoveu a 2ºSGT)
+      nomeGuerra: 'BARCELLOS',
+      nf: '3037509',
+    });
+    expect(r.resolved?.nf).toBe('3037509');
+    expect(r.divergencia).toBeDefined();
+    expect(r.divergencia?.postoRef).toBe('3ºSGT');
+    expect(r.divergencia?.postoEfetivo).toBe('2ºSGT');
+  });
+
+  it('S2.12c: NÃO marca divergencia quando posto/nomeGuerra na ref batem (whitespace/case tolerável)', () => {
+    const r = matcher.resolve({
+      raw: '2º SGT BARCELLOS',
+      postoAbreviado: '2º SGT', // espaço extra
+      nomeGuerra: ' BARCELLOS ', // espaços em volta
+      nf: '3037509',
+    });
+    expect(r.resolved?.nf).toBe('3037509');
+    expect(r.divergencia).toBeUndefined();
+  });
 });

@@ -156,29 +156,24 @@ export class EscalasEspeciaisService implements OnModuleInit {
   }
 
   /**
-   * Upsert por (ano, mes) com cascata de atos: deleta atos antigos e
-   * recria. Re-import substitui mês inteiro (ADR-014 D4).
+   * Upsert por (ano, mes) com **diff seletivo por ato** (S2.12c).
+   *
+   * Antes (S2.10.5): `deleteMany` total + `create` cascade. Funcionalmente
+   * idêntico ao diff seletivo (atos não têm relações), mas perdia chance de
+   * registrar quantos atos foram adicionados/removidos/mantidos no log.
+   *
+   * Agora: chave estável `{data|militarRaw|horario|funcao}` permite computar
+   * `toAdd`, `toRemove`, `unchanged` e aplicar só o necessário. Em meses
+   * idênticos (re-import sem mudança), zero writes a `escalaEspecialAto`.
+   * Em meses com 1 ato alterado: 1 delete + 1 create em vez de N + N.
    */
   private async upsertNoPostgres(escala: EscalaEspecialMensal): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       const existing = await tx.escalaEspecialMensal.findUnique({
         where: { ano_mes: { ano: escala.ano, mes: escala.mes } },
+        include: { atos: true },
       });
-      if (existing) {
-        await tx.escalaEspecialAto.deleteMany({
-          where: { escalaEspecialId: existing.id },
-        });
-        await tx.escalaEspecialMensal.update({
-          where: { id: existing.id },
-          data: {
-            origemArquivo: escala.origemArquivo,
-            importadoEm: new Date(escala.importadoEm),
-            importadoPorNf: escala.importadoPorNf ?? null,
-            avisos: escala.avisos as unknown as object,
-            atos: { create: escala.atos.map(toAtoCreate) },
-          },
-        });
-      } else {
+      if (!existing) {
         await tx.escalaEspecialMensal.create({
           data: {
             ano: escala.ano,
@@ -190,7 +185,44 @@ export class EscalasEspeciaisService implements OnModuleInit {
             atos: { create: escala.atos.map(toAtoCreate) },
           },
         });
+        return;
       }
+
+      // S2.12c — Diff seletivo.
+      const keyExistente = (a: PrismaEscalaEspecialAto): string =>
+        `${a.data}|${a.militarRaw}|${a.horario}|${a.funcao}`;
+      const keyNovo = (a: EscalaEspecialMensal['atos'][number]): string =>
+        `${a.data}|${a.militarRaw}|${a.horario}|${a.funcao}`;
+
+      const existentesPorChave = new Map(existing.atos.map((a) => [keyExistente(a), a]));
+      const novasChaves = new Set(escala.atos.map(keyNovo));
+
+      const toAddNovos = escala.atos.filter((a) => !existentesPorChave.has(keyNovo(a)));
+      const toRemoveIds = existing.atos
+        .filter((a) => !novasChaves.has(keyExistente(a)))
+        .map((a) => a.id);
+
+      if (toRemoveIds.length > 0) {
+        await tx.escalaEspecialAto.deleteMany({ where: { id: { in: toRemoveIds } } });
+      }
+      // S2.12c — atualiza meta (origemArquivo/importadoEm/avisos) mesmo
+      // quando não há diff de atos, pois importação é re-importação semântica.
+      await tx.escalaEspecialMensal.update({
+        where: { id: existing.id },
+        data: {
+          origemArquivo: escala.origemArquivo,
+          importadoEm: new Date(escala.importadoEm),
+          importadoPorNf: escala.importadoPorNf ?? null,
+          avisos: escala.avisos as unknown as object,
+          ...(toAddNovos.length > 0 ? { atos: { create: toAddNovos.map(toAtoCreate) } } : {}),
+        },
+      });
+
+      this.logger.log(
+        `Escala Especial ${String(escala.mes).padStart(2, '0')}/${escala.ano} diff: ` +
+          `+${toAddNovos.length} novos, -${toRemoveIds.length} removidos, ` +
+          `${existing.atos.length - toRemoveIds.length} mantidos.`,
+      );
     });
   }
 }

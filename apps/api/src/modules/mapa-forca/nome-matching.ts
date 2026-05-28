@@ -5,10 +5,20 @@ import { previaMatchKey } from '@argus/shared-types';
  * Resultado da resolução nome→NF.
  * - `resolved`: militar único encontrado.
  * - `null`: ausência ou ambiguidade — caller registra inconsistência apropriada.
+ * - `divergencia`: S2.12c — sinalizado quando `ref.nf` casa no efetivo mas
+ *   posto e/ou nomeGuerra na referência (XLSX/planilha) divergem do que está
+ *   no efetivo. Match continua válido (NF é fonte de verdade), mas caller
+ *   pode logar para o Tech Lead corrigir grafia na fonte.
  */
 export interface ResolveResult {
   resolved: Militar | null;
   ambiguidade: boolean;
+  divergencia?: {
+    postoRef: string;
+    postoEfetivo: string;
+    nomeGuerraRef: string;
+    nomeGuerraEfetivo: string;
+  };
 }
 
 /**
@@ -50,7 +60,32 @@ export class NomeMatcher {
     // a integração Mapa Força ↔ Efetivo após bootstrap Sheets-DB (S2.8.2).
     if (ref.nf) {
       const direct = this.byNf.get(ref.nf);
-      if (direct) return { resolved: direct, ambiguidade: false };
+      if (direct) {
+        // S2.12c — Detecta posto/nomeGuerra divergentes entre a referência
+        // (XLSX/planilha) e o efetivo (QDI). NF continua sendo fonte de
+        // verdade, mas a divergência denuncia grafia desatualizada na
+        // fonte — caller pode logar para o Tech Lead corrigir.
+        const postoNorm = normalizeForCompare(ref.postoAbreviado);
+        const nomeNorm = normalizeForCompare(ref.nomeGuerra);
+        const postoEfNorm = normalizeForCompare(direct.posto);
+        const nomeEfNorm = normalizeForCompare(direct.nomeGuerra);
+        if (
+          (postoNorm && postoEfNorm && postoNorm !== postoEfNorm) ||
+          (nomeNorm && nomeEfNorm && nomeNorm !== nomeEfNorm)
+        ) {
+          return {
+            resolved: direct,
+            ambiguidade: false,
+            divergencia: {
+              postoRef: ref.postoAbreviado,
+              postoEfetivo: direct.posto,
+              nomeGuerraRef: ref.nomeGuerra,
+              nomeGuerraEfetivo: direct.nomeGuerra ?? '',
+            },
+          };
+        }
+        return { resolved: direct, ambiguidade: false };
+      }
       // NF informado mas não está no efetivo — caller registra inconsistência
       // (militar foi escalado mas ainda não foi lançado no QDI ex.: DRH atrasado).
       return { resolved: null, ambiguidade: false };
@@ -95,6 +130,16 @@ function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const arr = map.get(key);
   if (arr) arr.push(value);
   else map.set(key, [value]);
+}
+
+function normalizeForCompare(s: string | undefined): string {
+  if (!s) return '';
+  return s
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\s.,]+/g, '')
+    .trim();
 }
 
 function tokenizeNome(nomeGuerra: string): string[] {
