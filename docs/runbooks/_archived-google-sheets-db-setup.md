@@ -1,7 +1,18 @@
-# Setup — Sheets-as-DB com Service Account
+# [ARQUIVADO em S2.10.14c] Setup — Sheets-as-DB com Service Account
 
-**Sprint:** S2.1
-**Última atualização:** 2026-05-15
+> **Status:** Arquivado em 2026-05-28 (S2.10.14c).
+>
+> Sheets-DB foi totalmente removido como integração runtime do ARGUS:
+> Postgres é fonte canônica desde S2.10.5, dual-write encerrado em
+> S2.10.9d, fallback bootstrap removido em S2.10.14a, módulo deletado
+> em S2.10.14b, env vars removidas em S2.10.14c.
+>
+> Este documento permanece como registro histórico. Para integrações
+> runtime atuais com planilhas Google, ver `docs/ARGUS_CBMES_PRD_v2.2.md`
+> §2 (MapaForcaCiodes é a única que sobrevive — via CSV público sem auth).
+
+**Sprint original:** S2.1
+**Última atualização (antes do arquivamento):** 2026-05-15
 **Tempo estimado:** 15–25 minutos (primeira vez no GCP)
 
 ## Por que isso
