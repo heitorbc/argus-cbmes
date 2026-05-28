@@ -25,11 +25,13 @@ export type HealthServico = z.infer<typeof healthServicoSchema>;
 export const healthStatusSchema = z.object({
   /** API NestJS — sempre `ok` se este endpoint respondeu. */
   api: healthServicoSchema,
-  /** Planilha-DB Google Sheets (S2.1). `pending` se sem credenciais. */
-  sheetsDb: healthServicoSchema,
-  /** Mapa Força CIODES (CSV público). */
+  /** Mapa Força CIODES (CSV público real-time, TTL adaptativo). */
   mapaForcaCiodes: healthServicoSchema,
-  /** Supabase — `pending` até S2.9. */
+  /**
+   * Supabase / Postgres — S2.10.13a: check real via `prisma.$queryRaw`
+   * com timeout. `degraded` em latência alta (>1s), `down` em falha,
+   * `ok` em <1s.
+   */
   supabase: healthServicoSchema,
   /** Timestamp do snapshot. */
   geradoEm: z.string(),

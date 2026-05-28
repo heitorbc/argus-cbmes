@@ -7,6 +7,7 @@ import {
 } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
 import { canAccessRoute } from '@/lib/permissions';
+import { Footer } from '@/components/Footer';
 import { LoginPage } from '@/pages/login';
 import { EsqueciASenhaPage } from '@/pages/esqueci-a-senha';
 import { ResetPasswordPage } from '@/pages/reset-password';
@@ -72,7 +73,18 @@ function ProtectedRoute() {
     return <Navigate to="/" replace />;
   }
 
-  return <Outlet />;
+  // S2.10.13a — Footer global com status (3 dots: API/Mapa Força/Supabase).
+  // Renderizado pós-login em TODAS as páginas protegidas. Layout `pb-10`
+  // no body garante que o conteúdo da página não fica escondido atrás
+  // do rodapé fixo.
+  return (
+    <div className="flex min-h-screen flex-col">
+      <div className="flex-1 pb-10">
+        <Outlet />
+      </div>
+      <Footer />
+    </div>
+  );
 }
 
 function PublicOnlyRoute() {
