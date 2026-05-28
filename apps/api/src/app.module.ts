@@ -28,7 +28,6 @@ import { NotasServicoModule } from './modules/notas-servico/notas-servico.module
 import { ParteDiariaModule } from './modules/parte-diaria/parte-diaria.module';
 import { RecursosModule } from './modules/recursos/recursos.module';
 import { ServicoModule } from './modules/servico/servico.module';
-import { SheetsDbModule } from './modules/sheets-db/sheets-db.module';
 import { SyncOrchestratorModule } from './modules/sync-orchestrator/sync-orchestrator.module';
 import { TrocasAutorizadasModule } from './modules/trocas-autorizadas/trocas-autorizadas.module';
 import { UnidadesModule } from './modules/unidades/unidades.module';
@@ -41,9 +40,9 @@ import { ViaturasModule } from './modules/viaturas/viaturas.module';
       // Lê env vars em ordem de prioridade (primeiro encontrado vence). Em
       // dev, `nest start --watch` roda com cwd em `apps/api/`, então usamos
       // caminhos relativos. `.env.local` na raiz é o padrão para overrides
-      // pessoais (ex.: credenciais SA do Sheets-DB) — fica fora do git.
-      // Em produção (Render), as vars vêm do painel; estes paths simplesmente
-      // não existem e o ConfigModule cai no `process.env`.
+      // pessoais — fica fora do git. Em produção (Render), as vars vêm do
+      // painel; estes paths simplesmente não existem e o ConfigModule cai
+      // no `process.env`.
       envFilePath: ['.env.local', '../../.env.local', '.env', '../../.env'],
     }),
     // S2.10.10a — `ScheduleModule.forRoot()` removido junto do `@Cron` do
@@ -76,7 +75,6 @@ import { ViaturasModule } from './modules/viaturas/viaturas.module';
     ParteDiariaModule,
     RecursosModule,
     ServicoModule,
-    SheetsDbModule,
     SyncOrchestratorModule,
     TrocasAutorizadasModule,
     UnidadesModule,
