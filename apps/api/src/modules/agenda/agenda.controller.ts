@@ -1,5 +1,6 @@
 import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
 import type { UserSession } from '@argus/shared-types';
 import { AgendaService } from './agenda.service';
 import type { AgendaResponse } from '@argus/shared-types';
@@ -50,6 +51,33 @@ export class AgendaController {
       throw new BadRequestException('range > 90 dias');
     }
     return this.svc.forMilitar(user.nf, inicio, fim, user.nome);
+  }
+
+  /**
+   * S2.10.15 — Endpoint diagnostic (admin). Recebe `nf` arbitrário e `dias`
+   * (default 30, máx 90) e retorna a agenda + contagens passo-a-passo por
+   * fonte + tamanho do efetivo carregado. Usado para investigar reports de
+   * militares cujas entries não aparecem ("por que não vejo X na agenda?").
+   */
+  @Roles('admin')
+  @Get('_trace')
+  async trace(
+    @Query('nf') nf: string,
+    @Query('dias') diasParam?: string,
+    @Query('nome') nome?: string,
+  ): Promise<{
+    agenda: AgendaResponse;
+    contagensPorFonte: Record<string, number>;
+    efetivoSize: number;
+  }> {
+    if (!nf || !/^\d{6,8}$/.test(nf)) {
+      throw new BadRequestException('nf inválido (esperado 6-8 dígitos)');
+    }
+    const dias = parsePositiveInt(diasParam, 30, 90);
+    const hoje = new Date();
+    const fim = new Date(hoje);
+    fim.setUTCDate(fim.getUTCDate() + dias);
+    return this.svc.trace(nf, toIso(hoje), toIso(fim), nome);
   }
 }
 

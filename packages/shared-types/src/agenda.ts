@@ -3,6 +3,8 @@ import { z } from 'zod';
 export const agendaFonteSchema = z.enum([
   'escala_mensal',
   'escala_especial',
+  'escala_mergulho',
+  'escala_salvamar',
   'nota_servico',
   'iseo_hospitais',
   'chefe_operacoes',
