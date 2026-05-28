@@ -2,27 +2,37 @@
 
 **1º Batalhão Bombeiro Militar — 1ª Companhia (Vitória/ES)**
 
-| Campo                       | Valor                                          |
-| --------------------------- | ---------------------------------------------- |
-| Documento                   | Product Requirements Document (PRD) v2.1       |
-| Status                      | Atualizado pós-homologação e go-live de Fase 1 |
-| Data de emissão             | 14 de maio de 2026                             |
-| Responsável técnico / Admin | 2º SGT Heitor Barcellos Coelho — NF 3037509    |
-| Aprovador                   | Comandante 1ª Cia/1º BBM                       |
-| Classificação               | Uso Interno — CBMES                            |
-| URL produção                | https://argus-cbmes.vercel.app                 |
-| Repositório                 | https://github.com/heitorbc/argus-cbmes        |
+| Campo                       | Valor                                                |
+| --------------------------- | ---------------------------------------------------- |
+| Documento                   | Product Requirements Document (PRD) v2.3             |
+| Status                      | Atualizado pós-migração Supabase + remoção Sheets-DB |
+| Data de emissão             | 28 de maio de 2026                                   |
+| Responsável técnico / Admin | 2º SGT Heitor Barcellos Coelho — NF 3037509          |
+| Aprovador                   | Comandante 1ª Cia/1º BBM                             |
+| Classificação               | Uso Interno — CBMES                                  |
+| URL produção                | https://argus-cbmes.vercel.app                       |
+| Repositório                 | https://github.com/heitorbc/argus-cbmes              |
 
 ---
 
 ## Histórico de revisões
 
-| Versão  | Data           | Descrição                                                                                                                                                                                                                                                                         |
-| ------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0.1     | 30/04/2026     | Template inicial                                                                                                                                                                                                                                                                  |
-| 1.0     | 06/05/2026     | Consolidação AS-IS; APH com IA priorizada                                                                                                                                                                                                                                         |
-| 2.0     | 06/05/2026     | Fase 1 redesenhada para baixo impacto operacional; APH movida para Fase 2                                                                                                                                                                                                         |
-| **2.1** | **14/05/2026** | **Atualização pós-homologação refletindo 13 sprints originais + 11 sub-sprints S6 + 5 séries de PRs de polimento; inclui módulos novos (Dispensas, Atestados, NS, Férias, Trocas, Unidades, Recursos, Escalas Especiais, ChOp, Materiais) e bloqueios remanescentes para Fase 2** |
+| Versão  | Data           | Descrição                                                                                                                                                                                                                                                                                                                                  |
+| ------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0.1     | 30/04/2026     | Template inicial                                                                                                                                                                                                                                                                                                                           |
+| 1.0     | 06/05/2026     | Consolidação AS-IS; APH com IA priorizada                                                                                                                                                                                                                                                                                                  |
+| 2.0     | 06/05/2026     | Fase 1 redesenhada para baixo impacto operacional; APH movida para Fase 2                                                                                                                                                                                                                                                                  |
+| 2.1     | 14/05/2026     | Atualização pós-homologação refletindo 13 sprints originais + 11 sub-sprints S6 + 5 séries de PRs de polimento; inclui módulos novos (Dispensas, Atestados, NS, Férias, Trocas, Unidades, Recursos, Escalas Especiais, ChOp, Materiais) e bloqueios remanescentes para Fase 2                                                              |
+| **2.3** | **28/05/2026** | **Atualização pós-S2.10 (Supabase em produção como fonte canônica) + S2.10.14 (Sheets-DB totalmente removido). Modo WEB (`/web`) introduzido em S2.10.12 com 5 páginas master-detail. Agenda do militar (`/agenda`) com filtros semânticos (15d/mês atual/mês anterior/custom). Atualiza §2 (Banco/Sheets) e §1.3 (cobertura de testes).** |
+
+### O que muda de v2.1 para v2.3
+
+1. **Supabase em produção** como fonte canônica (S2.10.5 → S2.10.9d). Postgres armazena Escalas, Escalas Especiais, Notas de Serviço, Dispensas, Trocas, ISEO, Efetivo consolidado, ChOp, QDI, QDV. Restart de backend não perde dados.
+2. **Sheets-DB completamente removido** (S2.10.14). A planilha-DB BD_ARGUS_CBMES_HOM com Service Account exclusiva foi descontinuada — fallback bootstrap, módulo NestJS e env vars todos eliminados. **Única integração runtime restante com planilha Google é o MapaForcaCiodes** (CSV público, sem auth).
+3. **Modo WEB** (`/web`) introduzido em S2.10.12 — shell desktop dedicado com 5 páginas master-detail (Home, Escalas, Dispensas/Atestados, Trocas/NS) para uso em estações fixas. Coexiste com o shell mobile-first original (`/`).
+4. **Agenda do militar (`/agenda`)** com filtros semânticos: default 15d, mês atual, mês anterior, personalizado (validação ≤90d). Persistência localStorage. Cobre Escala Mensal + Escala Especial — Mergulho/Salvamar pendente em S2.10.15.
+5. **Status real-time** (`/health/status`) com 3 serviços monitorados: API, MapaForcaCiodes (snapshot age), Supabase (`SELECT 1` < 1s). StatusBar na home + Footer no app.
+6. **Cobertura de testes**: ~623 api + 30 web = **653 testes** (vs ~401+27 em v2.1). Aumento de 50% pós-S2.10.
 
 ### O que muda de v2.0 para v2.1
 
@@ -78,15 +88,15 @@
 
 ### 1.3. Métricas de sucesso revisadas
 
-| Indicador                         | Meta v2.0  | Estado atual              | Observação                                  |
-| --------------------------------- | ---------- | ------------------------- | ------------------------------------------- |
-| Tempo de produção da Prévia       | ≤5min      | ✅ ~2min em uso real      | Aderência confirmada em homologação cruzada |
-| Tempo de produção PD              | ≤30min     | ⚠️ Não medido formalmente | Pendente UAT estruturado                    |
-| Tempo de preenchimento MF externo | ≤60s       | ❌ Não-aplicável          | Escrita real não-implementada               |
-| Adesão do efetivo                 | 80% em 30d | ⏳ Pré-medição            | Sistema em uso restrito (homologação)       |
-| Disponibilidade integração MF     | 99,5%      | ❌ Não-aplicável          | Idem                                        |
-| Conformidade documental PD        | 100%       | ✅ DOCX no padrão         | Validado contra PDs reais                   |
-| Cobertura de testes               | ≥60%       | ⚠️ ~401 API + 27 web      | Coverage formal não medida                  |
+| Indicador                         | Meta v2.0  | Estado atual                                    | Observação                                  |
+| --------------------------------- | ---------- | ----------------------------------------------- | ------------------------------------------- |
+| Tempo de produção da Prévia       | ≤5min      | ✅ ~2min em uso real                            | Aderência confirmada em homologação cruzada |
+| Tempo de produção PD              | ≤30min     | ⚠️ Não medido formalmente                       | Pendente UAT estruturado                    |
+| Tempo de preenchimento MF externo | ≤60s       | ❌ Não-aplicável                                | Escrita real não-implementada               |
+| Adesão do efetivo                 | 80% em 30d | ⏳ Pré-medição                                  | Sistema em uso restrito (homologação)       |
+| Disponibilidade integração MF     | 99,5%      | ❌ Não-aplicável                                | Idem                                        |
+| Conformidade documental PD        | 100%       | ✅ DOCX no padrão                               | Validado contra PDs reais                   |
+| Cobertura de testes               | ≥60%       | ⚠️ **~623 API + 30 web** (653 total — S2.10.14) | Coverage formal não medida                  |
 
 ---
 
@@ -95,10 +105,10 @@
 | Camada            | PRD v2.0                                                          | Estado atual                                                                                                                                       | Desvio                                               |
 | ----------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
 | Frontend          | React 18 + Vite + Tailwind + shadcn/ui + TanStack Query + Zustand | React 18 + Vite + Tailwind ✅; **sem shadcn/ui** (componentes custom); **sem TanStack Query** (fetch direto); **sem Zustand** (useState + context) | Stack simplificada                                   |
-| Backend           | Node.js 20 + NestJS + Prisma + Zod                                | NestJS 10.4 + Zod ✅; **Prisma instalado mas schema vazio**                                                                                        | Persistência mock                                    |
-| Banco             | PostgreSQL Supabase                                               | ❌ Não-conectado                                                                                                                                   | **Sprint S5b adiado**                                |
+| Backend           | Node.js 20 + NestJS + Prisma + Zod                                | NestJS 10.4 + Zod + **Prisma 5 em produção** (S2.10.5+) ✅                                                                                         | Conforme                                             |
+| Banco             | PostgreSQL Supabase                                               | ✅ **Em produção** (S2.10.5–9d migração; canônico desde S2.10.9d)                                                                                  | Conforme                                             |
 | Hospedagem app    | Vercel                                                            | ✅ Frontend Vercel; backend em Render/Railway                                                                                                      | Conforme                                             |
-| Integração Sheets | Google Service Account JWT                                        | ❌ **Rejeitada** — usa CSV público (ADR-003)                                                                                                       | Pivô crítico                                         |
+| Integração Sheets | Google Service Account JWT                                        | ✅ **CSV público para tudo (ADR-003)**; Sheets-DB removido em S2.10.14; MapaForcaCiodes (CSV) é única integração runtime restante                  | Sheets-DB foi tentativa interrompida; ADR-003 vence  |
 | PDF               | Puppeteer (Chromium)                                              | ❌ Não-instalado — usa `window.print()`                                                                                                            | Bundle inviável em Vercel                            |
 | DOCX              | Lib `docx` (npm)                                                  | ✅ `docx@9.6.1` server-side builder                                                                                                                | Conforme                                             |
 | Auth              | NF + bcrypt própria                                               | ✅ JWT HS256 8h, cookie httpOnly, bcrypt cost 12                                                                                                   | Conforme                                             |
