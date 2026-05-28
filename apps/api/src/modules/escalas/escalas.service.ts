@@ -7,6 +7,7 @@ import type {
   EscalaMensal,
   LetraEquipe,
   LetraEquipeRotativa,
+  Militar,
 } from '@argus/shared-types';
 import type {
   ComposicaoEntry as PrismaComposicaoEntry,
@@ -18,6 +19,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { parseEscalaXlsx, parseFilename } from './escala-xlsx-parser';
 import { SheetsDbService } from '../sheets-db/sheets-db.service';
 import { rowsToEscalasMensais } from '../sheets-db/sheets-db-serializers';
+import { NomeMatcher } from '../mapa-forca/nome-matching';
 
 /**
  * Resolve a quinzena (1 ou 2) de um dia ISO usando a fronteira gravada na
@@ -276,11 +278,18 @@ export class EscalasService implements OnModuleInit {
    *
    * Custo: 1-2 queries Prisma totais (1 por mês no range) em vez de 30
    * chamadas × 15-20 queries cada.
+   *
+   * S2.10.14 — Fix do bug "escalas mensais sumindo": o parser XLSX
+   * nunca preencheu `militarNf` no `ComposicaoEntry` (sempre null em
+   * Postgres). O filtro estrito `c.militar.nf !== nf` descartava
+   * silenciosamente TODAS as entries. Fix: aceitar `efetivo` opcional
+   * e resolver via `NomeMatcher` quando NF do entry é null.
    */
   async listEscaladosDoMilitarNoRange(
     nf: string,
     inicioIso: string,
     fimIso: string,
+    efetivo?: readonly Militar[],
   ): Promise<
     Array<{
       data: string;
@@ -301,6 +310,11 @@ export class EscalasService implements OnModuleInit {
       include: { composicaoEntries: true },
     });
 
+    // S2.10.14 — Matcher para resolver `militar.nf` quando vier null/undefined.
+    // Pré-condição: caller passa o efetivo consolidado (1 chamada por
+    // request da agenda). Sem efetivo, comportamento legado (strict NF).
+    const matcher = efetivo && efetivo.length > 0 ? new NomeMatcher(efetivo) : null;
+
     const out: Array<{
       data: string;
       equipe: LetraEquipeRotativa;
@@ -318,7 +332,13 @@ export class EscalasService implements OnModuleInit {
         const bucket = q === 1 ? escala.composicaoPorQuinzena.q1 : escala.composicaoPorQuinzena.q2;
         for (const c of bucket) {
           if (c.equipe !== equipe) continue;
-          if (c.militar.nf !== nf) continue;
+          // S2.10.14 — Resolução de NF tolerante a null:
+          // - Se `c.militar.nf` está preenchido (ideal), usa direto
+          // - Se null E temos matcher, tenta resolver pelo nome (militarRaw)
+          //   contra o efetivo consolidado. Se ambíguo/falhar, NF=undefined
+          //   e o entry é descartado (comportamento legado para esse caso).
+          const entryNf = c.militar.nf ?? matcher?.resolve(c.militar)?.resolved?.nf;
+          if (entryNf !== nf) continue;
           out.push({ data, equipe, viatura: c.viatura, funcao: c.funcao });
         }
       }

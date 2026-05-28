@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { AgendaConflito, AgendaItem, AgendaResponse } from '@argus/shared-types';
+import type { AgendaConflito, AgendaItem, AgendaResponse, Militar } from '@argus/shared-types';
 import { MapaForcaService } from '../mapa-forca/mapa-forca.service';
 import { NomeMatcher } from '../mapa-forca/nome-matching';
 import { NotasServicoService } from '../notas-servico/notas-servico.service';
@@ -79,12 +79,26 @@ export class AgendaService {
       return cached.response;
     }
 
+    // S2.10.14 — Carrega efetivo 1× e propaga para coletarDoMapaForca
+    // (precisa para resolver NF=null em ComposicaoEntry) E coletarEscalaEspecial
+    // (já usava NomeMatcher lazy; agora evita 2ª chamada). Se efetivo falhar,
+    // segue com [] (NomeMatcher fica sem efeito mas demais coletores seguem).
+    let efetivoConsolidado: Militar[] = [];
+    try {
+      efetivoConsolidado = await this.efetivo.getAll({
+        somente1aCia: false,
+        incluirEfetivoOrfao: true,
+      });
+    } catch (e) {
+      this.logger.warn(`efetivo.getAll falhou (nf=${nf}): ${(e as Error).message}`);
+    }
+
     // S2.10.8c-fix — Promise.allSettled em vez de Promise.all: 1 coletor que
     // falhe (ex: prisma.dispensa.findMany falhando em cold boot Supabase) NÃO
     // deve derrubar a agenda inteira com 500. Cada falha vira log warn + [].
     const settled = await Promise.allSettled([
-      this.coletarDoMapaForca(nf, dataInicioIso, dataFimIso),
-      this.coletarEscalaEspecial(nf, dataInicioIso, dataFimIso),
+      this.coletarDoMapaForca(nf, dataInicioIso, dataFimIso, efetivoConsolidado),
+      this.coletarEscalaEspecial(nf, dataInicioIso, dataFimIso, efetivoConsolidado),
       this.coletarNotasServico(nf, dataInicioIso, dataFimIso),
       this.coletarIseoHospitais(nf, dataInicioIso, dataFimIso),
       this.coletarChefesOperacoes(nf, dataInicioIso, dataFimIso),
@@ -157,8 +171,15 @@ export class AgendaService {
    * na composição (eram aplicadas via NomeMatcher pelo MapaForcaService).
    * Mantido em `coletarTrocasAutorizadas` (coletor separado).
    */
-  private async coletarDoMapaForca(nf: string, inicio: string, fim: string): Promise<AgendaItem[]> {
-    const escalados = await this.escalas.listEscaladosDoMilitarNoRange(nf, inicio, fim);
+  private async coletarDoMapaForca(
+    nf: string,
+    inicio: string,
+    fim: string,
+    efetivo: readonly Militar[],
+  ): Promise<AgendaItem[]> {
+    // S2.10.14 — Passa `efetivo` para resolver `c.militar.nf` via NomeMatcher
+    // quando o parser XLSX não preencheu (caso recorrente em Postgres).
+    const escalados = await this.escalas.listEscaladosDoMilitarNoRange(nf, inicio, fim, efetivo);
     return escalados.map((e) => {
       const sub: string[] = [e.viatura];
       if (e.funcao) sub.push(e.funcao);
@@ -178,11 +199,15 @@ export class AgendaService {
    * Escalas especiais (XLSM) — entries do militar. O parser do XLSM não
    * resolve `militarNf` (deixa undefined), por isso resolvemos sob demanda
    * via `NomeMatcher` cruzando `militarRaw` com o efetivo consolidado.
+   *
+   * S2.10.14 — Recebe `efetivo` pré-carregado em `forMilitar` (era lazy
+   * via `this.efetivo.getAll()` aqui). Evita 2 chamadas no mesmo request.
    */
   private async coletarEscalaEspecial(
     nf: string,
     inicio: string,
     fim: string,
+    efetivo: readonly Militar[],
   ): Promise<AgendaItem[]> {
     const mesesNoRange = new Set<string>();
     for (const data of iterDias(inicio, fim)) {
@@ -198,7 +223,7 @@ export class AgendaService {
     const escalas = escalasRaw.filter((e): e is NonNullable<typeof e> => e !== null);
     if (escalas.length === 0) return [];
 
-    let matcher: NomeMatcher | null = null;
+    const matcher = efetivo.length > 0 ? new NomeMatcher(efetivo) : null;
     const matcherCache = new Map<string, string | null>();
     const out: AgendaItem[] = [];
 
@@ -208,14 +233,7 @@ export class AgendaService {
         // 1) Se o ato já tem NF resolvido (importação futura), use-o.
         // 2) Caso contrário, parse `militarRaw` e resolva via NomeMatcher.
         let atoNf = ato.militarNf;
-        if (!atoNf) {
-          if (!matcher) {
-            const efetivoTotal = await this.efetivo.getAll({
-              somente1aCia: false,
-              incluirEfetivoOrfao: true,
-            });
-            matcher = new NomeMatcher(efetivoTotal);
-          }
+        if (!atoNf && matcher) {
           const cached = matcherCache.get(ato.militarRaw);
           if (cached !== undefined) {
             atoNf = cached ?? undefined;
