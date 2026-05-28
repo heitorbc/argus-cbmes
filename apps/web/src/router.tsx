@@ -43,6 +43,7 @@ import { TrocasPage } from '@/pages/trocas';
 import { NotasServicoPage } from '@/pages/notas-servico';
 import { ParteDiariaPage } from '@/pages/parte-diaria';
 import { ServicoIdeoPage } from '@/pages/servico-ideo';
+import { MeusDadosPage } from '@/pages/perfil/meus-dados';
 import { LoadingScreen } from '@/components/LoadingScreen';
 
 /**
@@ -130,6 +131,8 @@ export const router = createBrowserRouter([
         children: [
           { path: '/', element: <HomePage /> },
           { path: '/agenda', element: <AgendaPage /> },
+          // S2.10.13d — Meu Perfil
+          { path: '/perfil/meus-dados', element: <MeusDadosPage /> },
           { path: '/trocar-senha', element: <TrocarSenhaPage /> },
           { path: '/cadastros/efetivo', element: <EfetivoPage /> },
           { path: '/cadastros/efetivo/:nf', element: <EfetivoDetalhePage /> },
