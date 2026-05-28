@@ -112,12 +112,16 @@ function makePrismaMock(): PrismaService {
       const next: PrismaMensal = { ...m, ...data } as PrismaMensal;
       mesesById.set(where.id, next);
       if (data.atos?.create) {
-        const atos: PrismaAto[] = data.atos.create.map((a, i) => ({
+        // S2.12c — diff seletivo: update.atos.create APENDA (não substitui).
+        // deleteMany separado já cuidou dos atos a remover.
+        const existentes = atosByMesId.get(where.id) ?? [];
+        let nextId = existentes.length;
+        const novosAtos: PrismaAto[] = data.atos.create.map((a) => ({
           ...a,
-          id: `${where.id}-ato-${i}`,
+          id: `${where.id}-ato-${nextId++}`,
           escalaEspecialId: where.id,
         }));
-        atosByMesId.set(where.id, atos);
+        atosByMesId.set(where.id, [...existentes, ...novosAtos]);
       }
       return next;
     },
@@ -134,8 +138,26 @@ function makePrismaMock(): PrismaService {
   };
 
   const escalaEspecialAto = {
-    deleteMany: async ({ where }: { where: { escalaEspecialId: string } }) => {
-      atosByMesId.delete(where.escalaEspecialId);
+    deleteMany: async ({
+      where,
+    }: {
+      where: { escalaEspecialId?: string; id?: { in: string[] } };
+    }) => {
+      // S2.12c — diff seletivo passa `where: { id: { in: [...] } }`.
+      if (where.id?.in) {
+        const idsToDelete = new Set(where.id.in);
+        let count = 0;
+        for (const [mesId, atos] of atosByMesId.entries()) {
+          const next = atos.filter((a) => !idsToDelete.has(a.id));
+          count += atos.length - next.length;
+          atosByMesId.set(mesId, next);
+        }
+        return { count };
+      }
+      // Backward-compat: delete inteiro por escalaEspecialId.
+      if (where.escalaEspecialId) {
+        atosByMesId.delete(where.escalaEspecialId);
+      }
       return { count: 0 };
     },
     findMany: async ({
@@ -203,5 +225,65 @@ describe('EscalasEspeciaisService', () => {
     expect(await service.getAtosDoDia(2026, 5, '2026-05-02')).toHaveLength(1);
     expect(await service.getAtosDoDia(2026, 5, '2026-05-03')).toEqual([]);
     expect(await service.getAtosDoDia(2026, 4, '2026-04-01')).toEqual([]);
+  });
+
+  // S2.12c — diff seletivo: re-import preserva atos idênticos por
+  // {data|militarRaw|horario|funcao}, adiciona novos, remove ausentes.
+  it('S2.12c: re-import idêntico mantém todos os atos (zero diff)', async () => {
+    await service.save(fakeEscala());
+    await service.save(fakeEscala()); // mesma escala
+    const got = await service.get(2026, 5);
+    expect(got?.atos).toHaveLength(3);
+  });
+
+  it('S2.12c: re-import com 1 ato substituído remove o antigo e adiciona o novo', async () => {
+    await service.save(fakeEscala());
+    const novaVersao = fakeEscala({
+      atos: [
+        {
+          data: '2026-05-01',
+          militarRaw: 'SGT MARIANE',
+          horario: '07:10 ÀS 13:10',
+          funcao: 'APOIO',
+        },
+        // SGT BISSOLI substituído por CB FABRE
+        { data: '2026-05-01', militarRaw: 'CB FABRE', horario: '13:10 ÀS 19:10', funcao: 'APOIO' },
+        {
+          data: '2026-05-02',
+          militarRaw: 'SD LOUREIRO',
+          horario: '12:00 ÀS 18:00',
+          funcao: 'APOIO',
+        },
+      ],
+    });
+    await service.save(novaVersao);
+    const got = await service.get(2026, 5);
+    expect(got?.atos).toHaveLength(3);
+    expect(got?.atos.find((a) => a.militarRaw === 'SGT BISSOLI')).toBeUndefined();
+    expect(got?.atos.find((a) => a.militarRaw === 'CB FABRE')).toBeDefined();
+  });
+
+  it('S2.12c: re-import com ato adicional mantém os antigos + adiciona o novo', async () => {
+    await service.save(fakeEscala());
+    const expandida = fakeEscala({
+      atos: [
+        ...fakeEscala().atos,
+        { data: '2026-05-03', militarRaw: 'CB FABRE', horario: '07:10 ÀS 13:10', funcao: 'APOIO' },
+      ],
+    });
+    await service.save(expandida);
+    const got = await service.get(2026, 5);
+    expect(got?.atos).toHaveLength(4);
+  });
+
+  it('S2.12c: re-import com 1 ato removido apaga só o ato em questão (não os 2 restantes)', async () => {
+    await service.save(fakeEscala());
+    const reduzida = fakeEscala({
+      atos: fakeEscala().atos.slice(0, 2), // só os 2 primeiros (do dia 01)
+    });
+    await service.save(reduzida);
+    const got = await service.get(2026, 5);
+    expect(got?.atos).toHaveLength(2);
+    expect(got?.atos.every((a) => a.data === '2026-05-01')).toBe(true);
   });
 });
