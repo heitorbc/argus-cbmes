@@ -75,6 +75,7 @@ function makeEscalas(
     Array<{ data: string; equipe: string; viatura: string; funcao: string }>
   >,
   spy?: { lastEfetivoLength?: number },
+  porMes: Record<string, unknown> = {},
 ) {
   return {
     listEscaladosDoMilitarNoRange: async (
@@ -87,6 +88,9 @@ function makeEscalas(
       const todas = porMilitar[nf] ?? [];
       return todas.filter((e) => e.data >= inicio && e.data <= fim);
     },
+    // S2.10.15 — `get(ano, mes)` usado por coletarMergulho/coletarSalvamar
+    // para ler `escala.mergulho` / `escala.salvamar`.
+    get: async (ano: number, mes: number) => porMes[`${ano}-${mes}`] ?? null,
   } as never;
 }
 
@@ -464,5 +468,178 @@ describe('AgendaService', () => {
     // NÃO deve lançar — agenda devolve atestados normalmente, dispensas vira []
     const resp = await svc.forMilitar(NF_TARGET, data, data, NOME_TARGET);
     expect(resp.itens.map((i) => i.fonte)).toEqual(['atestado']);
+  });
+
+  it('S2.10.15: coleta MERGULHO 01 quando militar está como chefe da equipe escalada no dia', async () => {
+    const data = '2026-05-01';
+    const deps = emptyDeps();
+    deps.escalas = makeEscalas({}, undefined, {
+      '2026-5': {
+        ano: 2026,
+        mes: 5,
+        composicaoPorQuinzena: { q1: [], q2: [], ultimoDiaQ1: 14 },
+        mergulho: {
+          equipesPorQuinzena: {
+            ultimoDiaQ1: 14,
+            q1: {
+              A: {
+                letra: 'A',
+                chefe: {
+                  raw: '2º SGT BARCELLOS',
+                  postoAbreviado: '2ºSGT',
+                  nomeGuerra: 'BARCELLOS',
+                  nf: NF_TARGET,
+                },
+                motorista: { raw: 'CB MOT', postoAbreviado: 'CB', nomeGuerra: 'MOT', nf: '999' },
+                mergulhadores: [],
+              },
+            },
+            q2: {},
+          },
+          porDia: { [data]: { mergulho01: 'A' } },
+        },
+      },
+    });
+    const svc = new AgendaService(
+      deps.mf,
+      deps.escalas,
+      deps.especiais,
+      deps.notas,
+      deps.chop,
+      deps.iseo,
+      deps.atestados,
+      deps.dispensas,
+      deps.ferias,
+      deps.trocas,
+      deps.efetivo,
+    );
+    const resp = await svc.forMilitar(NF_TARGET, data, data, NOME_TARGET);
+    const mergulho = resp.itens.filter((i) => i.fonte === 'escala_mergulho');
+    expect(mergulho).toHaveLength(1);
+    expect(mergulho[0]?.titulo).toBe('MERGULHO 01 · Chefe');
+    expect(mergulho[0]?.subtitulo).toBe('Equipe A');
+  });
+
+  it('S2.10.15: coleta SALVAMAR quando militar é supervisor da equipe escalada no dia', async () => {
+    const data = '2026-05-20';
+    const deps = emptyDeps();
+    deps.escalas = makeEscalas({}, undefined, {
+      '2026-5': {
+        ano: 2026,
+        mes: 5,
+        composicaoPorQuinzena: { q1: [], q2: [], ultimoDiaQ1: 14 },
+        salvamar: {
+          equipesPorQuinzena: {
+            ultimoDiaQ1: 14,
+            q1: {},
+            q2: {
+              F: {
+                letra: 'F',
+                supervisores: [
+                  {
+                    raw: '2º SGT BARCELLOS',
+                    postoAbreviado: '2ºSGT',
+                    nomeGuerra: 'BARCELLOS',
+                    nf: NF_TARGET,
+                  },
+                ],
+              },
+            },
+          },
+          porDia: { [data]: 'F' },
+        },
+      },
+    });
+    const svc = new AgendaService(
+      deps.mf,
+      deps.escalas,
+      deps.especiais,
+      deps.notas,
+      deps.chop,
+      deps.iseo,
+      deps.atestados,
+      deps.dispensas,
+      deps.ferias,
+      deps.trocas,
+      deps.efetivo,
+    );
+    const resp = await svc.forMilitar(NF_TARGET, data, data, NOME_TARGET);
+    const salvamar = resp.itens.filter((i) => i.fonte === 'escala_salvamar');
+    expect(salvamar).toHaveLength(1);
+    expect(salvamar[0]?.titulo).toBe('SALVAMAR · Supervisor');
+    expect(salvamar[0]?.subtitulo).toBe('Equipe F');
+  });
+
+  it('S2.10.15: Mergulho não retorna entries quando militar não é chefe/motorista/mergulhador', async () => {
+    const data = '2026-05-01';
+    const deps = emptyDeps();
+    deps.escalas = makeEscalas({}, undefined, {
+      '2026-5': {
+        ano: 2026,
+        mes: 5,
+        composicaoPorQuinzena: { q1: [], q2: [], ultimoDiaQ1: 14 },
+        mergulho: {
+          equipesPorQuinzena: {
+            ultimoDiaQ1: 14,
+            q1: {
+              A: {
+                letra: 'A',
+                chefe: { raw: 'OUTRO', postoAbreviado: 'CAP', nomeGuerra: 'OUTRO', nf: '999' },
+                motorista: { raw: 'OUTRO2', postoAbreviado: 'CB', nomeGuerra: 'OUTRO2', nf: '888' },
+                mergulhadores: [],
+              },
+            },
+            q2: {},
+          },
+          porDia: { [data]: { mergulho01: 'A' } },
+        },
+      },
+    });
+    const svc = new AgendaService(
+      deps.mf,
+      deps.escalas,
+      deps.especiais,
+      deps.notas,
+      deps.chop,
+      deps.iseo,
+      deps.atestados,
+      deps.dispensas,
+      deps.ferias,
+      deps.trocas,
+      deps.efetivo,
+    );
+    const resp = await svc.forMilitar(NF_TARGET, data, data, NOME_TARGET);
+    expect(resp.itens.filter((i) => i.fonte === 'escala_mergulho')).toEqual([]);
+  });
+
+  it('S2.10.15: trace devolve agenda + contagensPorFonte + efetivoSize', async () => {
+    const data = '2026-05-29';
+    const deps = emptyDeps();
+    deps.escalas = makeEscalas({
+      [NF_TARGET]: [{ data, equipe: 'C', viatura: 'ABTS 01', funcao: 'Mot' }],
+    });
+    deps.efetivo = {
+      getAll: async () => [
+        { nf: NF_TARGET, posto: '2ºSGT', nome: 'HEITOR' } as never,
+        { nf: '111', posto: 'CAP', nome: 'X' } as never,
+      ],
+    } as never;
+    const svc = new AgendaService(
+      deps.mf,
+      deps.escalas,
+      deps.especiais,
+      deps.notas,
+      deps.chop,
+      deps.iseo,
+      deps.atestados,
+      deps.dispensas,
+      deps.ferias,
+      deps.trocas,
+      deps.efetivo,
+    );
+    const r = await svc.trace(NF_TARGET, data, data, NOME_TARGET);
+    expect(r.efetivoSize).toBe(2);
+    expect(r.contagensPorFonte.escala_mensal).toBe(1);
+    expect(r.agenda.itens).toHaveLength(1);
   });
 });

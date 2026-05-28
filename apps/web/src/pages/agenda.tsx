@@ -17,6 +17,8 @@ type Visao = 'lista' | 'calendario';
 const TODAS_FONTES: AgendaFonte[] = [
   'escala_mensal',
   'escala_especial',
+  'escala_mergulho',
+  'escala_salvamar',
   'iseo_hospitais',
   'troca_autorizada',
   'nota_servico',
@@ -34,6 +36,8 @@ const TODAS_FONTES: AgendaFonte[] = [
 const FONTES_DEFAULT: AgendaFonte[] = [
   'escala_mensal',
   'escala_especial',
+  'escala_mergulho',
+  'escala_salvamar',
   'iseo_hospitais',
   'troca_autorizada',
 ];
@@ -571,6 +575,10 @@ function dotColor(fonte: AgendaFonte): string {
       return 'bg-cbmes-blue';
     case 'escala_especial':
       return 'bg-purple-500';
+    case 'escala_mergulho':
+      return 'bg-cyan-600';
+    case 'escala_salvamar':
+      return 'bg-teal-500';
     case 'nota_servico':
       return 'bg-green-500';
     case 'iseo_hospitais':

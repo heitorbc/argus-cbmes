@@ -1,5 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { AgendaConflito, AgendaItem, AgendaResponse, Militar } from '@argus/shared-types';
+import type {
+  AgendaConflito,
+  AgendaItem,
+  AgendaResponse,
+  EscalaMensal,
+  EscalaSalvamarMes,
+  EscalaMergulhoMes,
+  LetraEquipeMergulho,
+  LetraEquipeSalvamar,
+  Militar,
+} from '@argus/shared-types';
 import { MapaForcaService } from '../mapa-forca/mapa-forca.service';
 import { NomeMatcher } from '../mapa-forca/nome-matching';
 import { NotasServicoService } from '../notas-servico/notas-servico.service';
@@ -28,6 +38,14 @@ const CONFLICT_PAIRS: Array<[string, string]> = [
   ['escala_mensal', 'atestado'],
   ['escala_mensal', 'dispensa'],
   ['escala_mensal', 'ferias'],
+  // S2.10.15 — Mergulho/Salvamar são "extras" que coexistem com a escala mensal
+  // (não conflitam entre si), mas conflitam com ausência (atestado/dispensa/férias).
+  ['escala_mergulho', 'atestado'],
+  ['escala_mergulho', 'dispensa'],
+  ['escala_mergulho', 'ferias'],
+  ['escala_salvamar', 'atestado'],
+  ['escala_salvamar', 'dispensa'],
+  ['escala_salvamar', 'ferias'],
   ['iseo_hospitais', 'escala_especial'],
   ['iseo_hospitais', 'chefe_operacoes'],
   ['iseo_hospitais', 'atestado'],
@@ -62,6 +80,38 @@ export class AgendaService {
     private readonly trocasAutorizadas: TrocasAutorizadasService,
     private readonly efetivo: EfetivoService,
   ) {}
+
+  /**
+   * S2.10.15 — Diagnóstico admin. Retorna a Agenda + contagens passo-a-passo
+   * por coletor, sem cache. Útil para investigar "por que não aparece X" em
+   * produção sem precisar redeploy + log inspection.
+   */
+  async trace(
+    nf: string,
+    dataInicioIso: string,
+    dataFimIso: string,
+    nome?: string,
+  ): Promise<{
+    agenda: AgendaResponse;
+    contagensPorFonte: Record<string, number>;
+    efetivoSize: number;
+  }> {
+    let efetivoConsolidado: Militar[] = [];
+    try {
+      efetivoConsolidado = await this.efetivo.getAll({
+        somente1aCia: false,
+        incluirEfetivoOrfao: true,
+      });
+    } catch {
+      // mantém [] — trace registra na resposta
+    }
+    const agenda = await this.forMilitar(nf, dataInicioIso, dataFimIso, nome);
+    const contagensPorFonte: Record<string, number> = {};
+    for (const i of agenda.itens) {
+      contagensPorFonte[i.fonte] = (contagensPorFonte[i.fonte] ?? 0) + 1;
+    }
+    return { agenda, contagensPorFonte, efetivoSize: efetivoConsolidado.length };
+  }
 
   /**
    * Retorna a Agenda do militar identificado por `nf`. `nome` é opcional —
@@ -99,6 +149,8 @@ export class AgendaService {
     const settled = await Promise.allSettled([
       this.coletarDoMapaForca(nf, dataInicioIso, dataFimIso, efetivoConsolidado),
       this.coletarEscalaEspecial(nf, dataInicioIso, dataFimIso, efetivoConsolidado),
+      this.coletarMergulho(nf, dataInicioIso, dataFimIso, efetivoConsolidado),
+      this.coletarSalvamar(nf, dataInicioIso, dataFimIso, efetivoConsolidado),
       this.coletarNotasServico(nf, dataInicioIso, dataFimIso),
       this.coletarIseoHospitais(nf, dataInicioIso, dataFimIso),
       this.coletarChefesOperacoes(nf, dataInicioIso, dataFimIso),
@@ -110,6 +162,8 @@ export class AgendaService {
     const nomes = [
       'mapaForca',
       'escalaEspecial',
+      'mergulho',
+      'salvamar',
       'notasServico',
       'iseoHospitais',
       'chefesOperacoes',
@@ -118,20 +172,33 @@ export class AgendaService {
       'ferias',
       'trocasAutorizadas',
     ] as const;
-    const [mapaForca, especiais, notas, iseo, chop, atestados, dispensas, ferias, trocas] =
-      settled.map((r, i) => {
-        if (r.status === 'fulfilled') return r.value;
-        this.logger.warn(
-          `coletar${nomes[i]![0]!.toUpperCase()}${nomes[i]!.slice(1)} falhou (nf=${nf}): ${
-            (r.reason as Error).message
-          }`,
-        );
-        return [] as AgendaItem[];
-      });
+    const [
+      mapaForca,
+      especiais,
+      mergulho,
+      salvamar,
+      notas,
+      iseo,
+      chop,
+      atestados,
+      dispensas,
+      ferias,
+      trocas,
+    ] = settled.map((r, i) => {
+      if (r.status === 'fulfilled') return r.value;
+      this.logger.warn(
+        `coletar${nomes[i]![0]!.toUpperCase()}${nomes[i]!.slice(1)} falhou (nf=${nf}): ${
+          (r.reason as Error).message
+        }`,
+      );
+      return [] as AgendaItem[];
+    });
 
     const itens = [
       ...mapaForca,
       ...especiais,
+      ...mergulho,
+      ...salvamar,
       ...notas,
       ...iseo,
       ...chop,
@@ -225,6 +292,7 @@ export class AgendaService {
 
     const matcher = efetivo.length > 0 ? new NomeMatcher(efetivo) : null;
     const matcherCache = new Map<string, string | null>();
+    let nomeMatcherFalhas = 0;
     const out: AgendaItem[] = [];
 
     for (const escala of escalas) {
@@ -242,6 +310,10 @@ export class AgendaService {
             const r = ref ? matcher.resolve(ref) : null;
             atoNf = r?.resolved?.nf;
             matcherCache.set(ato.militarRaw, atoNf ?? null);
+            // S2.10.15 — Warn estruturado quando NomeMatcher falha em
+            // resolver `militarRaw`. Tech Lead diagnostica grafia
+            // divergente na XLSM (ex.: "CB BM FULANO" vs "CB FULANO").
+            if (!atoNf) nomeMatcherFalhas += 1;
           }
         }
         if (atoNf !== nf) continue;
@@ -258,7 +330,163 @@ export class AgendaService {
         });
       }
     }
+    if (nomeMatcherFalhas > 0) {
+      this.logger.warn(
+        `coletarEscalaEspecial: NomeMatcher falhou em ${nomeMatcherFalhas} ato(s) ` +
+          `(nf=${nf}, range=${inicio}…${fim}). Verifique grafia em escala_especial_atos.militarRaw.`,
+      );
+    }
     return out;
+  }
+
+  /**
+   * S2.10.15 — Coleta entries de Mergulho (MERGULHO 01/02) consumindo
+   * `EscalaMensal.mergulho.porDia` + `.equipesPorQuinzena`. A persistência
+   * via JSONB foi adicionada em S2.10.1 (testada em S2.12b). O parser do
+   * XLSX preenche apenas `militarRaw` para chefe/motorista/mergulhadores,
+   * por isso o NF é resolvido sob demanda via `NomeMatcher`.
+   *
+   * Estrutura:
+   * - `porDia[YYYY-MM-DD] = { mergulho01?: 'A'|'B'|'C', mergulho02?: 'A'|'B'|'C' }`
+   * - `equipesPorQuinzena.qN[letra] = { chefe, motorista, mergulhadores: [...] }`
+   */
+  private async coletarMergulho(
+    nf: string,
+    inicio: string,
+    fim: string,
+    efetivo: readonly Militar[],
+  ): Promise<AgendaItem[]> {
+    const mesesNoRange = new Set<string>();
+    for (const data of iterDias(inicio, fim)) {
+      const [ano, mes] = parseDataIso(data);
+      mesesNoRange.add(`${ano}-${mes}`);
+    }
+    const escalasRaw = await Promise.all(
+      [...mesesNoRange].map((k) => {
+        const [ano, mes] = k.split('-').map((s) => Number.parseInt(s, 10)) as [number, number];
+        return this.escalas.get(ano, mes);
+      }),
+    );
+    const escalas = escalasRaw.filter((e): e is NonNullable<typeof e> => e !== null);
+    if (escalas.length === 0) return [];
+
+    const matcher = efetivo.length > 0 ? new NomeMatcher(efetivo) : null;
+    const out: AgendaItem[] = [];
+
+    for (const escala of escalas) {
+      if (!escala.mergulho) continue;
+      this.appendMergulhoItens(nf, inicio, fim, escala, escala.mergulho, matcher, out);
+    }
+    return out;
+  }
+
+  private appendMergulhoItens(
+    nf: string,
+    inicio: string,
+    fim: string,
+    escala: EscalaMensal,
+    mergulho: EscalaMergulhoMes,
+    matcher: NomeMatcher | null,
+    out: AgendaItem[],
+  ): void {
+    const { ultimoDiaQ1 } = escala.composicaoPorQuinzena;
+    for (const [data, recursos] of Object.entries(mergulho.porDia)) {
+      if (data < inicio || data > fim) continue;
+      const dia = Number.parseInt(data.slice(8, 10), 10);
+      const q = dia <= ultimoDiaQ1 ? 'q1' : 'q2';
+      for (const [recurso, letra] of [
+        ['MERGULHO 01', recursos.mergulho01],
+        ['MERGULHO 02', recursos.mergulho02],
+      ] as const) {
+        if (!letra) continue;
+        const equipe = mergulho.equipesPorQuinzena[q][letra as LetraEquipeMergulho];
+        if (!equipe) continue;
+        for (const { ref, funcao } of [
+          { ref: equipe.chefe, funcao: 'Chefe' },
+          { ref: equipe.motorista, funcao: 'Motorista' },
+          ...equipe.mergulhadores.map((r) => ({ ref: r, funcao: 'Mergulhador' })),
+        ]) {
+          if (!ref) continue;
+          const refNf = ref.nf ?? matcher?.resolve(ref)?.resolved?.nf;
+          if (refNf !== nf) continue;
+          out.push({
+            data,
+            fonte: 'escala_mergulho',
+            titulo: `${recurso} · ${funcao}`,
+            subtitulo: `Equipe ${letra}`,
+            funcao,
+            id: `mergulho|${data}|${recurso}|${funcao}`,
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * S2.10.15 — Coleta entries de Salvamar consumindo `EscalaMensal.salvamar`.
+   * Estrutura: `porDia[YYYY-MM-DD] = 'E'|'F'`, `equipesPorQuinzena.qN[letra]
+   * = { supervisores: [...] }`. SALVAMAR só tem supervisor (sem chefe/motorista
+   * separados, decorre da estrutura institucional).
+   */
+  private async coletarSalvamar(
+    nf: string,
+    inicio: string,
+    fim: string,
+    efetivo: readonly Militar[],
+  ): Promise<AgendaItem[]> {
+    const mesesNoRange = new Set<string>();
+    for (const data of iterDias(inicio, fim)) {
+      const [ano, mes] = parseDataIso(data);
+      mesesNoRange.add(`${ano}-${mes}`);
+    }
+    const escalasRaw = await Promise.all(
+      [...mesesNoRange].map((k) => {
+        const [ano, mes] = k.split('-').map((s) => Number.parseInt(s, 10)) as [number, number];
+        return this.escalas.get(ano, mes);
+      }),
+    );
+    const escalas = escalasRaw.filter((e): e is NonNullable<typeof e> => e !== null);
+    if (escalas.length === 0) return [];
+
+    const matcher = efetivo.length > 0 ? new NomeMatcher(efetivo) : null;
+    const out: AgendaItem[] = [];
+
+    for (const escala of escalas) {
+      if (!escala.salvamar) continue;
+      this.appendSalvamarItens(nf, inicio, fim, escala, escala.salvamar, matcher, out);
+    }
+    return out;
+  }
+
+  private appendSalvamarItens(
+    nf: string,
+    inicio: string,
+    fim: string,
+    escala: EscalaMensal,
+    salvamar: EscalaSalvamarMes,
+    matcher: NomeMatcher | null,
+    out: AgendaItem[],
+  ): void {
+    const { ultimoDiaQ1 } = escala.composicaoPorQuinzena;
+    for (const [data, letra] of Object.entries(salvamar.porDia)) {
+      if (data < inicio || data > fim) continue;
+      const dia = Number.parseInt(data.slice(8, 10), 10);
+      const q = dia <= ultimoDiaQ1 ? 'q1' : 'q2';
+      const equipe = salvamar.equipesPorQuinzena[q][letra as LetraEquipeSalvamar];
+      if (!equipe) continue;
+      for (const ref of equipe.supervisores) {
+        const refNf = ref.nf ?? matcher?.resolve(ref)?.resolved?.nf;
+        if (refNf !== nf) continue;
+        out.push({
+          data,
+          fonte: 'escala_salvamar',
+          titulo: `SALVAMAR · Supervisor`,
+          subtitulo: `Equipe ${letra}`,
+          funcao: 'Supervisor',
+          id: `salvamar|${data}|${letra}|${ref.nf ?? ref.raw}`,
+        });
+      }
+    }
   }
 
   private async coletarNotasServico(
