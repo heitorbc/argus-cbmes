@@ -54,16 +54,20 @@ export class EfetivoService {
   ) {}
 
   async list(query: EfetivoQuery): Promise<EfetivoListResponse> {
-    // Página /cadastros/efetivo NÃO inclui órfãos (S6a-fix item 2):
-    // só militares de DADOS (LOCAL=1ª1º) ou 1ª1º.
-    const consolidated = await this.consolidateFromDbOrMemory();
+    // S2.10.13b — `incluirEfetivoOrfao=true` agora é o default na página
+    // /cadastros/efetivo (multi-unidade): TODOS os militares do CBMES entram,
+    // filtrados via dropdown de unidade no frontend.
+    const consolidated = await this.consolidateFromDbOrMemory({ incluirEfetivoOrfao: true });
 
     let items = consolidated.items;
 
-    if (query.somente1aCia) {
-      // ChOps de outras Cias entram mesmo no filtro 1ª Cia (são parte do
-      // ecossistema operacional do dia a dia da 1ª Cia).
-      items = items.filter((m) => m.subSecao !== undefined || m.papelEspecial);
+    // S2.10.13b — Filtro multi-unidade. `unidade` é o caminho preferido;
+    // `somente1aCia` mantém retrocompat (vira `unidade='1ª1º'`).
+    const unidadeFiltro = query.unidade ?? (query.somente1aCia ? '1ª1º' : undefined);
+    if (unidadeFiltro) {
+      // ChOps de outras unidades entram mesmo no filtro (são parte do
+      // ecossistema operacional). Cf. comportamento anterior em S6a-fix item 2.
+      items = items.filter((m) => m.unidade === unidadeFiltro || m.papelEspecial);
     }
 
     if (query.q) {
@@ -100,6 +104,37 @@ export class EfetivoService {
     // mas ainda não foram lançados no QDI 1ª1º.
     const consolidated = await this.consolidateFromDbOrMemory({ incluirEfetivoOrfao: true });
     return consolidated.items.find((m) => m.nf === nf) ?? null;
+  }
+
+  /**
+   * S2.10.13b — Lista de unidades distintas presentes em `prisma.militar`
+   * (campo `unidade`). Usado pelo `<select>` de filtro no frontend.
+   *
+   * Postgres-first: leitura direta + DISTINCT é mais rápido que iterar
+   * `consolidated.items`. Fallback para memória se Postgres vazio.
+   */
+  async listUnidades(): Promise<string[]> {
+    try {
+      const rows = await this.prisma.militar.findMany({
+        where: { unidade: { not: null } },
+        select: { unidade: true },
+        distinct: ['unidade'],
+        orderBy: { unidade: 'asc' },
+      });
+      const unidades = rows
+        .map((r) => r.unidade)
+        .filter((u): u is string => u !== null && u.trim() !== '');
+      if (unidades.length > 0) return unidades;
+    } catch (err) {
+      this.logger.warn(`listUnidades Postgres falhou: ${(err as Error).message}`);
+    }
+    // Fallback memória: deriva da consolidação atual
+    const consolidated = await this.consolidateFromDbOrMemory({ incluirEfetivoOrfao: true });
+    const set = new Set<string>();
+    for (const m of consolidated.items) {
+      if (m.unidade) set.add(m.unidade);
+    }
+    return [...set].sort();
   }
 
   /**
@@ -519,6 +554,10 @@ export function mergeThreeSources(
         nomeGuerra: d.nomeGuerra ?? m.nomeGuerra,
         municipio: d.municipio ?? m.municipio,
         situacao: d.situacao ?? m.situacao,
+        // S2.10.13b — quando só vem do DADOS (não está em QDI 1ª1º),
+        // popula `unidade` a partir de `lotacao` (campo LOCAL da planilha).
+        // Multi-unidade depende disso pra filtrar via dropdown no frontend.
+        unidade: m.unidade ?? d.lotacao,
         // Campos novos só vêm de DADOS:
         lotacao: d.lotacao,
         classe: d.classe,

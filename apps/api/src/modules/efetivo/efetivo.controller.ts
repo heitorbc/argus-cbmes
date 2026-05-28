@@ -24,6 +24,17 @@ export class EfetivoController {
     return this.efetivo.list(parsed.data);
   }
 
+  /**
+   * S2.10.13b — Lista de unidades distintas (CG, CEPDEC, DAL, CORREG, DGP,
+   * 1ª1º, 2ª1º, etc.) para popular o `<select>` de filtro em
+   * /cadastros/efetivo. Ordenadas alfabeticamente.
+   */
+  @Get('unidades')
+  async listUnidades(): Promise<{ unidades: string[] }> {
+    const unidades = await this.efetivo.listUnidades();
+    return { unidades };
+  }
+
   @Get(':nf')
   async findOne(@Param('nf') nf: string) {
     const militar = await this.efetivo.findByNf(nf);

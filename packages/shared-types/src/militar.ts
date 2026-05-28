@@ -127,8 +127,17 @@ export type EfetivoListResponse = z.infer<typeof efetivoListResponseSchema>;
 
 export const efetivoQuerySchema = z.object({
   q: z.string().optional(),
-  /** Quando true, retorna apenas militares cuja `subSecao` está definida (i.e., 1ª Cia). */
+  /**
+   * @deprecated S2.10.13b — usar `unidade` em vez de `somente1aCia`. Quando
+   * true, mantém retrocompat: equivale a `unidade='1ª1º'` (a 1ª Cia).
+   */
   somente1aCia: z.coerce.boolean().optional(),
+  /**
+   * S2.10.13b — Filtro multi-unidade. Quando setado, retorna apenas militares
+   * cuja `Militar.unidade` casa exatamente (ex.: 'CG', 'CEPDEC', '1ª1º').
+   * Default: undefined (sem filtro — retorna todas as unidades).
+   */
+  unidade: z.string().trim().optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
