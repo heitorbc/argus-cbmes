@@ -20,12 +20,20 @@ const POLL_INTERVAL_MS = 60_000;
 
 const SERVICOS_LABEL: Record<keyof Omit<HealthStatus, 'geradoEm'>, string> = {
   api: 'API',
-  sheetsDb: 'Sheets-DB',
   mapaForcaCiodes: 'Mapa Força',
   supabase: 'Supabase',
 };
 
-export function StatusBar() {
+/**
+ * Variantes de apresentação:
+ *  - `full` (default): card com border + label "Status:" — usado na home/login
+ *  - `compact`: 3 dots minúsculos + labels — usado no Footer global pós-login
+ */
+export interface StatusBarProps {
+  variant?: 'full' | 'compact';
+}
+
+export function StatusBar({ variant = 'full' }: StatusBarProps = {}) {
   const [status, setStatus] = useState<HealthStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,29 +60,55 @@ export function StatusBar() {
     };
   }, []);
 
+  const isCompact = variant === 'compact';
+
   if (error && !status) {
     return (
-      <div className="mt-2 flex items-center gap-2 rounded border border-feedback-error/30 bg-feedback-error/5 px-3 py-1.5 text-xs text-feedback-error">
+      <div
+        className={`flex items-center gap-2 ${
+          isCompact
+            ? 'text-[10px] text-feedback-error'
+            : 'mt-2 rounded border border-feedback-error/30 bg-feedback-error/5 px-3 py-1.5 text-xs text-feedback-error'
+        }`}
+      >
         <Dot estado="down" />
-        <span>API indisponível: {error}</span>
+        <span>API indisponível{!isCompact && `: ${error}`}</span>
       </div>
     );
   }
 
   if (!status) {
     return (
-      <div className="mt-2 flex items-center gap-2 rounded border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-500">
-        <span>Verificando status dos serviços…</span>
+      <div
+        className={
+          isCompact
+            ? 'text-[10px] text-slate-400'
+            : 'mt-2 flex items-center gap-2 rounded border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-500'
+        }
+      >
+        <span>Verificando status{!isCompact && ' dos serviços…'}</span>
       </div>
     );
   }
 
   const servicos: Array<[keyof typeof SERVICOS_LABEL, HealthServico]> = [
     ['api', status.api],
-    ['sheetsDb', status.sheetsDb],
     ['mapaForcaCiodes', status.mapaForcaCiodes],
     ['supabase', status.supabase],
   ];
+
+  if (isCompact) {
+    return (
+      <div className="flex items-center gap-3 text-[10px] text-slate-500">
+        {servicos.map(([key, svc]) => (
+          <span key={key} className="flex items-center gap-1" title={tooltipFor(svc)}>
+            <Dot estado={svc.estado} />
+            <span>{SERVICOS_LABEL[key]}</span>
+          </span>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600">

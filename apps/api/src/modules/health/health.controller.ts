@@ -1,14 +1,17 @@
 import { Controller, Get, Optional } from '@nestjs/common';
 import type { HealthEstado, HealthServico, HealthStatus } from '@argus/shared-types';
 import { Public } from '../auth/decorators/public.decorator';
-import { SheetsDbService } from '../sheets-db/sheets-db.service';
 import { MapaForcaCiodesService } from '../mapa-forca-ciodes/mapa-forca-ciodes.service';
+import { PrismaService } from '../../common/prisma/prisma.service';
+
+const SUPABASE_TIMEOUT_MS = 2000;
+const SUPABASE_DEGRADED_THRESHOLD_MS = 1000;
 
 @Controller('health')
 export class HealthController {
   constructor(
-    @Optional() private readonly sheetsDb?: SheetsDbService,
     @Optional() private readonly mapaForcaCiodes?: MapaForcaCiodesService,
+    @Optional() private readonly prisma?: PrismaService,
   ) {}
 
   @Public()
@@ -22,25 +25,26 @@ export class HealthController {
   }
 
   /**
-   * S2.6 — Status agregado dos serviços externos. Lido pelo `StatusBar`
-   * no frontend para mostrar 🟢🟡🔴 sob o cabeçalho da home. Endpoint
-   * `@Public` (não exige auth) para que o status apareça mesmo na tela
-   * de login durante o cold start.
+   * S2.6 / S2.10.13a — Status agregado dos 3 serviços críticos. Lido pelo
+   * `StatusBar` na home e no `Footer` do app. Endpoint `@Public` (não
+   * exige auth) para aparecer mesmo na tela de login durante cold start.
+   *
+   * S2.10.13a removeu `sheetsDb` (Sheets-DB encerrado em S2.10.9d) e
+   * implementou check real do Supabase via `prisma.$queryRaw\`SELECT 1\``
+   * com timeout 2s + threshold 1s para 'degraded'.
    */
   @Public()
   @Get('status')
   async status(): Promise<HealthStatus> {
-    const [api, sheetsDb, mapaForcaCiodes] = await Promise.all([
+    const [api, mapaForcaCiodes, supabase] = await Promise.all([
       this.checkApi(),
-      this.checkSheetsDb(),
       this.checkMapaForcaCiodes(),
+      this.checkSupabase(),
     ]);
     return {
       api,
-      sheetsDb,
       mapaForcaCiodes,
-      // S2.9 substituirá por check real do Postgres.
-      supabase: { estado: 'pending', detalhe: 'Migração planejada para S2.9' },
+      supabase,
       geradoEm: new Date().toISOString(),
     };
   }
@@ -50,28 +54,6 @@ export class HealthController {
     return {
       estado: 'ok',
       detalhe: `uptime ${formatUptime(uptimeSec)}`,
-    };
-  }
-
-  private checkSheetsDb(): HealthServico {
-    if (!this.sheetsDb) {
-      return { estado: 'pending', detalhe: 'Service não disponível' };
-    }
-    const s = this.sheetsDb.getStatus();
-    if (!s.enabled) {
-      return {
-        estado: 'pending',
-        detalhe: s.ultimoErro ?? 'Sheets-DB desabilitado (sem GOOGLE_SHEETS_SA_KEY_BASE64)',
-      };
-    }
-    const todasExistem = s.abas.every((a) => a.existe);
-    const estado: HealthEstado = todasExistem ? 'ok' : 'degraded';
-    return {
-      estado,
-      ultimaSyncEm: s.bootstrappedAt,
-      detalhe: todasExistem
-        ? `${s.abas.length} abas OK`
-        : `${s.abas.filter((a) => !a.existe).length} aba(s) ausente(s)`,
     };
   }
 
@@ -87,6 +69,44 @@ export class HealthController {
         detalhe: snap.stale
           ? 'Snapshot stale (última sync com erro; servindo cache antigo)'
           : `${snap.recursos.length} recursos sincronizados`,
+      };
+    } catch (err) {
+      return {
+        estado: 'down',
+        detalhe: (err as Error).message.slice(0, 200),
+      };
+    }
+  }
+
+  /**
+   * S2.10.13a — Check real do Postgres via `SELECT 1`. Timeout explícito
+   * para não travar o `/health/status` em cold start do pool.
+   */
+  private async checkSupabase(): Promise<HealthServico> {
+    if (!this.prisma) {
+      return { estado: 'pending', detalhe: 'PrismaService não injetado' };
+    }
+    const start = Date.now();
+    try {
+      const query = this.prisma.$queryRaw`SELECT 1 AS ok`;
+      await Promise.race([
+        query,
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`Supabase timeout >${SUPABASE_TIMEOUT_MS}ms`)),
+            SUPABASE_TIMEOUT_MS,
+          ),
+        ),
+      ]);
+      const elapsed = Date.now() - start;
+      const estado: HealthEstado = elapsed > SUPABASE_DEGRADED_THRESHOLD_MS ? 'degraded' : 'ok';
+      return {
+        estado,
+        ultimaSyncEm: new Date().toISOString(),
+        detalhe:
+          estado === 'degraded'
+            ? `latência ${elapsed}ms (>${SUPABASE_DEGRADED_THRESHOLD_MS}ms)`
+            : `latência ${elapsed}ms`,
       };
     } catch (err) {
       return {
