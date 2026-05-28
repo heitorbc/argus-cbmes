@@ -10,9 +10,19 @@ function loadFixture(): string {
 }
 
 describe('parseQdiDadosCsv', () => {
-  it('filtra apenas militares lotados em "1ª1º" (1ª Cia/1º BBM)', () => {
+  it('S2.10.13b: default sem filtro retorna TODAS as unidades do CBMES', () => {
     const csv = loadFixture();
     const militares = parseQdiDadosCsv(csv);
+    // CBMES inteiro: muito mais que apenas 1ª Cia
+    expect(militares.length).toBeGreaterThan(500);
+    // Várias lotações presentes (CG, CEPDEC, DAL, 1ª1º, 2ª1º, etc.)
+    const lotacoesUnicas = new Set(militares.map((m) => m.lotacao).filter(Boolean));
+    expect(lotacoesUnicas.size).toBeGreaterThan(1);
+  });
+
+  it('passa filtro ["1ª1º"] explicitamente → apenas militares da 1ª Cia', () => {
+    const csv = loadFixture();
+    const militares = parseQdiDadosCsv(csv, ['1ª1º', '1ª/1º']);
     expect(militares.length).toBeGreaterThan(50);
     expect(militares.length).toBeLessThan(150);
     // Todos têm lotacao "1ª1º"
@@ -42,7 +52,9 @@ describe('parseQdiDadosCsv', () => {
 
   it('extrai pontos disciplinares quando presentes', () => {
     const csv = loadFixture();
-    const militares = parseQdiDadosCsv(csv);
+    // Mantém filtro 1ª Cia para preservar contrato do teste anterior:
+    // dados de pontos da 1ª Cia ficam dentro do range 0-100.
+    const militares = parseQdiDadosCsv(csv, ['1ª1º', '1ª/1º']);
     const comPontos = militares.filter((m) => m.pontos !== undefined);
     expect(comPontos.length).toBeGreaterThan(10);
     expect(comPontos.every((m) => m.pontos! >= 0 && m.pontos! <= 100)).toBe(true);

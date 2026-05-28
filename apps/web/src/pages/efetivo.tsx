@@ -14,7 +14,8 @@ import { SkeletonTable } from '@/components/Skeleton';
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 300;
-const ONLY_CIA_KEY = 'argus.efetivo.somente1aCia';
+const UNIDADE_KEY = 'argus.efetivo.unidade';
+const TODAS = '__TODAS__';
 
 export function EfetivoPage() {
   const { user } = useAuth();
@@ -22,22 +23,53 @@ export function EfetivoPage() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
-  const [somente1aCia, setSomente1aCia] = useState<boolean>(() => {
+
+  // S2.10.13b — Busca unidade do user logado (via /efetivo/:nf) para usar
+  // como default no select. Cache 30min — unidade muda muito raramente.
+  const { data: meuMilitar } = useQuery({
+    queryKey: ['efetivo-me', user?.nf ?? ''],
+    queryFn: () => (user?.nf ? api.efetivoFindByNf(user.nf) : Promise.resolve(null)),
+    enabled: !!user?.nf,
+    staleTime: 30 * 60 * 1000,
+    retry: false,
+  });
+
+  // Default: persistência localStorage > unidade do user logado > '__TODAS__'.
+  const [unidade, setUnidade] = useState<string>(() => {
     try {
-      const v = localStorage.getItem(ONLY_CIA_KEY);
-      return v === null ? true : v === '1';
+      return localStorage.getItem(UNIDADE_KEY) ?? '';
     } catch {
-      return true;
+      return '';
     }
   });
 
+  // Após buscar `meuMilitar`, se não havia escolha salva, define a unidade
+  // do user como default.
   useEffect(() => {
-    try {
-      localStorage.setItem(ONLY_CIA_KEY, somente1aCia ? '1' : '0');
-    } catch {
-      /* ignore */
+    if (!unidade && meuMilitar?.unidade) {
+      setUnidade(meuMilitar.unidade);
+    } else if (!unidade && meuMilitar && !meuMilitar.unidade) {
+      // User sem unidade definida → mostra todas
+      setUnidade(TODAS);
     }
-  }, [somente1aCia]);
+  }, [meuMilitar, unidade]);
+
+  useEffect(() => {
+    if (unidade) {
+      try {
+        localStorage.setItem(UNIDADE_KEY, unidade);
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [unidade]);
+
+  // Lista de unidades disponíveis (DISTINCT no backend).
+  const { data: unidadesResp } = useQuery({
+    queryKey: ['efetivo-unidades'],
+    queryFn: () => api.efetivoUnidades(),
+    staleTime: 30 * 60 * 1000,
+  });
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedSearch(search), SEARCH_DEBOUNCE_MS);
@@ -46,7 +78,7 @@ export function EfetivoPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, somente1aCia]);
+  }, [debouncedSearch, unidade]);
 
   // S2.10.9c — useQuery substitui useEffect+fetch; staleTime 10min reflete
   // que efetivo muda raramente (após cron 00/06/12/18h ou refetch manual).
@@ -55,15 +87,16 @@ export function EfetivoPage() {
     isLoading: loading,
     error: queryError,
   } = useQuery<EfetivoListResponse>({
-    queryKey: ['efetivo', debouncedSearch || '', page, somente1aCia],
+    queryKey: ['efetivo', debouncedSearch || '', page, unidade],
     queryFn: () =>
       api.efetivoList({
         q: debouncedSearch || undefined,
         page,
         pageSize: PAGE_SIZE,
-        somente1aCia,
+        unidade: unidade && unidade !== TODAS ? unidade : undefined,
       }),
     staleTime: 10 * 60 * 1000,
+    enabled: !!unidade, // só busca após resolver o default
   });
   const error = queryError
     ? queryError instanceof ApiError
@@ -78,11 +111,12 @@ export function EfetivoPage() {
       const res = await api.efetivoForceSync();
       // Atualiza apenas a query corrente; outras pages se necessário ficam stale.
       queryClient.setQueryData<EfetivoListResponse>(
-        ['efetivo', debouncedSearch || '', page, somente1aCia],
+        ['efetivo', debouncedSearch || '', page, unidade],
         res,
       );
       // Invalida demais combinações de filtro para refletir na próxima nav.
       await queryClient.invalidateQueries({ queryKey: ['efetivo'] });
+      await queryClient.invalidateQueries({ queryKey: ['efetivo-unidades'] });
       setPage(1);
     } catch {
       /* erros aparecem na próxima refetch */
@@ -131,17 +165,27 @@ export function EfetivoPage() {
           )}
         </div>
 
-        <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm text-slate-700">
-          <input
-            type="checkbox"
-            checked={somente1aCia}
-            onChange={(e) => setSomente1aCia(e.target.checked)}
-            className="h-5 w-5 rounded border-slate-300 text-cbmes-red focus:ring-cbmes-red"
-          />
-          <span>
-            Apenas 1ª Cia / 1º BBM{' '}
-            <span className="text-xs text-slate-500">(staff, SOS, Guarda, Aquáticas)</span>
-          </span>
+        {/* S2.10.13b — Select multi-unidade (substitui checkbox 1ª Cia). */}
+        <label className="mt-3 flex flex-col gap-1 text-sm text-slate-700 sm:flex-row sm:items-center sm:gap-3">
+          <span className="font-medium text-slate-600">Unidade:</span>
+          <select
+            value={unidade || ''}
+            onChange={(e) => setUnidade(e.target.value)}
+            className="rounded border border-slate-300 px-3 py-2 text-sm focus:border-cbmes-blue focus:outline-none focus:ring-2 focus:ring-cbmes-blue/30"
+          >
+            <option value={TODAS}>Todas as unidades</option>
+            {(unidadesResp?.unidades ?? []).map((u) => (
+              <option key={u} value={u}>
+                {u}
+                {meuMilitar?.unidade === u ? ' (minha unidade)' : ''}
+              </option>
+            ))}
+          </select>
+          {meuMilitar?.unidade && unidade === meuMilitar.unidade && (
+            <span className="text-xs text-slate-500">
+              Default da sua lotação ({meuMilitar.unidade})
+            </span>
+          )}
         </label>
 
         {data?.stale && (
