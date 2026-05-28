@@ -76,9 +76,21 @@ export function HomePage() {
           </div>
         </div>
 
-        <div className="mt-4">
-          <AgendaCard />
-        </div>
+        {/* S2.10.13d — Meu Perfil: nova seção no topo, universal, com
+            visão centrada no militar logado (Próxima Escala + Meus Dados
+            + Minha Agenda). */}
+        <ModuloSection
+          titulo="Meu Perfil"
+          descricao="Sua próxima escala, seus dados e sua agenda integrada."
+          accent="border-l-cbmes-blue"
+          destaque
+        >
+          <div className="col-span-full">
+            <AgendaCard />
+          </div>
+          <CardLink to="/perfil/meus-dados" icon="👤" label="Meus Dados" />
+          <CardLink to="/agenda" icon="🗓️" label="Minha Agenda" />
+        </ModuloSection>
 
         {/* S6c/F4 — reorganização modular: Sargenteação, Prontidão, Logística */}
 
@@ -89,7 +101,6 @@ export function HomePage() {
           destaque
         >
           <CardLink to="/mapa-forca" icon="🗺️" label="Mapa Força" destaque />
-          <CardLink to="/agenda" icon="📅" label="Minha Agenda" />
           <CardLink to="/parte-diaria" icon="📑" label="Parte Diária" />
           <CardLink to="/cadastros/fiscais" icon="⭐" label="Fiscais (override)" />
           <CardLink to="/cadastros/ideo" icon="📋" label="IDEO" />
@@ -115,10 +126,19 @@ export function HomePage() {
             <CardLink to="/cadastros/trocas" icon="🔄" label="Trocas Autorizadas" />
             <CardLink to="/cadastros/atestados" icon="🏥" label="Atestados" />
             <CardLink to="/cadastros/notas-servico" icon="📋" label="Notas de Serviço" />
-            <CardLink to="/cadastros/iseo-hospitais" icon="🏥" label="ISEO Hospitais" />
-            <CardLink to="/cadastros/chefes-operacoes" icon="👮" label="Chefes de Operações" />
           </ModuloSection>
         )}
+
+        {/* S2.10.13d — Módulo Escalas: ISEO Hospitais + Chefes de Operações
+            agrupados como módulo próprio (universal). */}
+        <ModuloSection
+          titulo="Escalas"
+          descricao="ISEO Hospitais e Chefe de Operações (escalas externas integradas)."
+          accent="border-l-violet-500"
+        >
+          <CardLink to="/cadastros/iseo-hospitais" icon="🏥" label="ISEO Hospitais" />
+          <CardLink to="/cadastros/chefes-operacoes" icon="👮" label="Chefes de Operações" />
+        </ModuloSection>
 
         {showLogistica && (
           <ModuloSection

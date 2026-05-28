@@ -13,7 +13,13 @@
  * Backend RBAC continua sendo a defesa real (POST/PUT/DELETE com
  * `@Roles('admin')`). Esta camada é UX — esconder o que o usuário não pode usar.
  */
-export type ModuloHome = 'prontidao' | 'sargenteacao' | 'logistica' | 'configuracoes';
+export type ModuloHome =
+  | 'perfil' // S2.10.13d — Meu Perfil (universal, sempre visível)
+  | 'prontidao'
+  | 'sargenteacao'
+  | 'escalas' // S2.10.13d — Módulo Escalas (ISEO + ChOp). Universal.
+  | 'logistica'
+  | 'configuracoes';
 
 const PAPEL_SECOES_EXTRAS: Record<string, ModuloHome[]> = {
   admin: ['sargenteacao', 'logistica', 'configuracoes'],
@@ -28,11 +34,15 @@ const PAPEL_SECOES_EXTRAS: Record<string, ModuloHome[]> = {
 
 /**
  * Retorna `true` se algum dos papéis permite ver a seção.
- * Prontidão sempre retorna `true` para usuários com pelo menos um papel.
+ * Prontidão, Perfil e Escalas são universais — sempre `true` para
+ * usuários autenticados.
  */
 export function canSeeSection(papeis: readonly string[], section: ModuloHome): boolean {
   if (papeis.length === 0) return false;
-  if (section === 'prontidao') return true;
+  // S2.10.13d — Seções universais
+  if (section === 'prontidao' || section === 'perfil' || section === 'escalas') {
+    return true;
+  }
   return papeis.some((p) => (PAPEL_SECOES_EXTRAS[p] ?? []).includes(section));
 }
 
@@ -53,13 +63,17 @@ export const ROUTE_TO_SECTION: Record<string, ModuloHome> = {
   '/cadastros/escalas-especiais': 'sargenteacao',
   '/cadastros/ferias': 'sargenteacao',
   '/cadastros/trocas': 'sargenteacao',
-  '/cadastros/iseo-hospitais': 'sargenteacao',
+  // S2.10.13d — Módulo Escalas (ISEO + ChOp) movidos de Sargenteacao
+  '/cadastros/iseo-hospitais': 'escalas',
+  '/cadastros/chefes-operacoes': 'escalas',
   '/cadastros/viaturas': 'logistica',
   '/logistica/recursos': 'logistica',
   '/configuracoes/unidades': 'configuracoes',
   '/configuracoes/integracoes': 'configuracoes',
   '/configuracoes/usuarios': 'configuracoes',
   '/cadastros/locais-faxina': 'configuracoes',
+  // S2.10.13d — Meu Perfil (universal)
+  '/perfil/meus-dados': 'perfil',
 };
 
 /**
