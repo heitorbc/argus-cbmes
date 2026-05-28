@@ -25,13 +25,13 @@ dependências e planeja a remoção total em 3 PRs sequenciais (S2.10.14a–c).
 
 ### Consumers de `SheetsDbService` no backend
 
-| Arquivo | Linha | Uso | Frequência |
-|---|---|---|---|
-| [escalas.service.ts](apps/api/src/modules/escalas/escalas.service.ts) | 19, 133, 138, 149-170 | `bootstrapFromSheetsDbIfEmpty()` no `onModuleInit` | 1× por boot da API |
-| [escalas-especiais.service.ts](apps/api/src/modules/escalas-especiais/escalas-especiais.service.ts) | 12, 26, 31, 42-62 | Idem (escala especial XLSM via Sheets-DB rows) | 1× por boot |
-| [notas-servico.service.ts](apps/api/src/modules/notas-servico/notas-servico.service.ts) | 16, 35, 40, 48-? | Idem (NS via Sheets-DB rows) | 1× por boot |
-| [integracoes.service.ts:264-265](apps/api/src/modules/integracoes/integracoes.service.ts) | 264-265 | **Comentário apenas** — entry `sheets-db` já removida do menu | — |
-| [health.controller.ts/test.ts](apps/api/src/modules/health/health.controller.ts) | — | **Já removido em S2.10.13a** | — |
+| Arquivo                                                                                             | Linha                 | Uso                                                           | Frequência         |
+| --------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------- | ------------------ |
+| [escalas.service.ts](apps/api/src/modules/escalas/escalas.service.ts)                               | 19, 133, 138, 149-170 | `bootstrapFromSheetsDbIfEmpty()` no `onModuleInit`            | 1× por boot da API |
+| [escalas-especiais.service.ts](apps/api/src/modules/escalas-especiais/escalas-especiais.service.ts) | 12, 26, 31, 42-62     | Idem (escala especial XLSM via Sheets-DB rows)                | 1× por boot        |
+| [notas-servico.service.ts](apps/api/src/modules/notas-servico/notas-servico.service.ts)             | 16, 35, 40, 48-?      | Idem (NS via Sheets-DB rows)                                  | 1× por boot        |
+| [integracoes.service.ts:264-265](apps/api/src/modules/integracoes/integracoes.service.ts)           | 264-265               | **Comentário apenas** — entry `sheets-db` já removida do menu | —                  |
+| [health.controller.ts/test.ts](apps/api/src/modules/health/health.controller.ts)                    | —                     | **Já removido em S2.10.13a**                                  | —                  |
 
 ### Módulo `sheets-db/` em si
 
@@ -58,13 +58,13 @@ Account + scopes).
 
 ## Riscos da remoção
 
-| Risco | Probabilidade | Mitigação |
-|---|---|---|
-| Bootstrap em deploy fresh perde dados de escala | Baixa | Postgres tem 100% das escalas desde S2.10.5. Eventual deploy em ambiente novo (staging) precisa de seed alternativo (XLSX manual + endpoint sync) |
-| GOOGLE_SHEETS_SA_KEY_BASE64 env var órfã | Trivial | Remover do `.env.example` + Render dashboard após 14b |
-| Tests que mockam SheetsDbService quebram | Trivial | Remover mocks + helpers junto com o service |
-| `bootstrapFromSheetsDbIfEmpty` chamado externamente | Zero | Métodos `private` — confirmado por grep |
-| Logs de "Bootstrap escalas: N meses importados…" desaparecem | Cosmético | Substituir por mensagem clara em log de erro se Postgres realmente vazio |
+| Risco                                                        | Probabilidade | Mitigação                                                                                                                                         |
+| ------------------------------------------------------------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bootstrap em deploy fresh perde dados de escala              | Baixa         | Postgres tem 100% das escalas desde S2.10.5. Eventual deploy em ambiente novo (staging) precisa de seed alternativo (XLSX manual + endpoint sync) |
+| GOOGLE_SHEETS_SA_KEY_BASE64 env var órfã                     | Trivial       | Remover do `.env.example` + Render dashboard após 14b                                                                                             |
+| Tests que mockam SheetsDbService quebram                     | Trivial       | Remover mocks + helpers junto com o service                                                                                                       |
+| `bootstrapFromSheetsDbIfEmpty` chamado externamente          | Zero          | Métodos `private` — confirmado por grep                                                                                                           |
+| Logs de "Bootstrap escalas: N meses importados…" desaparecem | Cosmético     | Substituir por mensagem clara em log de erro se Postgres realmente vazio                                                                          |
 
 ## Roadmap de execução (3 sub-sprints)
 
@@ -158,15 +158,15 @@ curl https://argus-cbmes-api.onrender.com/health/status | jq .
 
 Após S2.10.14c merged:
 
-| Integração runtime | Antes (S2.10.13) | Depois (S2.10.14) |
-|---|---|---|
-| Sheets-DB (planilha BD_ARGUS_CBMES_HOM) | Fallback bootstrap | **REMOVIDO** |
-| MapaForcaCiodes (planilha CIODES) | Real-time (TTL adaptativo) | **MANTIDO** (única exceção) |
-| QDI/DADOS, QDI 1ª1º, EFETIVO | CSV público + cache + sync sob demanda | Mantido (mas conceitualmente "importação manual") |
-| Dispensas, Trocas, ISEO, ChOp, QDV | CSV público + cache + sync sob demanda | Idem |
-| Sheets-DB env vars | ✓ Presentes | **REMOVIDAS** |
-| Módulo `apps/api/src/modules/sheets-db/` | ~600 linhas | **DELETADO** |
-| Bundle do backend | Inclui googleapis Service Account auth | googleapis ainda para MapaForcaCiodes (read-only CSV — sem auth) |
+| Integração runtime                       | Antes (S2.10.13)                       | Depois (S2.10.14)                                                |
+| ---------------------------------------- | -------------------------------------- | ---------------------------------------------------------------- |
+| Sheets-DB (planilha BD_ARGUS_CBMES_HOM)  | Fallback bootstrap                     | **REMOVIDO**                                                     |
+| MapaForcaCiodes (planilha CIODES)        | Real-time (TTL adaptativo)             | **MANTIDO** (única exceção)                                      |
+| QDI/DADOS, QDI 1ª1º, EFETIVO             | CSV público + cache + sync sob demanda | Mantido (mas conceitualmente "importação manual")                |
+| Dispensas, Trocas, ISEO, ChOp, QDV       | CSV público + cache + sync sob demanda | Idem                                                             |
+| Sheets-DB env vars                       | ✓ Presentes                            | **REMOVIDAS**                                                    |
+| Módulo `apps/api/src/modules/sheets-db/` | ~600 linhas                            | **DELETADO**                                                     |
+| Bundle do backend                        | Inclui googleapis Service Account auth | googleapis ainda para MapaForcaCiodes (read-only CSV — sem auth) |
 
 ## Próximos passos imediatos
 
