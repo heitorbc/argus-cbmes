@@ -261,10 +261,10 @@ export class IntegracoesService {
         forceSync: () => this.viaturasQdvExtras.forceSyncContatos(),
       },
 
-      // S2.10.9d — Entry `sheets-db` removida do menu. Dual-write encerrado:
-      // Postgres é canônico desde S2.10.5; `bootstrapFromSheetsDbIfEmpty()`
-      // mantido em escalas/escalas-especiais/notas-servico como fallback
-      // read-only de segurança (sem impacto no menu).
+      // S2.10.14a — Sheets-DB totalmente removido como dependência runtime.
+      // Postgres é fonte canônica desde S2.10.5 (dual-write encerrado em
+      // S2.10.9d; fallback bootstrap removido em S2.10.14a). Única integração
+      // runtime com planilha Google restante: MapaForcaCiodes (real-time CSV).
     ];
   }
 

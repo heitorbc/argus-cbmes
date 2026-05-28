@@ -1,11 +1,4 @@
-import {
-  ConflictException,
-  Injectable,
-  Logger,
-  NotFoundException,
-  Optional,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type {
   CreateNotaServicoInput,
   NotaServico,
@@ -13,78 +6,21 @@ import type {
 } from '@argus/shared-types';
 import type { NotaServico as PrismaNS } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { SheetsDbService } from '../sheets-db/sheets-db.service';
-import { rowToNotaServico } from '../sheets-db/sheets-db-serializers';
 
 /**
  * S6l — CRUD de Notas de Serviço.
  *
- * S2.10.5 — Prisma é fonte primária. Sheets-DB continua como espelho
- * institucional (dual-write fire-and-forget). Bootstrap one-shot lê
- * Sheets-DB e popula Postgres se a tabela estiver vazia (transição).
+ * S2.10.5 — Prisma é fonte canônica (S2.10.9d encerrou o dual-write).
+ * S2.10.14a — Removido fallback bootstrap via Sheets-DB; Postgres é a única fonte.
  *
  * Soft delete via `deletedAt` (ADR-014 D4): preserva auditoria histórica
  * de quem criou/removeu uma NS.
  */
 @Injectable()
-export class NotasServicoService implements OnModuleInit {
+export class NotasServicoService {
   private readonly logger = new Logger(NotasServicoService.name);
 
-  constructor(
-    private readonly prisma: PrismaService,
-    @Optional() private readonly sheetsDb?: SheetsDbService,
-  ) {}
-
-  async onModuleInit(): Promise<void> {
-    if (process.env.NODE_ENV === 'test') return;
-    await this.bootstrapFromSheetsDbIfEmpty();
-  }
-
-  /**
-   * Bootstrap one-shot: se a tabela Postgres está vazia E o Sheets-DB tem
-   * dados, importa. Idempotente — só roda na 1ª execução após a migração.
-   * Após isso, Postgres é fonte e Sheets-DB recebe write-only.
-   */
-  private async bootstrapFromSheetsDbIfEmpty(): Promise<void> {
-    try {
-      const count = await this.prisma.notaServico.count({ where: { deletedAt: null } });
-      if (count > 0) return;
-      if (!this.sheetsDb?.isEnabled()) return;
-      const rows = await this.sheetsDb.readNotasServico();
-      let imported = 0;
-      for (const row of rows) {
-        const ns = rowToNotaServico(row);
-        if (!ns) continue;
-        await this.prisma.notaServico
-          .create({
-            data: {
-              id: ns.id,
-              codigo: ns.codigo,
-              descricao: ns.descricao,
-              data: ns.data,
-              horaInicio: ns.horaInicio,
-              horaFim: ns.horaFim,
-              viaturaPrefixo: ns.viaturaPrefixo,
-              militaresNfs: ns.militaresNfs,
-              observacoes: ns.observacoes,
-              criadoEm: new Date(ns.criadoEm),
-              criadoPorNf: ns.criadoPorNf,
-            },
-          })
-          .then(() => {
-            imported++;
-          })
-          .catch((err: Error) => {
-            this.logger.warn(`Bootstrap NS skip ${ns.id}: ${err.message}`);
-          });
-      }
-      if (imported > 0) {
-        this.logger.log(`Bootstrap NS: ${imported} entradas importadas do Sheets-DB → Postgres.`);
-      }
-    } catch (err) {
-      this.logger.warn(`Bootstrap NS falhou: ${(err as Error).message}.`);
-    }
-  }
+  constructor(private readonly prisma: PrismaService) {}
 
   async list(filter: { data?: string; militarNf?: string } = {}): Promise<NotaServico[]> {
     const rows = await this.prisma.notaServico.findMany({

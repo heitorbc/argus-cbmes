@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional, type OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EscalaEspecialMensal } from '@argus/shared-types';
@@ -9,55 +9,22 @@ import type {
 import { resolveDataDir } from '../../common/dev-fixtures';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { parseEscalaEspecialXlsm, parseFilenameEspecial } from './escala-especial-xlsm-parser';
-import { SheetsDbService } from '../sheets-db/sheets-db.service';
-import { rowsToEscalasEspeciais } from '../sheets-db/sheets-db-serializers';
 
 /**
- * S2.10.5 — Persistência em Postgres via Prisma. Sheets-DB continua como
- * espelho institucional (dual-write fire-and-forget). XLSM fallback dev
- * preservado mas só roda se Postgres E Sheets-DB estiverem vazios.
+ * S2.10.5 — Persistência em Postgres via Prisma (fonte canônica desde S2.10.9d).
+ * S2.10.14a — Removido fallback bootstrap via Sheets-DB; Postgres é a única fonte.
  */
 @Injectable()
 export class EscalasEspeciaisService implements OnModuleInit {
   private readonly logger = new Logger(EscalasEspeciaisService.name);
 
-  constructor(
-    private readonly prisma: PrismaService,
-    @Optional() private readonly sheetsDb?: SheetsDbService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async onModuleInit(): Promise<void> {
     if (process.env.NODE_ENV === 'test') return;
-    await this.bootstrapFromSheetsDbIfEmpty();
     if (process.env.NODE_ENV !== 'production') {
       const total = await this.countMeses();
       if (total === 0) await this.bootstrapFromFilesystem();
-    }
-  }
-
-  /**
-   * Importa Sheets-DB → Postgres se Postgres está vazio. Idempotente.
-   * Roda só na 1ª execução pós-migração; depois Postgres é fonte.
-   */
-  private async bootstrapFromSheetsDbIfEmpty(): Promise<void> {
-    try {
-      const count = await this.countMeses();
-      if (count > 0) return;
-      if (!this.sheetsDb?.isEnabled()) return;
-      const rows = await this.sheetsDb.readEscalaEspecial();
-      const escalas = rowsToEscalasEspeciais(rows);
-      let imported = 0;
-      for (const escala of escalas.values()) {
-        await this.upsertNoPostgres(escala);
-        imported += 1;
-      }
-      if (imported > 0) {
-        this.logger.log(
-          `Bootstrap escala especial: ${imported} meses importados do Sheets-DB → Postgres.`,
-        );
-      }
-    } catch (err) {
-      this.logger.warn(`Bootstrap escala especial falhou: ${(err as Error).message}.`);
     }
   }
 
