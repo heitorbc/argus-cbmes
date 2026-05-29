@@ -119,6 +119,12 @@ export const userSessionSchema = z.object({
   primeiroAcesso: z.boolean(),
   /** Email cadastrado para recuperação de senha. Coletado no 1º acesso. */
   email: z.string().optional(),
+  /**
+   * S2.13a — Lotação do usuário (unidade institucional). NULL para admin
+   * (vê todas) ou sessão criada antes do campo existir. Backend filtra a
+   * maioria das queries por `unidadesVisiveisParaUsuario(user)`.
+   */
+  unidadeId: z.string().optional(),
 });
 export type UserSession = z.infer<typeof userSessionSchema>;
 
@@ -134,6 +140,8 @@ export const createUsuarioInputSchema = z.object({
   ant: z.number().int().nonnegative(),
   papeis: z.array(z.enum(PAPEIS)).min(1, 'Pelo menos 1 papel'),
   senhaInicial: z.string().min(6).optional(),
+  /** S2.13a — lotação do usuário. Admin cria com null para "vê tudo". */
+  unidadeId: z.string().nullable().optional(),
 });
 export type CreateUsuarioInput = z.infer<typeof createUsuarioInputSchema>;
 
@@ -154,6 +162,8 @@ export const updateUsuarioInputSchema = z.object({
   papeis: z.array(z.enum(PAPEIS)).min(1).optional(),
   /** Se preenchido, reseta a senha e marca `primeiroAcesso=true`. */
   resetSenha: z.boolean().optional(),
+  /** S2.13a — admin pode alterar lotação do usuário. Null = vê tudo. */
+  unidadeId: z.string().nullable().optional(),
 });
 export type UpdateUsuarioInput = z.infer<typeof updateUsuarioInputSchema>;
 

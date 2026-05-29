@@ -51,6 +51,11 @@ model User {
   /// Unique para evitar enumeração via colisão.
   email          String?   @unique
   ultimoLoginEm  DateTime?
+  /// S2.13a — Lotação do usuário. NULL para admin (vê todas unidades) ou
+  /// transição (sessão criada antes do campo existir). Backend filtra a
+  /// maioria das queries por `unidadesVisiveisParaUsuario(user)`.
+  unidadeId      String?
+  unidade        Unidade?  @relation("UserUnidade", fields: [unidadeId], references: [id])
   criadoEm       DateTime  @default(now())
   atualizadoEm   DateTime  @updatedAt
   deletedAt      DateTime?
@@ -66,6 +71,7 @@ model User {
   escalasEspeciaisImportadas EscalaEspecialMensal[] @relation("EscalaEspecialImportadaPor")
 
   @@index([deletedAt])
+  @@index([unidadeId])
   @@map("users")
 }
 
@@ -162,14 +168,32 @@ model Viatura {
   @@map("viaturas")
 }
 
+/// Unidade institucional do CBMES. S2.13a — ganha hierarquia via `tipo`
+/// (batalhao | companhia | posto_avancado) e auto-referência `unidadePaiId`.
+/// Sargenteante/Oficial de Operações de uma unidade vê própria unidade +
+/// descendentes (ex.: Companhia "abrange" Postos Avançados ligados a ela).
 model Unidade {
   id           String   @id @default(cuid())
   codigo       String   @unique
   nome         String
+  /// S2.13a — tipo institucional. Valores aceitos (validados em service):
+  /// `batalhao` | `companhia` | `posto_avancado`. Default `companhia` para
+  /// retrocompatibilidade com seed 1ª1º.
+  tipo         String   @default("companhia")
+  /// S2.13a — unidade pai na hierarquia (NULL para topo, ex.: 1º BBM).
+  unidadePaiId String?
+  unidadePai   Unidade? @relation("UnidadeHierarquia", fields: [unidadePaiId], references: [id])
+  filhos       Unidade[] @relation("UnidadeHierarquia")
   ativo        Boolean  @default(true)
+  /// S2.13f — marca unidades criadas automaticamente pelo consolidador de
+  /// efetivo (LOCAL desconhecido). Admin reorganiza depois.
+  criacaoAutomatica Boolean @default(false)
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt
 
+  usuarios User[] @relation("UserUnidade")
+
+  @@index([unidadePaiId])
   @@map("unidades")
 }
 
