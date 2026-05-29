@@ -8,7 +8,9 @@ import {
 import type {
   CategoriaRecurso,
   CreateRecursoInput,
+  FuncaoEquipeMinima,
   Recurso,
+  TipoComposicaoRecurso,
   UpdateRecursoInput,
 } from '@argus/shared-types';
 import { UnidadesService, UNIDADE_1CIA_1BBM_ID } from '../unidades/unidades.service';
@@ -20,7 +22,12 @@ import { UnidadesService, UNIDADE_1CIA_1BBM_ID } from '../unidades/unidades.serv
  * Migra a whitelist `RECURSOS_VALIDOS` (parser) e `RECURSOS_STAFF`/`RECURSOS_AQUATICAS`
  * (previa) para esta entidade.
  *
- * Persistência in-memory (Fase 1); migra para Prisma+Supabase em S5b.
+ * S2.13b — Recurso ganha `tipoComposicao` (viatura_only | equipe_only |
+ * viatura_e_equipe), `equipeMinima` (array de funções com obrigatoriedade e
+ * acumulação) e `viaturaPrefixoFixo` (associação fixa quando recurso usa
+ * SEMPRE uma viatura concreta).
+ *
+ * Persistência in-memory (Fase 1); migra para Prisma+Supabase em sprint futura.
  */
 @Injectable()
 export class RecursosService implements OnModuleInit {
@@ -74,6 +81,10 @@ export class RecursosService implements OnModuleInit {
    *  - `ordem` é >= 0
    *
    * `ativo` default true. Geração de id usa slug do nome (igual ao seed).
+   *
+   * S2.13b — `tipoComposicao` é derivado de `comportaViatura/comportaEfetivo`
+   * quando omitido (back-compat com clients antigos). `equipeMinima` e
+   * `viaturaPrefixoFixo` default null.
    */
   async create(input: CreateRecursoInput): Promise<Recurso> {
     await this.unidades.findById(input.unidadeId); // 404 se inexistente
@@ -84,6 +95,8 @@ export class RecursosService implements OnModuleInit {
       );
     }
     const now = new Date().toISOString();
+    const tipoComposicao =
+      input.tipoComposicao ?? deriveTipoComposicao(input.comportaViatura, input.comportaEfetivo);
     const recurso: Recurso = {
       id: `recurso:${input.unidadeId}:${slugify(input.nome)}`,
       unidadeId: input.unidadeId,
@@ -92,6 +105,9 @@ export class RecursosService implements OnModuleInit {
       ativo: input.ativo ?? true,
       comportaViatura: input.comportaViatura,
       comportaEfetivo: input.comportaEfetivo,
+      tipoComposicao,
+      equipeMinima: input.equipeMinima ?? null,
+      viaturaPrefixoFixo: input.viaturaPrefixoFixo ?? null,
       ordem: input.ordem,
       criadoEm: now,
       atualizadoEm: now,
@@ -109,6 +125,9 @@ export class RecursosService implements OnModuleInit {
   /**
    * S6e — atualiza Recurso (não muda unidadeId nem id).
    * Se `nome` mudar, valida que não conflita com outro recurso da mesma unidade.
+   *
+   * S2.13b — aceita atualização de `tipoComposicao`, `equipeMinima`,
+   * `viaturaPrefixoFixo`. `equipeMinima === null` limpa explicitamente.
    */
   update(id: string, input: UpdateRecursoInput): Recurso {
     const current = this.findById(id);
@@ -130,6 +149,12 @@ export class RecursosService implements OnModuleInit {
       ativo: input.ativo ?? current.ativo,
       comportaViatura: input.comportaViatura ?? current.comportaViatura,
       comportaEfetivo: input.comportaEfetivo ?? current.comportaEfetivo,
+      tipoComposicao: input.tipoComposicao ?? current.tipoComposicao,
+      equipeMinima: input.equipeMinima === undefined ? current.equipeMinima : input.equipeMinima,
+      viaturaPrefixoFixo:
+        input.viaturaPrefixoFixo === undefined
+          ? current.viaturaPrefixoFixo
+          : input.viaturaPrefixoFixo,
       ordem: input.ordem ?? current.ordem,
       atualizadoEm: new Date().toISOString(),
     };
@@ -152,6 +177,8 @@ export class RecursosService implements OnModuleInit {
    *   - comportaViatura: tem prefixo de viatura no MF
    *   - comportaEfetivo: tem militares no MF
    *   - categoria: define bucket de Tripulação na Prévia
+   *
+   * S2.13b — popula `tipoComposicao` + `equipeMinima` para cada recurso.
    */
   private seed1aCia1Bbm(): void {
     const now = new Date().toISOString();
@@ -163,6 +190,9 @@ export class RecursosService implements OnModuleInit {
         ativo: true,
         comportaViatura: true,
         comportaEfetivo: true,
+        tipoComposicao: 'viatura_e_equipe',
+        equipeMinima: EQUIPE_PADRAO_ABTS,
+        viaturaPrefixoFixo: null,
         ordem: 1,
       },
       {
@@ -171,6 +201,9 @@ export class RecursosService implements OnModuleInit {
         ativo: true,
         comportaViatura: true,
         comportaEfetivo: true,
+        tipoComposicao: 'viatura_e_equipe',
+        equipeMinima: EQUIPE_PADRAO_ABTS,
+        viaturaPrefixoFixo: null,
         ordem: 2,
       },
       {
@@ -179,6 +212,9 @@ export class RecursosService implements OnModuleInit {
         ativo: true,
         comportaViatura: true,
         comportaEfetivo: true,
+        tipoComposicao: 'viatura_e_equipe',
+        equipeMinima: [{ funcao: 'motorista', obrigatorio: true }],
+        viaturaPrefixoFixo: null,
         ordem: 3,
       },
       {
@@ -187,6 +223,9 @@ export class RecursosService implements OnModuleInit {
         ativo: true,
         comportaViatura: true,
         comportaEfetivo: true,
+        tipoComposicao: 'viatura_e_equipe',
+        equipeMinima: [{ funcao: 'motorista', obrigatorio: true }],
+        viaturaPrefixoFixo: null,
         ordem: 4,
       },
       {
@@ -195,6 +234,11 @@ export class RecursosService implements OnModuleInit {
         ativo: true,
         comportaViatura: true,
         comportaEfetivo: true,
+        // 1ª Cia mantém com equipe; outras unidades (3ª CIA IND) podem ter
+        // como viatura_only — diferenciação acontece pelo cadastro por unidade.
+        tipoComposicao: 'viatura_e_equipe',
+        equipeMinima: EQUIPE_PADRAO_ABTS,
+        viaturaPrefixoFixo: null,
         ordem: 5,
       },
       {
@@ -203,6 +247,12 @@ export class RecursosService implements OnModuleInit {
         ativo: true,
         comportaViatura: false,
         comportaEfetivo: true,
+        tipoComposicao: 'equipe_only',
+        equipeMinima: [
+          { funcao: 'chefe', obrigatorio: true },
+          { funcao: 'membro', obrigatorio: false },
+        ],
+        viaturaPrefixoFixo: null,
         ordem: 6,
       },
       {
@@ -211,6 +261,9 @@ export class RecursosService implements OnModuleInit {
         ativo: true,
         comportaViatura: true,
         comportaEfetivo: true,
+        tipoComposicao: 'viatura_e_equipe',
+        equipeMinima: EQUIPE_PADRAO_RESGATE,
+        viaturaPrefixoFixo: null,
         ordem: 7,
       },
       {
@@ -219,6 +272,14 @@ export class RecursosService implements OnModuleInit {
         ativo: true,
         comportaViatura: true,
         comportaEfetivo: true,
+        tipoComposicao: 'viatura_e_equipe',
+        // Em RESGATE 02 (reduzido) o chefe pode acumular com motorista.
+        equipeMinima: [
+          { funcao: 'chefe', obrigatorio: true, podeAcumularCom: ['motorista'] },
+          { funcao: 'motorista', obrigatorio: true, podeAcumularCom: ['chefe'] },
+          { funcao: 'socorrista', obrigatorio: true },
+        ],
+        viaturaPrefixoFixo: null,
         ordem: 8,
       },
       {
@@ -227,6 +288,12 @@ export class RecursosService implements OnModuleInit {
         ativo: true,
         comportaViatura: true,
         comportaEfetivo: true,
+        tipoComposicao: 'viatura_e_equipe',
+        equipeMinima: [
+          { funcao: 'chefe', obrigatorio: true },
+          { funcao: 'motorista', obrigatorio: true },
+        ],
+        viaturaPrefixoFixo: null,
         ordem: 9,
       },
       {
@@ -235,6 +302,9 @@ export class RecursosService implements OnModuleInit {
         ativo: true,
         comportaViatura: true,
         comportaEfetivo: true,
+        tipoComposicao: 'viatura_e_equipe',
+        equipeMinima: [{ funcao: 'supervisor', obrigatorio: true }],
+        viaturaPrefixoFixo: null,
         ordem: 10,
       },
       {
@@ -243,6 +313,9 @@ export class RecursosService implements OnModuleInit {
         ativo: true,
         comportaViatura: true,
         comportaEfetivo: true,
+        tipoComposicao: 'viatura_e_equipe',
+        equipeMinima: [{ funcao: 'supervisor', obrigatorio: true }],
+        viaturaPrefixoFixo: null,
         ordem: 11,
       },
       {
@@ -251,6 +324,9 @@ export class RecursosService implements OnModuleInit {
         ativo: true,
         comportaViatura: true,
         comportaEfetivo: true,
+        tipoComposicao: 'viatura_e_equipe',
+        equipeMinima: [{ funcao: 'quadricicleiro', obrigatorio: true }],
+        viaturaPrefixoFixo: null,
         ordem: 12,
       },
       {
@@ -259,6 +335,9 @@ export class RecursosService implements OnModuleInit {
         ativo: true,
         comportaViatura: true,
         comportaEfetivo: true,
+        tipoComposicao: 'viatura_e_equipe',
+        equipeMinima: [{ funcao: 'quadricicleiro', obrigatorio: true }],
+        viaturaPrefixoFixo: null,
         ordem: 13,
       },
       {
@@ -267,6 +346,9 @@ export class RecursosService implements OnModuleInit {
         ativo: true,
         comportaViatura: true,
         comportaEfetivo: true,
+        tipoComposicao: 'viatura_e_equipe',
+        equipeMinima: EQUIPE_PADRAO_MERGULHO,
+        viaturaPrefixoFixo: null,
         ordem: 14,
       },
       {
@@ -275,6 +357,9 @@ export class RecursosService implements OnModuleInit {
         ativo: true,
         comportaViatura: true,
         comportaEfetivo: true,
+        tipoComposicao: 'viatura_e_equipe',
+        equipeMinima: EQUIPE_PADRAO_MERGULHO,
+        viaturaPrefixoFixo: null,
         ordem: 15,
       },
       {
@@ -283,6 +368,9 @@ export class RecursosService implements OnModuleInit {
         ativo: true,
         comportaViatura: true,
         comportaEfetivo: true,
+        tipoComposicao: 'viatura_e_equipe',
+        equipeMinima: EQUIPE_PADRAO_ABTS,
+        viaturaPrefixoFixo: null,
         ordem: 16,
       },
       {
@@ -291,6 +379,9 @@ export class RecursosService implements OnModuleInit {
         ativo: true,
         comportaViatura: true,
         comportaEfetivo: true,
+        tipoComposicao: 'viatura_e_equipe',
+        equipeMinima: EQUIPE_PADRAO_ABTS,
+        viaturaPrefixoFixo: null,
         ordem: 17,
       },
       {
@@ -299,6 +390,9 @@ export class RecursosService implements OnModuleInit {
         ativo: true,
         comportaViatura: false,
         comportaEfetivo: true,
+        tipoComposicao: 'equipe_only',
+        equipeMinima: [{ funcao: 'telefonista', obrigatorio: true }],
+        viaturaPrefixoFixo: null,
         ordem: 18,
       },
       {
@@ -307,6 +401,13 @@ export class RecursosService implements OnModuleInit {
         ativo: true,
         comportaViatura: false,
         comportaEfetivo: true,
+        tipoComposicao: 'equipe_only',
+        equipeMinima: [
+          { funcao: 'sentinela 1', obrigatorio: true },
+          { funcao: 'sentinela 2', obrigatorio: true },
+          { funcao: 'sentinela 3', obrigatorio: true },
+        ],
+        viaturaPrefixoFixo: null,
         ordem: 19,
       },
     ];
@@ -322,6 +423,41 @@ export class RecursosService implements OnModuleInit {
       });
     }
   }
+}
+
+/**
+ * S2.13b — Helpers de equipe mínima padronizada (compartilhados entre recursos
+ * similares para facilitar seed e legibilidade).
+ */
+const EQUIPE_PADRAO_ABTS: FuncaoEquipeMinima[] = [
+  { funcao: 'chefe', obrigatorio: true },
+  { funcao: 'motorista', obrigatorio: true },
+  { funcao: 'operador', obrigatorio: true },
+];
+
+const EQUIPE_PADRAO_RESGATE: FuncaoEquipeMinima[] = [
+  { funcao: 'chefe', obrigatorio: true },
+  { funcao: 'motorista', obrigatorio: true },
+  { funcao: 'socorrista', obrigatorio: true },
+];
+
+const EQUIPE_PADRAO_MERGULHO: FuncaoEquipeMinima[] = [
+  { funcao: 'chefe', obrigatorio: true },
+  { funcao: 'motorista', obrigatorio: true },
+  { funcao: 'mergulhador', obrigatorio: false },
+];
+
+/**
+ * S2.13b — Deriva `tipoComposicao` a partir das flags antigas, para
+ * compatibilidade com inputs/payloads pré-S2.13b.
+ */
+function deriveTipoComposicao(
+  comportaViatura: boolean,
+  comportaEfetivo: boolean,
+): TipoComposicaoRecurso {
+  if (comportaViatura && comportaEfetivo) return 'viatura_e_equipe';
+  if (comportaViatura) return 'viatura_only';
+  return 'equipe_only';
 }
 
 function slugify(s: string): string {
