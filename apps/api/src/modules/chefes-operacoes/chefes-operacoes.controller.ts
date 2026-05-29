@@ -1,10 +1,21 @@
-import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { z } from 'zod';
 import type { ChefeOperacoes } from '@argus/shared-types';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { ChefesOperacoesImportService, type SyncResult } from './chefes-operacoes-import.service';
 import { ChefesOperacoesService, type ChefeOperacoesHabilitado } from './chefes-operacoes.service';
+
+const syncMesBodySchema = z.object({
+  ano: z.number().int().min(2020).max(2099),
+  mes: z.number().int().min(1).max(12),
+});
 
 @Controller('chefes-operacoes')
 export class ChefesOperacoesController {
-  constructor(private readonly service: ChefesOperacoesService) {}
+  constructor(
+    private readonly service: ChefesOperacoesService,
+    private readonly importService: ChefesOperacoesImportService,
+  ) {}
 
   /**
    * S0.x/fixes-3 — Lista todos os militares habilitados como Chefe de
@@ -44,6 +55,34 @@ export class ChefesOperacoesController {
   @Get('meses-disponiveis')
   async listMesesDisponiveis(): Promise<Array<{ ano: number; mes: number }>> {
     return this.service.listMesesDisponiveis();
+  }
+
+  /**
+   * S2.14 — Re-importa apenas o mês `{ano, mes}` da planilha (substitui o
+   * mês inteiro em transaction). UI: botão "🔄 Atualizar este mês" usa este
+   * endpoint com o mês atualmente selecionado no dropdown.
+   */
+  @Roles('admin')
+  @Post('sync-mes')
+  async syncMes(@Body() body: unknown): Promise<SyncResult> {
+    const parsed = syncMesBodySchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.errors.map((e) => e.message));
+    }
+    return this.importService.syncMonth(parsed.data.ano, parsed.data.mes);
+  }
+
+  /**
+   * S2.14 — Detecta o último mês carregado (`max(ano, mes)` no DB) e tenta
+   * importar o mês seguinte. Se a aba não existir na planilha, responde com
+   * `{ disponivel: false, mensagem }` sem alterar o DB.
+   */
+  @Roles('admin')
+  @Post('sync-proximo-mes')
+  async syncProximoMes(): Promise<
+    { ano: number; mes: number; result: SyncResult } | { disponivel: false; mensagem: string }
+  > {
+    return this.importService.syncNextMonth();
   }
 }
 

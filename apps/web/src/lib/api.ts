@@ -831,6 +831,43 @@ export const api = {
   chefesOperacoesMesesDisponiveis: () =>
     request<Array<{ ano: number; mes: number }>>('/chefes-operacoes/meses-disponiveis'),
 
+  /**
+   * S2.14 — Re-importa apenas o mês `{ano, mes}` da planilha ChOp. Botão
+   * "🔄 Atualizar este mês" na página /cadastros/chefes-operacoes.
+   */
+  chefesOperacoesSyncMes: (ano: number, mes: number) =>
+    request<{
+      created: number;
+      updated: number;
+      skipped: number;
+      inconsistencias: string[];
+      syncedAt: string;
+    }>(`/chefes-operacoes/sync-mes`, {
+      method: 'POST',
+      body: JSON.stringify({ ano, mes }),
+    }),
+
+  /**
+   * S2.14 — Detecta o último mês carregado no DB e tenta importar o mês
+   * seguinte. Resposta discriminada: sucesso devolve `{ano, mes, result}`;
+   * aba ausente devolve `{disponivel: false, mensagem}`.
+   */
+  chefesOperacoesSyncProximoMes: () =>
+    request<
+      | {
+          ano: number;
+          mes: number;
+          result: {
+            created: number;
+            updated: number;
+            skipped: number;
+            inconsistencias: string[];
+            syncedAt: string;
+          };
+        }
+      | { disponivel: false; mensagem: string }
+    >(`/chefes-operacoes/sync-proximo-mes`, { method: 'POST' }),
+
   // Notas de Serviço (S6l)
   notasServicoList: (filter: { data?: string; militarNf?: string } = {}) => {
     const params = new URLSearchParams();
