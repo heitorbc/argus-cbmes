@@ -124,6 +124,20 @@ class FakeMapaForcaService {
   }
 }
 
+// S2.13e — Fake RecursosService que substitui o CIODES. Retorna os mesmos
+// nomes que historicamente o `FakeMapaForcaService` injetava nos testes,
+// agora como cadastro Argus.
+class FakeRecursosService {
+  list(_filter?: { unidadeId?: string; ativoSomente?: boolean }) {
+    void _filter;
+    return [
+      { nome: 'ABTS_01', viaturaPrefixoFixo: null },
+      { nome: 'RESGATE', viaturaPrefixoFixo: null },
+      { nome: 'GUARDA', viaturaPrefixoFixo: null },
+    ];
+  }
+}
+
 class FakeTrocasAutorizadasService {
   trocas: Array<{
     dataEscala: string;
@@ -238,6 +252,7 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
       new FakeTrocasAutorizadasService() as unknown as never,
       new FeriasService(),
       new FakeMapaForcaService() as unknown as never,
+      new FakeRecursosService() as unknown as never,
     );
 
     await escalas.save(escalaAbril2026);
@@ -820,6 +835,7 @@ describe('MapaForcaService — cenário 23/04/2026 CHARLIE', () => {
       new FakeTrocasAutorizadasService() as unknown as never,
       new FeriasService(),
       new FakeMapaForcaService() as unknown as never,
+      new FakeRecursosService() as unknown as never,
     );
     const r = await previa.getMapaForcaDoDia('2026-04-23');
     const ar044 = r.viaturasOperacionais.find((v) => v.codigo === 'AR 044');
@@ -886,6 +902,7 @@ describe('MapaForcaService — aprovação de troca aplica swap (S2.10.7c)', () 
       new FakeTrocasAutorizadasService() as unknown as never,
       new FeriasService(),
       new FakeMapaForcaService() as unknown as never,
+      new FakeRecursosService() as unknown as never,
     );
     await escalas.save(escalaAbril2026);
     // Permite edição de aprovações: PREVIA_INICIADA pelo FISCAL_NF.
@@ -998,6 +1015,7 @@ describe('MapaForcaService — inconsistências', () => {
       new FakeTrocasAutorizadasService() as unknown as never,
       new FeriasService(),
       new FakeMapaForcaService() as unknown as never,
+      new FakeRecursosService() as unknown as never,
     );
   });
 

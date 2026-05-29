@@ -33,6 +33,8 @@ import { MapaForcaService } from './mapa-forca.service';
 
 const querySchema = z.object({
   data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  /** S2.13e — Unidade para filtrar os recursos do MF. Default 1ª Cia. */
+  unidade: z.string().optional(),
 });
 
 const dataParamRegex = /^\d{4}-\d{2}-\d{2}$/;
@@ -54,7 +56,7 @@ export class MapaForcaController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.errors.map((e) => e.message));
     }
-    return this.mapaForca.getMapaForcaDoDia(parsed.data.data);
+    return this.mapaForca.getMapaForcaDoDia(parsed.data.data, parsed.data.unidade);
   }
 
   /**
