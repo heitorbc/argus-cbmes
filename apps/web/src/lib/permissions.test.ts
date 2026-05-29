@@ -7,7 +7,26 @@ describe('canSeeSection — S6f matriz papel × seção', () => {
     expect(canSeeSection(p, 'prontidao')).toBe(true);
     expect(canSeeSection(p, 'sargenteacao')).toBe(true);
     expect(canSeeSection(p, 'logistica')).toBe(true);
+    expect(canSeeSection(p, 'operacoes')).toBe(true);
     expect(canSeeSection(p, 'configuracoes')).toBe(true);
+  });
+
+  // S2.13c — Nova role oficial_operacoes
+  it('oficial_operacoes: Prontidão + Operações (não-Sargenteação, não-Logística)', () => {
+    const p = ['oficial_operacoes'];
+    expect(canSeeSection(p, 'prontidao')).toBe(true);
+    expect(canSeeSection(p, 'operacoes')).toBe(true);
+    expect(canSeeSection(p, 'sargenteacao')).toBe(false);
+    expect(canSeeSection(p, 'logistica')).toBe(false);
+    expect(canSeeSection(p, 'configuracoes')).toBe(false);
+  });
+
+  it('sargenteante NÃO vê Operações (S2.13c)', () => {
+    expect(canSeeSection(['sargenteante'], 'operacoes')).toBe(false);
+  });
+
+  it('fiscal NÃO vê Operações (S2.13c)', () => {
+    expect(canSeeSection(['fiscal'], 'operacoes')).toBe(false);
   });
 
   it('sargenteante: Prontidão + Sargenteação', () => {
@@ -104,6 +123,15 @@ describe('canAccessRoute — gate por URL', () => {
     expect(canAccessRoute(['sargenteante'], '/configuracoes/unidades')).toBe(false);
     expect(canAccessRoute(['admin'], '/configuracoes/unidades')).toBe(true);
     expect(canAccessRoute(['admin'], '/configuracoes/integracoes')).toBe(true);
+  });
+
+  // S2.13c — Rotas /operacoes/* gated por oficial_operacoes/admin
+  it('S2.13c: /operacoes/recursos exige oficial_operacoes ou admin', () => {
+    expect(canAccessRoute(['oficial_operacoes'], '/operacoes/recursos')).toBe(true);
+    expect(canAccessRoute(['admin'], '/operacoes/recursos')).toBe(true);
+    expect(canAccessRoute(['sargenteante'], '/operacoes/recursos')).toBe(false);
+    expect(canAccessRoute(['fiscal'], '/operacoes/recursos')).toBe(false);
+    expect(canAccessRoute(['motorista'], '/operacoes/recursos')).toBe(false);
   });
 
   it('subrotas (/cadastros/efetivo/:nf) herdam permissão da rota mãe', () => {

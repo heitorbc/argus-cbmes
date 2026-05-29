@@ -25,6 +25,7 @@ const PAPEL_LABEL: Record<string, string> = {
   sargenteante: 'Sargenteante',
   almoxarife: 'Almoxarife',
   militar: 'Militar',
+  oficial_operacoes: 'Oficial de Operações',
 };
 
 const PAPEL_BADGE: Record<string, string> = {

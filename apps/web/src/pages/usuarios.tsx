@@ -32,6 +32,7 @@ const PAPEL_LABEL: Record<Papel, string> = {
   sargenteante: 'Sargenteante',
   almoxarife: 'Almoxarife',
   militar: 'Militar',
+  oficial_operacoes: 'Oficial de Operações',
 };
 
 export function UsuariosPage() {

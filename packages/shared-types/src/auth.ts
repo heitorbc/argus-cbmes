@@ -15,6 +15,12 @@ export const PAPEIS = [
   'sargenteante',
   'almoxarife',
   'militar',
+  /**
+   * S2.13c — Oficial de Operações da unidade. Responsável pela gestão de
+   * recursos (criar/ativar/desativar/equipe mínima). Centraliza informações
+   * operacionais consumindo dados de Sargenteação, Logística e Prontidão.
+   */
+  'oficial_operacoes',
 ] as const;
 
 export type Papel = (typeof PAPEIS)[number];
