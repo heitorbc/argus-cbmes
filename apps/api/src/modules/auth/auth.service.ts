@@ -171,6 +171,9 @@ export class AuthService {
       papeis: user.papeis as Papel[],
       primeiroAcesso: user.primeiroAcesso,
       email: user.email ?? undefined,
+      // S2.13a — lotação. NULL para admin/legado; demais usuários ganham
+      // filtro de acesso por unidade visível.
+      unidadeId: user.unidadeId ?? undefined,
     };
   }
 
@@ -242,6 +245,8 @@ export class AuthService {
       senhaHash,
       primeiroAcesso: true,
       deletedAt: null,
+      // S2.13a — lotação opcional (admin omite/null = vê tudo).
+      unidadeId: input.unidadeId ?? null,
     };
     const user = existing
       ? await this.prisma.user.update({ where: { nf: input.nf }, data })
@@ -262,11 +267,14 @@ export class AuthService {
       papeis?: Papel[];
       senhaHash?: string;
       primeiroAcesso?: boolean;
+      unidadeId?: string | null;
     } = {};
     if (input.nome !== undefined) data.nome = input.nome;
     if (input.posto !== undefined) data.posto = input.posto;
     if (input.ant !== undefined) data.ant = input.ant;
     if (input.papeis !== undefined) data.papeis = input.papeis;
+    // S2.13a — admin pode alterar lotação; null limpa (vê tudo).
+    if (input.unidadeId !== undefined) data.unidadeId = input.unidadeId;
     if (input.email !== undefined) {
       // S2.10.4b — admin pode cadastrar/corrigir email; string vazia limpa.
       const novoEmail = input.email.trim() === '' ? null : input.email.trim();
