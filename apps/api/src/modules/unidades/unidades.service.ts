@@ -19,11 +19,19 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 export const UNIDADE_1BBM_ID = 'unid:1bbm';
 /** Slug fixo da 1ª Cia (filha do 1º BBM, hierarquia S2.13a). */
 export const UNIDADE_1CIA_1BBM_ID = 'unid:1cia-1bbm';
+/** S2.13f — Slug fixo da 3ª CIA IND COLATINA (filha do 1º BBM por padrão; Tech Lead pode reorganizar). */
+export const UNIDADE_3CIA_IND_ID = 'unid:3cia-ind-colatina';
+/** S2.13f — Slug fixo do PAB Baixo Guandu (posto avançado da 3ª CIA IND). */
+export const UNIDADE_PAB_BG_ID = 'unid:pab-baixo-guandu';
 
 /** Código institucional do 1º BBM — usado pelo seed. */
 export const UNIDADE_1BBM_CODIGO = '1º BBM';
 /** Código institucional da 1ª Cia/1º BBM — usado pelo seed e busca. */
 export const UNIDADE_1CIA_1BBM_CODIGO = '1ª1º';
+/** S2.13f — Código institucional da 3ª CIA IND COLATINA. */
+export const UNIDADE_3CIA_IND_CODIGO = '3ªIND';
+/** S2.13f — Código institucional do PAB Baixo Guandu. */
+export const UNIDADE_PAB_BG_CODIGO = 'PAB-BG';
 
 /**
  * Cadastro de Unidades institucionais — fonte de verdade em Postgres (S2.10.3).
@@ -38,6 +46,7 @@ export class UnidadesService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     await this.ensureHierarquia1Bbm();
+    await this.ensure3CiaColatinaSeed();
   }
 
   async list(): Promise<Unidade[]> {
@@ -213,6 +222,50 @@ export class UnidadesService implements OnModuleInit {
       });
     } catch {
       // Banco indisponível no boot — boot prossegue; próxima requisição retenta.
+    }
+  }
+
+  /**
+   * S2.13f — Seed da 3ª CIA IND COLATINA + PAB Baixo Guandu.
+   *
+   * Cria a estrutura mínima para que o Tech Lead valide multi-unidade via
+   * persona/seed sem dependência de UAT externo. Idempotente. Pai padrão
+   * é 1º BBM (admin pode reorganizar via UI Unidades depois).
+   */
+  private async ensure3CiaColatinaSeed(): Promise<void> {
+    try {
+      await this.prisma.unidade.upsert({
+        where: { codigo: UNIDADE_3CIA_IND_CODIGO },
+        update: {
+          tipo: 'companhia',
+          unidadePaiId: UNIDADE_1BBM_ID,
+        },
+        create: {
+          id: UNIDADE_3CIA_IND_ID,
+          codigo: UNIDADE_3CIA_IND_CODIGO,
+          nome: '3ª CIA IND COLATINA',
+          tipo: 'companhia',
+          unidadePaiId: UNIDADE_1BBM_ID,
+          ativo: true,
+        },
+      });
+      await this.prisma.unidade.upsert({
+        where: { codigo: UNIDADE_PAB_BG_CODIGO },
+        update: {
+          tipo: 'posto_avancado',
+          unidadePaiId: UNIDADE_3CIA_IND_ID,
+        },
+        create: {
+          id: UNIDADE_PAB_BG_ID,
+          codigo: UNIDADE_PAB_BG_CODIGO,
+          nome: 'PAB Baixo Guandu',
+          tipo: 'posto_avancado',
+          unidadePaiId: UNIDADE_3CIA_IND_ID,
+          ativo: true,
+        },
+      });
+    } catch {
+      // Banco indisponível no boot — boot prossegue.
     }
   }
 }

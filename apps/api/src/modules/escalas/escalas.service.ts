@@ -18,6 +18,7 @@ import { resolveDataDir } from '../../common/dev-fixtures';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { parseEscalaXlsx, parseFilename } from './escala-xlsx-parser';
 import { NomeMatcher } from '../mapa-forca/nome-matching';
+import { UNIDADE_1CIA_1BBM_ID } from '../unidades/unidades.service';
 
 /**
  * Resolve a quinzena (1 ou 2) de um dia ISO usando a fronteira gravada na
@@ -168,7 +169,8 @@ export class EscalasService implements OnModuleInit {
       const buffer = readFileSync(join(dataDir, f));
       try {
         const escala = await parseEscalaXlsx({ buffer, filename: f });
-        await this.upsertNoPostgres(escala);
+        // S2.13f — Bootstrap dev usa a 1ª Cia como default.
+        await this.upsertNoPostgres(escala, UNIDADE_1CIA_1BBM_ID);
         this.logger.log(
           `Bootstrap escala: ${f} (${String(escala.mes).padStart(2, '0')}/${escala.ano})`,
         );
@@ -195,27 +197,43 @@ export class EscalasService implements OnModuleInit {
     };
   }
 
-  async get(ano: number, mes: number): Promise<EscalaMensal | null> {
+  // S2.13f — `get`/`save`/`delete` aceitam `unidadeId` (default 1ª Cia).
+  // Permite escalas independentes por unidade no mesmo mês.
+
+  async get(
+    ano: number,
+    mes: number,
+    unidadeId: string = UNIDADE_1CIA_1BBM_ID,
+  ): Promise<EscalaMensal | null> {
     const row = await this.prisma.escalaMensal.findUnique({
-      where: { ano_mes: { ano, mes } },
+      where: { ano_mes_unidadeId: { ano, mes, unidadeId } },
       include: { composicaoEntries: true },
     });
     if (!row) return null;
     return toEscalaMensal(row);
   }
 
-  async save(escala: EscalaMensal): Promise<EscalaMensal> {
+  async save(
+    escala: EscalaMensal,
+    unidadeId: string = UNIDADE_1CIA_1BBM_ID,
+  ): Promise<EscalaMensal> {
     // S2.10.9d — Sheets-DB dual-write removido. Postgres é canônico desde S2.10.5.
-    await this.upsertNoPostgres(escala);
-    return (await this.get(escala.ano, escala.mes)) ?? escala;
+    await this.upsertNoPostgres(escala, unidadeId);
+    return (await this.get(escala.ano, escala.mes, unidadeId)) ?? escala;
   }
 
-  async delete(ano: number, mes: number): Promise<boolean> {
+  async delete(
+    ano: number,
+    mes: number,
+    unidadeId: string = UNIDADE_1CIA_1BBM_ID,
+  ): Promise<boolean> {
     const existing = await this.prisma.escalaMensal.findUnique({
-      where: { ano_mes: { ano, mes } },
+      where: { ano_mes_unidadeId: { ano, mes, unidadeId } },
     });
     if (!existing) return false;
-    await this.prisma.escalaMensal.delete({ where: { ano_mes: { ano, mes } } });
+    await this.prisma.escalaMensal.delete({
+      where: { ano_mes_unidadeId: { ano, mes, unidadeId } },
+    });
     return true;
   }
 
@@ -319,8 +337,9 @@ export class EscalasService implements OnModuleInit {
     mes: number,
     data: string,
     equipe: LetraEquipeRotativa | null,
+    unidadeId: string = UNIDADE_1CIA_1BBM_ID,
   ): Promise<EscalaMensal> {
-    const escala = await this.get(ano, mes);
+    const escala = await this.get(ano, mes, unidadeId);
     if (!escala) {
       throw new Error(`Escala ${String(mes).padStart(2, '0')}/${ano} não importada`);
     }
@@ -331,7 +350,7 @@ export class EscalasService implements OnModuleInit {
       novoMapa[data] = equipe;
     }
     await this.prisma.escalaMensal.update({
-      where: { ano_mes: { ano, mes } },
+      where: { ano_mes_unidadeId: { ano, mes, unidadeId } },
       data: { diaEquipe: novoMapa as unknown as object },
     });
     return { ...escala, diaEquipe: novoMapa };
@@ -344,13 +363,14 @@ export class EscalasService implements OnModuleInit {
     entry:
       | ComposicaoEntry
       | { equipe: LetraEquipe; viatura: string; funcao: string; militar: null },
+    unidadeId: string = UNIDADE_1CIA_1BBM_ID,
   ): Promise<EscalaMensal> {
-    const escala = await this.get(ano, mes);
+    const escala = await this.get(ano, mes, unidadeId);
     if (!escala) {
       throw new Error(`Escala ${String(mes).padStart(2, '0')}/${ano} não importada`);
     }
     const escalaRow = await this.prisma.escalaMensal.findUnique({
-      where: { ano_mes: { ano, mes } },
+      where: { ano_mes_unidadeId: { ano, mes, unidadeId } },
       select: { id: true },
     });
     if (!escalaRow) {
@@ -385,7 +405,7 @@ export class EscalasService implements OnModuleInit {
       });
     }
 
-    return (await this.get(ano, mes)) ?? escala;
+    return (await this.get(ano, mes, unidadeId)) ?? escala;
   }
 
   // ── helpers privados ──────────────────────────────────────────────
@@ -399,10 +419,13 @@ export class EscalasService implements OnModuleInit {
   }
 
   /**
-   * Upsert por (ano, mes) com cascata de composicaoEntries: deleta entries
-   * antigas e recria. Re-import substitui mês inteiro (ADR-014 D4).
+   * Upsert por (ano, mes, unidadeId) com cascata de composicaoEntries: deleta
+   * entries antigas e recria. Re-import substitui mês inteiro (ADR-014 D4).
+   *
+   * S2.13f — `unidadeId` parametrizado. Permite escalas independentes por
+   * unidade no mesmo mês.
    */
-  private async upsertNoPostgres(escala: EscalaMensal): Promise<void> {
+  private async upsertNoPostgres(escala: EscalaMensal, unidadeId: string): Promise<void> {
     const composicaoCreate = [
       ...escala.composicaoPorQuinzena.q1.map((e) => composicaoToCreate(e, 1)),
       ...escala.composicaoPorQuinzena.q2.map((e) => composicaoToCreate(e, 2)),
@@ -410,7 +433,7 @@ export class EscalasService implements OnModuleInit {
 
     await this.prisma.$transaction(async (tx) => {
       const existing = await tx.escalaMensal.findUnique({
-        where: { ano_mes: { ano: escala.ano, mes: escala.mes } },
+        where: { ano_mes_unidadeId: { ano: escala.ano, mes: escala.mes, unidadeId } },
       });
       // Prisma exige Prisma.JsonNull (não JS null) para limpar campos Json?.
       const mergulhoJson = escala.mergulho
@@ -441,6 +464,7 @@ export class EscalasService implements OnModuleInit {
           data: {
             ano: escala.ano,
             mes: escala.mes,
+            unidadeId,
             origemArquivo: escala.origemArquivo,
             importadoEm: new Date(escala.importadoEm),
             importadoPorNf: escala.importadoPorNf ?? null,

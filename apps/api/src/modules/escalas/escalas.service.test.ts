@@ -65,12 +65,22 @@ function makePrismaMock(): PrismaService {
       include,
       select: _select,
     }: {
-      where: { ano_mes: { ano: number; mes: number } };
+      // S2.13f — Composite key passou a incluir `unidadeId`. Mock aceita
+      // ambas formas (legado) para preservar testes pré-S2.13f.
+      where:
+        | { ano_mes: { ano: number; mes: number } }
+        | { ano_mes_unidadeId: { ano: number; mes: number; unidadeId: string } };
       include?: { composicaoEntries?: boolean };
       select?: unknown;
     }) => {
+      const ano = 'ano_mes_unidadeId' in where ? where.ano_mes_unidadeId.ano : where.ano_mes.ano;
+      const mes = 'ano_mes_unidadeId' in where ? where.ano_mes_unidadeId.mes : where.ano_mes.mes;
+      const unidadeId =
+        'ano_mes_unidadeId' in where ? where.ano_mes_unidadeId.unidadeId : undefined;
       for (const m of mesesById.values()) {
-        if (m.ano === where.ano_mes.ano && m.mes === where.ano_mes.mes) {
+        if (m.ano === ano && m.mes === mes) {
+          // Quando unidadeId é especificado, filtra por ele (null = match com null).
+          if (unidadeId !== undefined && m.unidadeId !== unidadeId) continue;
           return include?.composicaoEntries
             ? ({ ...m, composicaoEntries: entriesByMesId.get(m.id) ?? [] } as PrismaEM & {
                 composicaoEntries: PrismaCE[];
@@ -105,6 +115,7 @@ function makePrismaMock(): PrismaService {
       data: {
         ano: number;
         mes: number;
+        unidadeId?: string | null;
         origemArquivo: string;
         importadoEm: Date;
         importadoPorNf?: string | null;
@@ -121,6 +132,7 @@ function makePrismaMock(): PrismaService {
         id,
         ano: data.ano,
         mes: data.mes,
+        unidadeId: data.unidadeId ?? null,
         origemArquivo: data.origemArquivo,
         importadoEm: data.importadoEm,
         importadoPorNf: data.importadoPorNf ?? null,
@@ -143,15 +155,21 @@ function makePrismaMock(): PrismaService {
       where,
       data,
     }: {
-      where: { id?: string; ano_mes?: { ano: number; mes: number } };
+      where: {
+        id?: string;
+        ano_mes?: { ano: number; mes: number };
+        ano_mes_unidadeId?: { ano: number; mes: number; unidadeId: string };
+      };
       data: Partial<PrismaEM> & {
         composicaoEntries?: { create: Array<Omit<PrismaCE, 'id' | 'escalaMensalId'>> };
       };
     }) => {
       let id: string | undefined = where.id;
-      if (!id && where.ano_mes) {
+      const composite = where.ano_mes_unidadeId ?? where.ano_mes;
+      if (!id && composite) {
         for (const [k, m] of mesesById.entries()) {
-          if (m.ano === where.ano_mes.ano && m.mes === where.ano_mes.mes) {
+          if (m.ano === composite.ano && m.mes === composite.mes) {
+            if ('unidadeId' in composite && m.unidadeId !== composite.unidadeId) continue;
             id = k;
             break;
           }
@@ -172,9 +190,24 @@ function makePrismaMock(): PrismaService {
       }
       return next;
     },
-    delete: async ({ where }: { where: { ano_mes: { ano: number; mes: number } } }) => {
+    delete: async ({
+      where,
+    }: {
+      where:
+        | { ano_mes: { ano: number; mes: number } }
+        | { ano_mes_unidadeId: { ano: number; mes: number; unidadeId: string } };
+    }) => {
+      const composite =
+        'ano_mes_unidadeId' in where
+          ? {
+              ano: where.ano_mes_unidadeId.ano,
+              mes: where.ano_mes_unidadeId.mes,
+              unidadeId: where.ano_mes_unidadeId.unidadeId,
+            }
+          : { ano: where.ano_mes.ano, mes: where.ano_mes.mes, unidadeId: undefined };
       for (const [id, m] of mesesById.entries()) {
-        if (m.ano === where.ano_mes.ano && m.mes === where.ano_mes.mes) {
+        if (m.ano === composite.ano && m.mes === composite.mes) {
+          if (composite.unidadeId !== undefined && m.unidadeId !== composite.unidadeId) continue;
           mesesById.delete(id);
           entriesByMesId.delete(id);
           return m;

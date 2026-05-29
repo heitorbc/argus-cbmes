@@ -13,7 +13,12 @@ import type {
   TipoComposicaoRecurso,
   UpdateRecursoInput,
 } from '@argus/shared-types';
-import { UnidadesService, UNIDADE_1CIA_1BBM_ID } from '../unidades/unidades.service';
+import {
+  UnidadesService,
+  UNIDADE_1CIA_1BBM_ID,
+  UNIDADE_3CIA_IND_ID,
+  UNIDADE_PAB_BG_ID,
+} from '../unidades/unidades.service';
 
 /**
  * Cadastro de Recursos por Unidade.
@@ -37,6 +42,9 @@ export class RecursosService implements OnModuleInit {
 
   onModuleInit(): void {
     this.seed1aCia1Bbm();
+    // S2.13f — Seed multi-unidade para validar 3ª CIA + PAB Baixo Guandu.
+    this.seed3CiaColatina();
+    this.seedPabBaixoGuandu();
   }
 
   list(filter: { unidadeId?: string; ativoSomente?: boolean } = {}): Recurso[] {
@@ -412,6 +420,157 @@ export class RecursosService implements OnModuleInit {
       },
     ];
 
+    for (const r of seed) {
+      const id = `recurso:${unidadeId}:${slugify(r.nome)}`;
+      this.recursos.set(id, {
+        id,
+        unidadeId,
+        ...r,
+        criadoEm: now,
+        atualizadoEm: now,
+      });
+    }
+  }
+
+  /**
+   * S2.13f — Seed da 3ª CIA IND COLATINA (exemplos conforme entrevista).
+   *
+   * Recursos da 3ª CIA: ABTS_01 (viatura+equipe), FLORESTAL (viatura+equipe),
+   * EQUIPE SATURAÇÃO (equipe-only), RESGATE 01 (viatura+equipe), RESGATE 02
+   * (viatura-only, inativo na entrevista pois "atualmente baixada"), DRO /
+   * TELEFONISTA (equipe-only, 1 militar).
+   */
+  private seed3CiaColatina(): void {
+    const now = new Date().toISOString();
+    const unidadeId = UNIDADE_3CIA_IND_ID;
+    const seed: Array<Omit<Recurso, 'id' | 'unidadeId' | 'criadoEm' | 'atualizadoEm'>> = [
+      {
+        nome: 'ABTS_01',
+        categoria: 'OPERACIONAL',
+        ativo: true,
+        comportaViatura: true,
+        comportaEfetivo: true,
+        tipoComposicao: 'viatura_e_equipe',
+        equipeMinima: EQUIPE_PADRAO_ABTS,
+        viaturaPrefixoFixo: null,
+        ordem: 1,
+      },
+      {
+        nome: 'FLORESTAL',
+        categoria: 'OPERACIONAL',
+        ativo: true,
+        comportaViatura: true,
+        comportaEfetivo: true,
+        tipoComposicao: 'viatura_e_equipe',
+        equipeMinima: EQUIPE_PADRAO_ABTS,
+        viaturaPrefixoFixo: null,
+        ordem: 2,
+      },
+      {
+        nome: 'EQUIPE SATURAÇÃO',
+        categoria: 'OPERACIONAL',
+        ativo: true,
+        comportaViatura: false,
+        comportaEfetivo: true,
+        tipoComposicao: 'equipe_only',
+        equipeMinima: [
+          { funcao: 'chefe', obrigatorio: true },
+          { funcao: 'membro', obrigatorio: false },
+        ],
+        viaturaPrefixoFixo: null,
+        ordem: 3,
+      },
+      {
+        nome: 'RESGATE 01',
+        categoria: 'OPERACIONAL',
+        ativo: true,
+        comportaViatura: true,
+        comportaEfetivo: true,
+        tipoComposicao: 'viatura_e_equipe',
+        equipeMinima: EQUIPE_PADRAO_RESGATE,
+        viaturaPrefixoFixo: null,
+        ordem: 4,
+      },
+      {
+        nome: 'RESGATE 02',
+        categoria: 'OPERACIONAL',
+        // Entrevista: "atualmente se encontra baixada" → inativo no seed inicial.
+        ativo: false,
+        comportaViatura: true,
+        comportaEfetivo: false,
+        tipoComposicao: 'viatura_only',
+        equipeMinima: null,
+        viaturaPrefixoFixo: null,
+        ordem: 5,
+      },
+      {
+        nome: 'DRO / TELEFONISTA',
+        categoria: 'OPERACIONAL',
+        ativo: true,
+        comportaViatura: false,
+        comportaEfetivo: true,
+        tipoComposicao: 'equipe_only',
+        equipeMinima: [{ funcao: 'telefonista', obrigatorio: true }],
+        viaturaPrefixoFixo: null,
+        ordem: 6,
+      },
+    ];
+    for (const r of seed) {
+      const id = `recurso:${unidadeId}:${slugify(r.nome)}`;
+      this.recursos.set(id, {
+        id,
+        unidadeId,
+        ...r,
+        criadoEm: now,
+        atualizadoEm: now,
+      });
+    }
+  }
+
+  /**
+   * S2.13f — Seed do PAB Baixo Guandu (posto avançado vinculado à 3ª CIA IND).
+   *
+   * Recursos do PAB: ABTS_01 (viatura+equipe), FLORESTAL (viatura-only),
+   * RESGATE 01 (viatura-only). Estrutura mínima de posto avançado.
+   */
+  private seedPabBaixoGuandu(): void {
+    const now = new Date().toISOString();
+    const unidadeId = UNIDADE_PAB_BG_ID;
+    const seed: Array<Omit<Recurso, 'id' | 'unidadeId' | 'criadoEm' | 'atualizadoEm'>> = [
+      {
+        nome: 'ABTS_01',
+        categoria: 'OPERACIONAL',
+        ativo: true,
+        comportaViatura: true,
+        comportaEfetivo: true,
+        tipoComposicao: 'viatura_e_equipe',
+        equipeMinima: EQUIPE_PADRAO_ABTS,
+        viaturaPrefixoFixo: null,
+        ordem: 1,
+      },
+      {
+        nome: 'FLORESTAL',
+        categoria: 'OPERACIONAL',
+        ativo: true,
+        comportaViatura: true,
+        comportaEfetivo: false,
+        tipoComposicao: 'viatura_only',
+        equipeMinima: null,
+        viaturaPrefixoFixo: null,
+        ordem: 2,
+      },
+      {
+        nome: 'RESGATE 01',
+        categoria: 'OPERACIONAL',
+        ativo: true,
+        comportaViatura: true,
+        comportaEfetivo: false,
+        tipoComposicao: 'viatura_only',
+        equipeMinima: null,
+        viaturaPrefixoFixo: null,
+        ordem: 3,
+      },
+    ];
     for (const r of seed) {
       const id = `recurso:${unidadeId}:${slugify(r.nome)}`;
       this.recursos.set(id, {

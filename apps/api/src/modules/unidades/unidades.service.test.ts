@@ -133,15 +133,22 @@ describe('UnidadesService — seed hierárquico (S2.13a)', () => {
     svc = await makeSvc();
   });
 
-  it('seed cria 1º BBM (batalhao) + 1ª Cia (companhia, pai=1º BBM)', async () => {
+  it('seed cria 1º BBM + 1ª Cia + 3ª CIA IND + PAB Baixo Guandu (hierarquia 3-níveis)', async () => {
     const all = await svc.list();
-    expect(all).toHaveLength(2);
+    // S2.13f — seed3CiaColatina adiciona 3ª CIA + PAB Baixo Guandu na boot.
+    expect(all).toHaveLength(4);
     const bbm = all.find((u) => u.codigo === UNIDADE_1BBM_CODIGO);
     const cia = all.find((u) => u.codigo === UNIDADE_1CIA_1BBM_CODIGO);
+    const colatina = all.find((u) => u.codigo === '3ªIND');
+    const pab = all.find((u) => u.codigo === 'PAB-BG');
     expect(bbm?.tipo).toBe('batalhao');
     expect(bbm?.unidadePaiId).toBeNull();
     expect(cia?.tipo).toBe('companhia');
     expect(cia?.unidadePaiId).toBe(UNIDADE_1BBM_ID);
+    expect(colatina?.tipo).toBe('companhia');
+    expect(colatina?.unidadePaiId).toBe(UNIDADE_1BBM_ID);
+    expect(pab?.tipo).toBe('posto_avancado');
+    expect(pab?.unidadePaiId).toBe(colatina?.id);
   });
 
   it('findById resolve o slug fixo da 1ª Cia', async () => {
@@ -173,19 +180,20 @@ describe('UnidadesService — CRUD admin (S6e + S2.13a)', () => {
     expect(u.unidadePaiId).toBeNull();
     expect(u.ativo).toBe(true);
     expect(u.id).toBeTruthy();
-    expect(await svc.list()).toHaveLength(3);
+    // S2.13f — seed agora cria 4 (1º BBM + 1ª Cia + 3ª CIA + PAB) — + nova = 5
+    expect(await svc.list()).toHaveLength(5);
   });
 
-  it('create aceita unidadePaiId explícito (posto avançado)', async () => {
+  it('create aceita unidadePaiId explícito (posto avançado novo)', async () => {
     const cia = await svc.create({
-      codigo: '3ªIND',
-      nome: '3ª CIA IND COLATINA',
+      codigo: '4ªIND',
+      nome: '4ª CIA IND TESTE',
       tipo: 'companhia',
       unidadePaiId: UNIDADE_1BBM_ID,
     });
     const pab = await svc.create({
-      codigo: 'PAB-BG',
-      nome: 'PAB Baixo Guandu',
+      codigo: 'PAB-TESTE',
+      nome: 'PAB de Teste',
       tipo: 'posto_avancado',
       unidadePaiId: cia.id,
     });
@@ -235,7 +243,8 @@ describe('UnidadesService — CRUD admin (S6e + S2.13a)', () => {
     const u = await svc.softDelete(UNIDADE_1CIA_1BBM_ID);
     expect(u.ativo).toBe(false);
     expect((await svc.findById(UNIDADE_1CIA_1BBM_ID)).ativo).toBe(false);
-    expect(await svc.list()).toHaveLength(2);
+    // S2.13f — 4 unidades agora no seed (1º BBM + 1ª Cia + 3ª CIA + PAB)
+    expect(await svc.list()).toHaveLength(4);
   });
 });
 
@@ -244,19 +253,9 @@ describe('UnidadesService.descendantsOf + visiveisParaUsuario (S2.13a)', () => {
 
   beforeEach(async () => {
     svc = await makeSvc();
-    // Seed adicional: 3ª CIA IND COLATINA + PAB Baixo Guandu
-    const colatina = await svc.create({
-      codigo: '3ªIND',
-      nome: '3ª CIA IND COLATINA',
-      tipo: 'companhia',
-      unidadePaiId: UNIDADE_1BBM_ID,
-    });
-    await svc.create({
-      codigo: 'PAB-BG',
-      nome: 'PAB Baixo Guandu',
-      tipo: 'posto_avancado',
-      unidadePaiId: colatina.id,
-    });
+    // S2.13f — Seed (ensure3CiaColatinaSeed) já cria 3ª CIA IND COLATINA +
+    // PAB Baixo Guandu na boot; o describe agora valida a hierarquia
+    // pré-existente em vez de criar.
   });
 
   it('descendantsOf(1º BBM) retorna 1ª Cia + 3ª CIA + PAB (recursivo 3 níveis)', async () => {
