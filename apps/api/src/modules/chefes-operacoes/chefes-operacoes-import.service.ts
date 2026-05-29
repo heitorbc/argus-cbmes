@@ -14,41 +14,28 @@ const FETCH_TIMEOUT_MS = 15_000;
 const DEFAULT_SHEET_ID = '1Nlr_uSNVD6dByaWPTL6IttSOa2nQPXO-m7FqTpeH8WI';
 
 /**
- * S2.10.11b — Lista padrão de abas conhecidas. Override via env
- * `CHOP_SHEET_NAMES` (CSV separado por vírgula).
+ * S2.10.11b / S2.14-fix — Mapeamento `mes → abreviação` da aba. A planilha
+ * institucional usa abreviações de 3 letras SEM ano (JAN, FEV, MAR, ABR,
+ * MAI, JUN, JUL, AGO, SET, OUT, NOV, DEZ). O ano vem do contexto da
+ * planilha (env `CHOP_PLANILHA_ANO`, default ano corrente) e é injetado
+ * no parser via hint em `fetchAndParse`.
+ *
+ * Override completo via env `CHOP_SHEET_NAMES` (CSV de 12 entradas; usado
+ * por `monthSheetName` quando a planilha tem naming não-padrão).
  */
-const DEFAULT_SHEET_NAMES = [
-  'JANEIRO 2026',
-  'FEVEREIRO 2026',
-  'MARÇO 2026',
-  'ABRIL 2026',
-  'MAIO 2026',
-  'JUNHO 2026',
-  'JULHO 2026',
-  'AGOSTO 2026',
-  'SETEMBRO 2026',
-  'OUTUBRO 2026',
-  'NOVEMBRO 2026',
-  'DEZEMBRO 2026',
-];
-
-/**
- * S2.14 — Nomes dos meses em PT-BR uppercase usados para resolver
- * `(ano, mes) → "NOME ANO"` (formato das abas da planilha).
- */
-const MESES_PT_UPPER = [
-  'JANEIRO',
-  'FEVEREIRO',
-  'MARÇO',
-  'ABRIL',
-  'MAIO',
-  'JUNHO',
-  'JULHO',
-  'AGOSTO',
-  'SETEMBRO',
-  'OUTUBRO',
-  'NOVEMBRO',
-  'DEZEMBRO',
+const MESES_ABBR = [
+  'JAN',
+  'FEV',
+  'MAR',
+  'ABR',
+  'MAI',
+  'JUN',
+  'JUL',
+  'AGO',
+  'SET',
+  'OUT',
+  'NOV',
+  'DEZ',
 ];
 
 export interface SyncResult {
@@ -136,7 +123,10 @@ export class ChefesOperacoesImportService {
 
     let parsed: Awaited<ReturnType<ChefesOperacoesImportService['fetchAndParse']>>;
     try {
-      parsed = await this.fetchAndParse(sheet);
+      // S2.14-fix — passa ano/mes como hint para o parser: a planilha real
+      // tem abas com nomes "JAN", "FEV", ... sem ano, e os headers internos
+      // também não carregam ano explícito.
+      parsed = await this.fetchAndParse(sheet, { ano, mes });
     } catch (err) {
       const msg = `Aba "${sheet}" falhou: ${(err as Error).message}`;
       this.logger.warn(`ChOp syncMonth: ${msg}`);
@@ -258,12 +248,16 @@ export class ChefesOperacoesImportService {
   }
 
   /**
-   * S2.14 — Resolve `(ano, mes) → nome da aba` (ex.: `(2026, 5) → "MAIO 2026"`).
+   * S2.14 / S2.14-fix — Resolve `(ano, mes) → nome da aba` (ex.: `(2026, 5) → "MAI"`).
+   *
+   * A planilha institucional usa abreviações de 3 letras SEM ano. O ano vem do
+   * contexto da planilha como um todo (env `CHOP_PLANILHA_ANO` ou ano corrente);
+   * fica registrado no parser via `defaultAno`.
    *
    * Estratégia:
-   *   1. Se `CHOP_SHEET_NAMES` está setado, procura match por (ano, mes) entre
-   *      as entradas via `parseAnoMesFromSheetName` (suporta nomes customizados)
-   *   2. Senão usa `MESES_PT_UPPER[mes-1] + ' ' + ano` (padrão default)
+   *   1. Se `CHOP_SHEET_NAMES` está setado e tem 12 entradas, usa a entrada
+   *      na posição `mes - 1` (override completo, mantém ordem fixa)
+   *   2. Senão usa `MESES_ABBR[mes-1]` (padrão default)
    *
    * Mês fora de [1..12] lança erro.
    */
@@ -271,23 +265,35 @@ export class ChefesOperacoesImportService {
     if (mes < 1 || mes > 12) {
       throw new BadRequestException(`mes inválido: ${mes} (esperado 1..12)`);
     }
+    void ano; // ano vai para o parser via defaultAno, não para o nome da aba
     const raw = this.config.get<string>('CHOP_SHEET_NAMES');
     if (raw && raw.trim()) {
       const nomes = raw
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean);
-      const match = nomes.find((n) => {
-        const r = parseAnoMesFromSheetName(n);
-        return r?.ano === ano && r?.mes === mes;
-      });
-      if (match) return match;
-      // Fallback: nome custom não cobre esse mês → usa padrão default.
+      if (nomes.length === 12) {
+        return nomes[mes - 1]!;
+      }
       this.logger.warn(
-        `CHOP_SHEET_NAMES override não contém aba para ${String(mes).padStart(2, '0')}/${ano} — usando nome default.`,
+        `CHOP_SHEET_NAMES override deve ter exatamente 12 entradas (encontrado ${nomes.length}) — usando nome default.`,
       );
     }
-    return `${MESES_PT_UPPER[mes - 1]} ${ano}`;
+    return MESES_ABBR[mes - 1]!;
+  }
+
+  /**
+   * S2.14-fix — Ano padrão da planilha (usado quando o cabeçalho da aba não
+   * carrega ano explícito, como na planilha real da ChOp que tem abas só com
+   * abreviação do mês). Override via env `CHOP_PLANILHA_ANO`; default = ano corrente.
+   */
+  private getPlanilhaAno(): number {
+    const raw = this.config.get<string>('CHOP_PLANILHA_ANO');
+    if (raw) {
+      const n = Number.parseInt(raw, 10);
+      if (Number.isFinite(n) && n >= 2020 && n <= 2099) return n;
+    }
+    return new Date().getFullYear();
   }
 
   async syncToDatabase(): Promise<SyncResult> {
@@ -299,78 +305,36 @@ export class ChefesOperacoesImportService {
   }
 
   private async executeSyncToDatabase(): Promise<SyncResult> {
-    const sheets = this.sheetNames();
+    // S2.14-fix — Bulk passa a iterar (ano, mes) explicitamente (1..12) em
+    // vez de iterar sheet names. Isso permite injetar o ano da planilha como
+    // hint do parser (abas com abreviação "JAN", "FEV", ... sem ano).
+    const planilhaAno = this.getPlanilhaAno();
     const inconsistencias: string[] = [];
+    let created = 0;
+    let skipped = 0;
 
-    // Fetch + parse em paralelo (cada aba pode falhar independentemente)
+    // Fetch + parse + persist em paralelo (cada mês independente)
     const results = await Promise.all(
-      sheets.map(async (sheet) => {
+      Array.from({ length: 12 }, (_, i) => i + 1).map(async (mes) => {
         try {
-          const { ano, mes, militares } = await this.fetchAndParse(sheet);
-          return { sheet, ano, mes, militares, err: null as Error | null };
+          const r = await this.syncSingleMonthInternal(planilhaAno, mes);
+          return { ok: true as const, mes, created: r.created, inconsistencias: r.inconsistencias };
         } catch (err) {
-          const msg = `Aba "${sheet}" falhou: ${(err as Error).message}`;
+          const msg = `Mês ${String(mes).padStart(2, '0')}/${planilhaAno} falhou: ${(err as Error).message}`;
           this.logger.warn(`ChOp sync: ${msg}`);
-          inconsistencias.push(msg);
-          return { sheet, ano: 0, mes: 0, militares: [], err: err as Error };
+          return { ok: false as const, mes, error: msg };
         }
       }),
     );
 
-    let created = 0;
-    let skipped = 0;
-
     for (const r of results) {
-      if (r.err || !r.ano || !r.mes) {
+      if (!r.ok) {
         skipped++;
+        inconsistencias.push(r.error);
         continue;
       }
-      const { ano, mes, militares } = r;
-      // Monta as rows para este mês.
-      const rows: Array<{
-        ano: number;
-        mes: number;
-        nf: string;
-        dia: number;
-        marcador: string;
-        posto: string;
-        nomeGuerra: string;
-        telefone: string | null;
-      }> = [];
-      for (const m of militares) {
-        for (const [dia, marcador] of m.porDia) {
-          rows.push({
-            ano,
-            mes,
-            nf: m.nf,
-            dia,
-            marcador,
-            posto: m.posto,
-            nomeGuerra: m.nomeGuerra,
-            telefone: m.telefone ?? null,
-          });
-        }
-      }
-
-      // Transaction por mês: delete tudo do (ano, mes) + insert novo.
-      // Falha em 1 mês não afeta os demais (try/catch externo).
-      try {
-        await this.prisma.$transaction(async (tx) => {
-          await tx.chefeOperacoesEscala.deleteMany({ where: { ano, mes } });
-          if (rows.length > 0) {
-            const r2 = await tx.chefeOperacoesEscala.createMany({
-              data: rows,
-              skipDuplicates: true,
-            });
-            created += r2.count;
-          }
-        });
-      } catch (err) {
-        skipped++;
-        const msg = `Persist ${String(mes).padStart(2, '0')}/${ano} falhou: ${(err as Error).message}`;
-        this.logger.warn(`ChOp sync: ${msg}`);
-        inconsistencias.push(msg);
-      }
+      created += r.created;
+      inconsistencias.push(...r.inconsistencias);
     }
 
     const result: SyncResult = {
@@ -383,23 +347,82 @@ export class ChefesOperacoesImportService {
     this.lastSync = result;
     this.lastSyncAtMs = Date.now();
     this.logger.log(
-      `ChOp sync OK: created=${created}, abas=${sheets.length}, falhas=${inconsistencias.length}`,
+      `ChOp sync OK: created=${created}, abas=12 (${planilhaAno}), falhas=${inconsistencias.length}, skipped=${skipped}`,
     );
     return result;
   }
 
-  private sheetNames(): string[] {
-    const raw = this.config.get<string>('CHOP_SHEET_NAMES');
-    if (raw && raw.trim()) {
-      return raw
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
+  /**
+   * S2.14-fix — Mesma lógica do `syncMonth` público mas SEM atualizar
+   * `lastSync` (cabe ao bulk agregar o resultado total). Lança em caso de
+   * fetch/parse falhar — caller registra como skip.
+   */
+  private async syncSingleMonthInternal(
+    ano: number,
+    mes: number,
+  ): Promise<{ created: number; inconsistencias: string[] }> {
+    const sheet = this.monthSheetName(ano, mes);
+    const inconsistencias: string[] = [];
+    let created = 0;
+
+    const parsed = await this.fetchAndParse(sheet, { ano, mes });
+    if (parsed.ano !== ano || parsed.mes !== mes) {
+      throw new Error(
+        `Aba "${sheet}" devolveu ${String(parsed.mes).padStart(2, '0')}/${parsed.ano}, ` +
+          `esperado ${String(mes).padStart(2, '0')}/${ano}.`,
+      );
     }
-    return DEFAULT_SHEET_NAMES;
+
+    const rows: Array<{
+      ano: number;
+      mes: number;
+      nf: string;
+      dia: number;
+      marcador: string;
+      posto: string;
+      nomeGuerra: string;
+      telefone: string | null;
+    }> = [];
+    for (const m of parsed.militares) {
+      for (const [dia, marcador] of m.porDia) {
+        rows.push({
+          ano,
+          mes,
+          nf: m.nf,
+          dia,
+          marcador,
+          posto: m.posto,
+          nomeGuerra: m.nomeGuerra,
+          telefone: m.telefone ?? null,
+        });
+      }
+    }
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.chefeOperacoesEscala.deleteMany({ where: { ano, mes } });
+        if (rows.length > 0) {
+          const r2 = await tx.chefeOperacoesEscala.createMany({
+            data: rows,
+            skipDuplicates: true,
+          });
+          created = r2.count;
+        }
+      });
+    } catch (err) {
+      const msg = `Persist ${String(mes).padStart(2, '0')}/${ano} falhou: ${(err as Error).message}`;
+      this.logger.warn(`ChOp sync: ${msg}`);
+      inconsistencias.push(msg);
+    }
+    return { created, inconsistencias };
   }
 
-  private async fetchAndParse(sheet: string) {
+  /**
+   * S2.14-fix — Aceita `hint` opcional para injetar ano/mes no parser quando
+   * o nome da aba não contém essas info (caso da planilha real da ChOp que
+   * usa abreviações "JAN", "FEV", etc. sem ano).
+   */
+  private async fetchAndParse(sheet: string, hint?: { ano?: number; mes?: number }) {
     const sheetId = this.config.get<string>('CHOP_SHEET_ID') ?? DEFAULT_SHEET_ID;
     const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(
       sheet,
@@ -415,8 +438,8 @@ export class ChefesOperacoesImportService {
       const csv = await res.text();
       const fromSheetName = parseAnoMesFromSheetName(sheet);
       const parsed = parseChefesOperacoesCsv(csv, {
-        defaultAno: fromSheetName?.ano,
-        defaultMes: fromSheetName?.mes,
+        defaultAno: hint?.ano ?? fromSheetName?.ano,
+        defaultMes: hint?.mes ?? fromSheetName?.mes,
       });
       return parsed;
     } finally {

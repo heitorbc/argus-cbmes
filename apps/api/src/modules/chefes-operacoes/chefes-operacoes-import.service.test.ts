@@ -20,10 +20,13 @@ function makeCsv(mesPorExtenso: string, ano: number): string {
   return `${headerInst}\n${filler}\n${HEADER_ROW}\n${data1}\n${data2}\n`;
 }
 
-function makeConfig(sheetNames?: string): ConfigService {
+function makeConfig(opts: { sheetNames?: string; planilhaAno?: number } = {}): ConfigService {
   return {
     get: vi.fn((key: string) => {
-      if (key === 'CHOP_SHEET_NAMES') return sheetNames;
+      if (key === 'CHOP_SHEET_NAMES') return opts.sheetNames;
+      if (key === 'CHOP_PLANILHA_ANO') {
+        return opts.planilhaAno !== undefined ? String(opts.planilhaAno) : undefined;
+      }
       return undefined;
     }),
   } as unknown as ConfigService;
@@ -101,32 +104,37 @@ function makeFetchPerSheet(sheetMap: Record<string, string>) {
   });
 }
 
-describe('ChefesOperacoesImportService (S2.10.11b multi-sheet)', () => {
+describe('ChefesOperacoesImportService — bulk (S2.10.11b / S2.14-fix abreviações)', () => {
   let prisma: ReturnType<typeof makePrismaMock>;
   let svc: ChefesOperacoesImportService;
 
   beforeEach(() => {
     prisma = makePrismaMock();
-    svc = new ChefesOperacoesImportService(makeConfig('ABRIL 2026,MAIO 2026'), prisma);
+    // S2.14-fix — planilha usa abreviações JAN, FEV, ... DEZ sem ano.
+    // `CHOP_PLANILHA_ANO=2026` injeta o ano via hint no parser.
+    svc = new ChefesOperacoesImportService(makeConfig({ planilhaAno: 2026 }), prisma);
+    // Stub: apenas ABR e MAI disponíveis na planilha (resto retorna 404)
     vi.stubGlobal(
       'fetch',
       makeFetchPerSheet({
-        'ABRIL 2026': makeCsv('ABRIL', 2026),
-        'MAIO 2026': makeCsv('MAIO', 2026),
+        ABR: makeCsv('ABRIL', 2026),
+        MAI: makeCsv('MAIO', 2026),
       }),
     );
   });
 
-  it('multi-sheet: importa 2 meses em paralelo', async () => {
+  it('bulk importa apenas as abas disponíveis (ABR + MAI) em paralelo', async () => {
     const r = await svc.syncToDatabase();
-    // Cada mês: BARCELLOS dias 1+9 (X,Y) + SILVA dia 4 (X) = 3 entries × 2 meses = 6
+    // 2 meses ok × 3 entries cada = 6; 10 meses faltando registrados em inconsistencias
     expect(r.created).toBe(6);
     expect(prisma._rows.length).toBe(6);
     expect(prisma._rows.filter((r) => r.mes === 4)).toHaveLength(3);
     expect(prisma._rows.filter((r) => r.mes === 5)).toHaveLength(3);
+    expect(r.skipped).toBe(10);
+    expect(r.inconsistencias.length).toBe(10);
   });
 
-  it('cada mês tem deleteMany próprio (não derruba os outros)', async () => {
+  it('cada mês importado tem deleteMany próprio (não derruba os outros)', async () => {
     await svc.syncToDatabase();
     expect(prisma._deletesByMes.get('2026-4')).toBe(1);
     expect(prisma._deletesByMes.get('2026-5')).toBe(1);
@@ -145,14 +153,14 @@ describe('ChefesOperacoesImportService (S2.10.11b multi-sheet)', () => {
     vi.stubGlobal(
       'fetch',
       makeFetchPerSheet({
-        // ABRIL ausente (404)
-        'MAIO 2026': makeCsv('MAIO', 2026),
+        // ABR ausente (404)
+        MAI: makeCsv('MAIO', 2026),
       }),
     );
     const r = await svc.syncToDatabase();
     expect(r.inconsistencias.length).toBeGreaterThan(0);
-    expect(r.inconsistencias.some((m) => m.includes('ABRIL'))).toBe(true);
-    // MAIO foi importado mesmo assim
+    expect(r.inconsistencias.some((m) => m.includes('04/2026'))).toBe(true);
+    // MAI foi importado mesmo assim
     expect(r.created).toBe(3);
     expect(prisma._rows.filter((r) => r.mes === 5)).toHaveLength(3);
   });
@@ -165,36 +173,30 @@ describe('ChefesOperacoesImportService (S2.10.11b multi-sheet)', () => {
     expect(s.counts?.created).toBe(6);
   });
 
-  it('todas as abas falharem → ServiceUnavailableException via forceSync? Não — só registra inconsistências', async () => {
-    vi.stubGlobal(
-      'fetch',
-      makeFetchPerSheet({
-        // ambas ausentes
-      }),
-    );
+  it('todas as abas falharem (12 abas 404) → 0 created + 12 inconsistencias', async () => {
+    vi.stubGlobal('fetch', makeFetchPerSheet({}));
     const r = await svc.forceSync();
-    // Multi-sheet com falha graceful: retorna o resultado parcial (0 created,
-    // 2 abas faltando registradas em inconsistencias).
     expect(r.created).toBe(0);
-    expect(r.inconsistencias.length).toBe(2);
+    expect(r.skipped).toBe(12);
+    expect(r.inconsistencias.length).toBe(12);
   });
 });
 
-describe('ChefesOperacoesImportService — sync mês-a-mês (S2.14)', () => {
+describe('ChefesOperacoesImportService — sync mês-a-mês (S2.14 / S2.14-fix abreviações)', () => {
   let prisma: ReturnType<typeof makePrismaMock>;
   let svc: ChefesOperacoesImportService;
 
   beforeEach(() => {
     prisma = makePrismaMock();
-    // Sem CHOP_SHEET_NAMES override → usa padrão default (JANEIRO ... DEZEMBRO 2026)
-    svc = new ChefesOperacoesImportService(makeConfig(), prisma);
+    // S2.14-fix — planilha real usa abas JAN, FEV, MAR, ABR, MAI, ... sem ano.
+    svc = new ChefesOperacoesImportService(makeConfig({ planilhaAno: 2026 }), prisma);
   });
 
-  it('syncMonth(2026, 5) baixa apenas "MAIO 2026" e persiste', async () => {
+  it('syncMonth(2026, 5) baixa apenas "MAI" e persiste (ano injetado via hint)', async () => {
     vi.stubGlobal(
       'fetch',
       makeFetchPerSheet({
-        'MAIO 2026': makeCsv('MAIO', 2026),
+        MAI: makeCsv('MAIO', 2026),
         // Outros meses NÃO devem ser chamados — confirmando single-sheet
       }),
     );
@@ -213,29 +215,29 @@ describe('ChefesOperacoesImportService — sync mês-a-mês (S2.14)', () => {
     await expect(svc.syncNextMonth()).rejects.toThrow(/Carregamento inicial/i);
   });
 
-  it('syncNextMonth quando último é MAIO/2026 e JUNHO/2026 não existe → disponivel:false', async () => {
+  it('syncNextMonth quando último é MAI/2026 e JUN não existe → disponivel:false', async () => {
     // Popula MAIO/2026 primeiro
-    vi.stubGlobal('fetch', makeFetchPerSheet({ 'MAIO 2026': makeCsv('MAIO', 2026) }));
+    vi.stubGlobal('fetch', makeFetchPerSheet({ MAI: makeCsv('MAIO', 2026) }));
     await svc.syncMonth(2026, 5);
     expect(prisma._rows.length).toBe(3);
 
-    // Agora tenta próximo (JUNHO) — fetch retorna 404
+    // Agora tenta próximo (JUN) — fetch retorna 404
     vi.stubGlobal('fetch', makeFetchPerSheet({}));
     const r = await svc.syncNextMonth();
     expect('disponivel' in r ? r.disponivel : true).toBe(false);
-    expect('mensagem' in r ? r.mensagem : '').toMatch(/JUNHO 2026/);
+    expect('mensagem' in r ? r.mensagem : '').toMatch(/JUN/);
     // DB não foi alterado pela tentativa
     expect(prisma._rows.length).toBe(3);
   });
 
-  it('syncNextMonth: rollover DEZEMBRO/2026 → tenta JANEIRO/2027', async () => {
+  it('syncNextMonth: rollover DEZ/2026 → tenta JAN/2027 (ano injetado via hint)', async () => {
     // Popula DEZEMBRO/2026
-    vi.stubGlobal('fetch', makeFetchPerSheet({ 'DEZEMBRO 2026': makeCsv('DEZEMBRO', 2026) }));
+    vi.stubGlobal('fetch', makeFetchPerSheet({ DEZ: makeCsv('DEZEMBRO', 2026) }));
     await svc.syncMonth(2026, 12);
     expect(prisma._rows[0]?.mes).toBe(12);
 
-    // Janeiro/2027 disponível na planilha
-    vi.stubGlobal('fetch', makeFetchPerSheet({ 'JANEIRO 2027': makeCsv('JANEIRO', 2027) }));
+    // Janeiro/2027 disponível na planilha (mesma aba JAN, ano 2027 injetado)
+    vi.stubGlobal('fetch', makeFetchPerSheet({ JAN: makeCsv('JANEIRO', 2027) }));
     const r = await svc.syncNextMonth();
     expect('ano' in r ? r.ano : null).toBe(2027);
     expect('mes' in r ? r.mes : null).toBe(1);
