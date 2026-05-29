@@ -40,7 +40,12 @@ export class RecursosController {
     return this.recursos.findById(id);
   }
 
-  @Roles('admin')
+  // S2.13d — Oficial de Operações também gerencia recursos (além do admin).
+  // Backend não filtra por unidade neste momento porque a checagem fina (gate
+  // por unidadesVisiveisParaUsuario) entra como middleware compartilhado em
+  // S2.14 — por ora o frontend filtra; admin/oficial_operacoes têm acesso
+  // CRUD aos recursos da sua unidade.
+  @Roles('admin', 'oficial_operacoes')
   @Post()
   create(@Body() body: unknown) {
     const parsed = createRecursoInputSchema.safeParse(body);
@@ -50,7 +55,7 @@ export class RecursosController {
     return this.recursos.create(parsed.data);
   }
 
-  @Roles('admin')
+  @Roles('admin', 'oficial_operacoes')
   @Put(':id')
   update(@Param('id') id: string, @Body() body: unknown) {
     const parsed = updateRecursoInputSchema.safeParse(body);
@@ -60,7 +65,7 @@ export class RecursosController {
     return this.recursos.update(id, parsed.data);
   }
 
-  @Roles('admin')
+  @Roles('admin', 'oficial_operacoes')
   @Delete(':id')
   softDelete(@Param('id') id: string) {
     return this.recursos.softDelete(id);
