@@ -191,7 +191,8 @@ model Unidade {
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt
 
-  usuarios User[] @relation("UserUnidade")
+  usuarios User[]         @relation("UserUnidade")
+  escalas  EscalaMensal[] @relation("EscalaUnidade")
 
   @@index([unidadePaiId])
   @@map("unidades")
@@ -212,12 +213,22 @@ model LocalFaxina {
 // Escalas
 // ────────────────────────────────────────────────────────────────────────
 
-/// Escala mensal de serviço operacional. Chave funcional: (ano, mes).
+/// Escala mensal de serviço operacional. Chave funcional: (ano, mes, unidadeId).
 /// Re-import substitui a escala inteira (hard delete cascata).
+///
+/// S2.13f — `unidadeId` adicionado. Backfill em migration popula 1ª Cia para
+/// escalas existentes. Constraint unique passa a incluir unidadeId para
+/// permitir escalas de unidades diferentes no mesmo mês.
 model EscalaMensal {
   id  String @id @default(cuid())
   ano Int
   mes Int
+
+  /// S2.13f — FK para Unidade. Default 1ª Cia em registros pré-S2.13f
+  /// (backfill na migration). Nullable para tolerar registros vindos de
+  /// código pré-S2.13f durante a transição.
+  unidadeId String?
+  unidade   Unidade? @relation("EscalaUnidade", fields: [unidadeId], references: [id])
 
   origemArquivo  String
   importadoEm    DateTime @default(now())
@@ -236,8 +247,9 @@ model EscalaMensal {
 
   composicaoEntries ComposicaoEntry[]
 
-  @@unique([ano, mes])
+  @@unique([ano, mes, unidadeId])
   @@index([ano, mes])
+  @@index([unidadeId])
   @@map("escalas_mensais")
 }
 

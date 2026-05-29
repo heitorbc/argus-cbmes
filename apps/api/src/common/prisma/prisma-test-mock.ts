@@ -42,12 +42,21 @@ export function makeEscalasPrismaMock(): PrismaService {
       where,
       include,
     }: {
-      where: { ano_mes: { ano: number; mes: number } };
+      // S2.13f — Composite key passou a incluir `unidadeId`. Mock aceita
+      // ambas formas (legado) para preservar testes pré-S2.13f.
+      where:
+        | { ano_mes: { ano: number; mes: number } }
+        | { ano_mes_unidadeId: { ano: number; mes: number; unidadeId: string } };
       include?: { composicaoEntries?: boolean };
       select?: unknown;
     }) => {
+      const ano = 'ano_mes_unidadeId' in where ? where.ano_mes_unidadeId.ano : where.ano_mes.ano;
+      const mes = 'ano_mes_unidadeId' in where ? where.ano_mes_unidadeId.mes : where.ano_mes.mes;
+      const unidadeId =
+        'ano_mes_unidadeId' in where ? where.ano_mes_unidadeId.unidadeId : undefined;
       for (const m of emById.values()) {
-        if (m.ano === where.ano_mes.ano && m.mes === where.ano_mes.mes) {
+        if (m.ano === ano && m.mes === mes) {
+          if (unidadeId !== undefined && m.unidadeId !== unidadeId) continue;
           return include?.composicaoEntries
             ? ({ ...m, composicaoEntries: ceByEmId.get(m.id) ?? [] } as PrismaEM & {
                 composicaoEntries: PrismaCE[];
@@ -72,6 +81,8 @@ export function makeEscalasPrismaMock(): PrismaService {
         id,
         ano: data.ano as number,
         mes: data.mes as number,
+        // S2.13f — `unidadeId` é nullable em schema; mock aceita default.
+        unidadeId: (data.unidadeId as string | null | undefined) ?? null,
         origemArquivo: data.origemArquivo as string,
         importadoEm: data.importadoEm as Date,
         importadoPorNf: (data.importadoPorNf as string | null | undefined) ?? null,
