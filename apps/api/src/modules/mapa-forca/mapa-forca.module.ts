@@ -10,6 +10,7 @@ import { FiscaisModule } from '../fiscais/fiscais.module';
 import { IdeoModule } from '../ideo/ideo.module';
 import { MapaForcaCiodesModule } from '../mapa-forca-ciodes/mapa-forca-ciodes.module';
 import { NotasServicoModule } from '../notas-servico/notas-servico.module';
+import { RecursosModule } from '../recursos/recursos.module';
 import { ServicoModule } from '../servico/servico.module';
 import { TrocasAutorizadasModule } from '../trocas-autorizadas/trocas-autorizadas.module';
 import { ViaturasModule } from '../viaturas/viaturas.module';
@@ -33,6 +34,8 @@ import { MapaForcaService } from './mapa-forca.service';
     IdeoModule,
     MapaForcaCiodesModule,
     NotasServicoModule,
+    // S2.13e — RecursosModule passa a alimentar `recursos[]` do MF (substitui CIODES).
+    RecursosModule,
     forwardRef(() => ServicoModule),
     TrocasAutorizadasModule,
     ViaturasModule,

@@ -43,6 +43,8 @@ import { FiscaisService } from '../fiscais/fiscais.service';
 import { IdeoStatusService } from '../ideo/ideo-status.service';
 import { IdeoService } from '../ideo/ideo.service';
 import { MapaForcaCiodesService } from '../mapa-forca-ciodes/mapa-forca-ciodes.service';
+import { RecursosService } from '../recursos/recursos.service';
+import { UNIDADE_1CIA_1BBM_ID } from '../unidades/unidades.service';
 import { ServicoService } from '../servico/servico.service';
 import { forwardRef, Inject } from '@nestjs/common';
 import { TrocasAutorizadasService } from '../trocas-autorizadas/trocas-autorizadas.service';
@@ -83,10 +85,19 @@ export class MapaForcaService {
     private readonly notasServicoSvc: NotasServicoService,
     private readonly trocasAutorizadas: TrocasAutorizadasService,
     private readonly feriasSvc: FeriasService,
+    // S2.13e — MapaForçaCiodes mantido injetado mas NÃO mais chamado em
+    // runtime para construir `recursos[]`. Recursos vêm de `RecursosService`
+    // (cadastro Argus). CIODES fica como provedor write (sprint S2.14
+    // futuro: Argus publica em CIODES via Puppeteer).
     private readonly mapaForcaCiodes: MapaForcaCiodesService,
+    private readonly recursos: RecursosService,
   ) {}
 
-  async getMapaForcaDoDia(dataIso: string): Promise<MapaForcaDoDia> {
+  async getMapaForcaDoDia(
+    dataIso: string,
+    /** S2.13e — Unidade para filtrar os recursos do MF. Default 1ª Cia para back-compat. */
+    unidadeId: string = UNIDADE_1CIA_1BBM_ID,
+  ): Promise<MapaForcaDoDia> {
     const [ano, mes, dia] = parseDataIso(dataIso);
     const inconsistencias: MapaForcaInconsistencia[] = [];
 
@@ -162,7 +173,13 @@ export class MapaForcaService {
     // Inclui também as viaturas baixadas/emprestadas (com status), para que o WhatsApp
     // possa mostrar `***#BAIXADA#***` inline ao invés de omitir a viatura.
     const allViaturas = await this.viaturas.list();
-    const mfRecursos = await this.mapaForcaCiodes.getRecursos();
+    // S2.13e — `mfRecursos` agora vem do cadastro Argus (RecursosService),
+    // não mais do CSV do CIODES. Formato compatível com a estrutura legacy
+    // (recurso/vtrPrefixo/vtrStatus/chefe/motorista/operadores).
+    const mfRecursos = buildMfRecursosFromArgus(
+      this.recursos.list({ unidadeId, ativoSomente: true }),
+      allViaturas,
+    );
     const viaturasOp = allViaturas.map((v) => ({
       id: v.id,
       codigo: v.prefixo,
@@ -757,6 +774,64 @@ function buildComposicaoMf(
 function mapStatusVtrToViatura(s: StatusVtr | null): StatusViatura | null {
   if (s === null || s === 'NAO_POSSUI') return null;
   return s as StatusViatura;
+}
+
+/**
+ * S2.13e — Constrói `mfRecursos[]` a partir do cadastro Argus (`RecursosService`)
+ * em vez do CSV do CIODES. Mantém shape compatível com os consumers:
+ *
+ *   - `recurso`: nome canônico (`Recurso.nome`)
+ *   - `vtrPrefixo`: derivado de `Recurso.viaturaPrefixoFixo` quando preenchido
+ *     (ex.: ATB usa SEMPRE ATB-13456). Para recursos sem viatura fixa,
+ *     procura no QDV uma viatura cujo `funcaoOperacional` ou `prefixo` case
+ *     com o nome do recurso.
+ *   - `vtrStatus`: derivado do status da viatura no QDV (DISPONIVEL/BAIXADA/EMPRESTADA)
+ *   - `chefe`/`motorista`/`operadores`: undefined/[] — esses dados vinham do
+ *     preenchimento real-time do MF CIODES, que não é mais consumido. A
+ *     tripulação da Prévia continua vindo 100% da Escala XLSX (S6g).
+ *
+ * Recursos `viatura_only` ou sem viatura disponível ficam com `vtrPrefixo`
+ * undefined — comportamento idêntico ao CIODES legacy quando recurso não
+ * tinha viatura cadastrada.
+ */
+function buildMfRecursosFromArgus(
+  recursosAtivos: readonly { nome: string; viaturaPrefixoFixo: string | null }[],
+  viaturas: readonly {
+    prefixo: string;
+    funcaoOperacional?: string | null;
+    status: StatusViatura;
+  }[],
+): Array<{
+  recurso: string;
+  vtrPrefixo?: string;
+  vtrStatus: StatusVtr | null;
+  chefe?: undefined;
+  motorista?: undefined;
+  operadores: never[];
+}> {
+  return recursosAtivos.map((r) => {
+    // Prioridade: viaturaPrefixoFixo (S2.13b) → match por funcaoOperacional → undefined
+    let vtrMatch = r.viaturaPrefixoFixo
+      ? viaturas.find(
+          (v) => normalizeViaturaCode(v.prefixo) === normalizeViaturaCode(r.viaturaPrefixoFixo!),
+        )
+      : undefined;
+    if (!vtrMatch) {
+      vtrMatch = viaturas.find(
+        (v) =>
+          v.funcaoOperacional &&
+          normalizeViaturaCode(v.funcaoOperacional) === normalizeViaturaCode(r.nome),
+      );
+    }
+    return {
+      recurso: r.nome,
+      vtrPrefixo: vtrMatch?.prefixo,
+      vtrStatus: vtrMatch?.status ?? null,
+      chefe: undefined,
+      motorista: undefined,
+      operadores: [],
+    };
+  });
 }
 
 /**
