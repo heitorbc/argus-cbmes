@@ -19,10 +19,11 @@ export type ModuloHome =
   | 'sargenteacao'
   | 'escalas' // S2.10.13d — Módulo Escalas (ISEO + ChOp). Universal.
   | 'logistica'
+  | 'operacoes' // S2.13c — Gestão dos recursos pelo Oficial de Operações
   | 'configuracoes';
 
 const PAPEL_SECOES_EXTRAS: Record<string, ModuloHome[]> = {
-  admin: ['sargenteacao', 'logistica', 'configuracoes'],
+  admin: ['sargenteacao', 'logistica', 'operacoes', 'configuracoes'],
   sargenteante: ['sargenteacao'],
   motorista: ['logistica'],
   // Almoxarife = persona logística dedicada (frota + futuros materiais).
@@ -30,6 +31,8 @@ const PAPEL_SECOES_EXTRAS: Record<string, ModuloHome[]> = {
   // Fiscal precisa visualizar o cadastro de Recursos (Logística) para
   // conferir o estado MF dos recursos antes da Prévia. Edição segue admin-only.
   fiscal: ['logistica'],
+  // S2.13c — Oficial de Operações: ponto focal de gestão de recursos da unidade.
+  oficial_operacoes: ['operacoes'],
 };
 
 /**
@@ -68,6 +71,8 @@ export const ROUTE_TO_SECTION: Record<string, ModuloHome> = {
   '/cadastros/chefes-operacoes': 'escalas',
   '/cadastros/viaturas': 'logistica',
   '/logistica/recursos': 'logistica',
+  // S2.13c — Operações (gestão de recursos pelo Oficial de Operações)
+  '/operacoes/recursos': 'operacoes',
   '/configuracoes/unidades': 'configuracoes',
   '/configuracoes/integracoes': 'configuracoes',
   '/configuracoes/usuarios': 'configuracoes',

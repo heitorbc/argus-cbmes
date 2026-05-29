@@ -25,6 +25,7 @@ import { IdeoPage } from '@/pages/ideo';
 import { MapaForcaPage } from '@/pages/mapa-forca';
 import { MapaForcaDetalhePage } from '@/pages/mapa-forca-detalhe';
 import { RecursosPage } from '@/pages/recursos';
+import { OperacoesRecursosPage } from '@/pages/operacoes/recursos';
 import { UnidadesPage } from '@/pages/unidades';
 import { UsuariosPage } from '@/pages/usuarios';
 import { AtestadosPage } from '@/pages/atestados';
@@ -153,6 +154,8 @@ export const router = createBrowserRouter([
           { path: '/configuracoes/unidades', element: <UnidadesPage /> },
           { path: '/configuracoes/usuarios', element: <UsuariosPage /> },
           { path: '/configuracoes/recursos', element: <RecursosPage /> },
+          // S2.13c — Operações (gestão de recursos pelo Oficial de Operações)
+          { path: '/operacoes/recursos', element: <OperacoesRecursosPage /> },
           { path: '/configuracoes/integracoes', element: <IntegracoesPage /> },
           {
             path: '/configuracoes/compartimentos-materiais',

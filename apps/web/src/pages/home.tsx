@@ -19,6 +19,7 @@ const PAPEL_LABEL: Record<string, string> = {
   sargenteante: 'Sargenteante',
   almoxarife: 'Almoxarife',
   militar: 'Militar',
+  oficial_operacoes: 'Oficial de Operações',
 };
 
 export function HomePage() {
@@ -31,6 +32,7 @@ export function HomePage() {
   // S6f — RBAC visual: Prontidão é universal, demais seções por papel.
   const showSargenteacao = canSeeSection(user.papeis, 'sargenteacao');
   const showLogistica = canSeeSection(user.papeis, 'logistica');
+  const showOperacoes = canSeeSection(user.papeis, 'operacoes');
   const showConfiguracoes = canSeeSection(user.papeis, 'configuracoes');
 
   const handleLogout = async () => {
@@ -148,6 +150,19 @@ export function HomePage() {
           >
             <CardLink to="/cadastros/viaturas" icon="🚒" label="Viaturas" />
             <CardLink to="/logistica/recursos" icon="📦" label="Recursos" />
+          </ModuloSection>
+        )}
+
+        {/* S2.13c — Operações: ponto focal da gestão de recursos pelo
+            Oficial de Operações da unidade. Centraliza informações
+            operacionais consumindo Sargenteação, Logística e Prontidão. */}
+        {showOperacoes && (
+          <ModuloSection
+            titulo="Operações"
+            descricao="Gestão dos recursos da unidade pelo Oficial de Operações."
+            accent="border-l-emerald-500"
+          >
+            <CardLink to="/operacoes/recursos" icon="🎯" label="Gestão de Recursos" />
           </ModuloSection>
         )}
 
