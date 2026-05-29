@@ -60,11 +60,22 @@ function makePrismaMock(): PrismaService & {
         rows.push(...data);
         return { count: data.length };
       },
+      // S2.14 — findFirst usado por syncNextMonth para detectar último mês carregado
+      findFirst: async (_args: unknown) => {
+        if (rows.length === 0) return null;
+        // Ordena desc por (ano, mes) e retorna o primeiro
+        const sorted = [...rows].sort((a, b) => b.ano - a.ano || b.mes - a.mes);
+        return { ano: sorted[0]!.ano, mes: sorted[0]!.mes };
+      },
     },
   };
 
   const prisma = {
-    chefeOperacoesEscala: tx.chefeOperacoesEscala,
+    chefeOperacoesEscala: {
+      ...tx.chefeOperacoesEscala,
+      // findFirst também disponível no nível do prisma (não só dentro de tx)
+      findFirst: tx.chefeOperacoesEscala.findFirst,
+    },
     $transaction: async (cb: (t: typeof tx) => Promise<unknown>) => cb(tx),
   } as unknown as PrismaService & { _rows: Row[]; _deletesByMes: Map<string, number> };
 
@@ -166,5 +177,70 @@ describe('ChefesOperacoesImportService (S2.10.11b multi-sheet)', () => {
     // 2 abas faltando registradas em inconsistencias).
     expect(r.created).toBe(0);
     expect(r.inconsistencias.length).toBe(2);
+  });
+});
+
+describe('ChefesOperacoesImportService — sync mês-a-mês (S2.14)', () => {
+  let prisma: ReturnType<typeof makePrismaMock>;
+  let svc: ChefesOperacoesImportService;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    // Sem CHOP_SHEET_NAMES override → usa padrão default (JANEIRO ... DEZEMBRO 2026)
+    svc = new ChefesOperacoesImportService(makeConfig(), prisma);
+  });
+
+  it('syncMonth(2026, 5) baixa apenas "MAIO 2026" e persiste', async () => {
+    vi.stubGlobal(
+      'fetch',
+      makeFetchPerSheet({
+        'MAIO 2026': makeCsv('MAIO', 2026),
+        // Outros meses NÃO devem ser chamados — confirmando single-sheet
+      }),
+    );
+    const r = await svc.syncMonth(2026, 5);
+    // BARCELLOS dias 1+9 (X,Y) + SILVA dia 4 (X) = 3 entries num único mês
+    expect(r.created).toBe(3);
+    expect(prisma._rows.length).toBe(3);
+    expect(prisma._rows.every((row) => row.ano === 2026 && row.mes === 5)).toBe(true);
+    // deleteMany rodou apenas para (2026, 5) — preserva outros meses se existirem
+    expect(prisma._deletesByMes.get('2026-5')).toBe(1);
+    expect(prisma._deletesByMes.size).toBe(1);
+  });
+
+  it('syncNextMonth com DB vazio → BadRequestException', async () => {
+    vi.stubGlobal('fetch', makeFetchPerSheet({}));
+    await expect(svc.syncNextMonth()).rejects.toThrow(/Carregamento inicial/i);
+  });
+
+  it('syncNextMonth quando último é MAIO/2026 e JUNHO/2026 não existe → disponivel:false', async () => {
+    // Popula MAIO/2026 primeiro
+    vi.stubGlobal('fetch', makeFetchPerSheet({ 'MAIO 2026': makeCsv('MAIO', 2026) }));
+    await svc.syncMonth(2026, 5);
+    expect(prisma._rows.length).toBe(3);
+
+    // Agora tenta próximo (JUNHO) — fetch retorna 404
+    vi.stubGlobal('fetch', makeFetchPerSheet({}));
+    const r = await svc.syncNextMonth();
+    expect('disponivel' in r ? r.disponivel : true).toBe(false);
+    expect('mensagem' in r ? r.mensagem : '').toMatch(/JUNHO 2026/);
+    // DB não foi alterado pela tentativa
+    expect(prisma._rows.length).toBe(3);
+  });
+
+  it('syncNextMonth: rollover DEZEMBRO/2026 → tenta JANEIRO/2027', async () => {
+    // Popula DEZEMBRO/2026
+    vi.stubGlobal('fetch', makeFetchPerSheet({ 'DEZEMBRO 2026': makeCsv('DEZEMBRO', 2026) }));
+    await svc.syncMonth(2026, 12);
+    expect(prisma._rows[0]?.mes).toBe(12);
+
+    // Janeiro/2027 disponível na planilha
+    vi.stubGlobal('fetch', makeFetchPerSheet({ 'JANEIRO 2027': makeCsv('JANEIRO', 2027) }));
+    const r = await svc.syncNextMonth();
+    expect('ano' in r ? r.ano : null).toBe(2027);
+    expect('mes' in r ? r.mes : null).toBe(1);
+    // DB agora tem ambos meses
+    expect(prisma._rows.filter((row) => row.ano === 2026 && row.mes === 12).length).toBe(3);
+    expect(prisma._rows.filter((row) => row.ano === 2027 && row.mes === 1).length).toBe(3);
   });
 });

@@ -1,4 +1,9 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { parseAnoMesFromSheetName, parseChefesOperacoesCsv } from './chefes-operacoes-csv-parser';
@@ -25,6 +30,25 @@ const DEFAULT_SHEET_NAMES = [
   'OUTUBRO 2026',
   'NOVEMBRO 2026',
   'DEZEMBRO 2026',
+];
+
+/**
+ * S2.14 — Nomes dos meses em PT-BR uppercase usados para resolver
+ * `(ano, mes) → "NOME ANO"` (formato das abas da planilha).
+ */
+const MESES_PT_UPPER = [
+  'JANEIRO',
+  'FEVEREIRO',
+  'MARÇO',
+  'ABRIL',
+  'MAIO',
+  'JUNHO',
+  'JULHO',
+  'AGOSTO',
+  'SETEMBRO',
+  'OUTUBRO',
+  'NOVEMBRO',
+  'DEZEMBRO',
 ];
 
 export interface SyncResult {
@@ -92,6 +116,178 @@ export class ChefesOperacoesImportService {
         'Não foi possível sincronizar com a planilha de Chefes de Operações.',
       );
     }
+  }
+
+  /**
+   * S2.14 — Sincroniza apenas 1 mês da planilha (vs. `forceSync()` que
+   * sincroniza todas as 12 abas). Operação rápida e idempotente:
+   *   1. Resolve nome da aba via `monthSheetName(ano, mes)`
+   *   2. Reusa `fetchAndParse(sheet)` (single-sheet)
+   *   3. Substitui o mês inteiro em transaction (delete + insert)
+   *
+   * Propaga erro descritivo se a aba não existir ou o parser falhar.
+   * Atualiza `lastSync` / `lastSyncAtMs` com o resultado.
+   */
+  async syncMonth(ano: number, mes: number): Promise<SyncResult> {
+    const sheet = this.monthSheetName(ano, mes);
+    const inconsistencias: string[] = [];
+    let created = 0;
+    let skipped = 0;
+
+    let parsed: Awaited<ReturnType<ChefesOperacoesImportService['fetchAndParse']>>;
+    try {
+      parsed = await this.fetchAndParse(sheet);
+    } catch (err) {
+      const msg = `Aba "${sheet}" falhou: ${(err as Error).message}`;
+      this.logger.warn(`ChOp syncMonth: ${msg}`);
+      throw new ServiceUnavailableException(msg);
+    }
+
+    // Sanity check: ano/mes do parse devem bater com o solicitado (se não bater,
+    // a aba foi renomeada ou o header está inconsistente — recusa em vez de
+    // sobrescrever o mês errado).
+    if (parsed.ano !== ano || parsed.mes !== mes) {
+      throw new ServiceUnavailableException(
+        `Aba "${sheet}" devolveu ${String(parsed.mes).padStart(2, '0')}/${parsed.ano}, ` +
+          `esperado ${String(mes).padStart(2, '0')}/${ano}. Verifique nome da aba e cabeçalho.`,
+      );
+    }
+
+    const rows: Array<{
+      ano: number;
+      mes: number;
+      nf: string;
+      dia: number;
+      marcador: string;
+      posto: string;
+      nomeGuerra: string;
+      telefone: string | null;
+    }> = [];
+    for (const m of parsed.militares) {
+      for (const [dia, marcador] of m.porDia) {
+        rows.push({
+          ano,
+          mes,
+          nf: m.nf,
+          dia,
+          marcador,
+          posto: m.posto,
+          nomeGuerra: m.nomeGuerra,
+          telefone: m.telefone ?? null,
+        });
+      }
+    }
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.chefeOperacoesEscala.deleteMany({ where: { ano, mes } });
+        if (rows.length > 0) {
+          const r2 = await tx.chefeOperacoesEscala.createMany({
+            data: rows,
+            skipDuplicates: true,
+          });
+          created = r2.count;
+        }
+      });
+    } catch (err) {
+      skipped = 1;
+      const msg = `Persist ${String(mes).padStart(2, '0')}/${ano} falhou: ${(err as Error).message}`;
+      this.logger.warn(`ChOp syncMonth: ${msg}`);
+      inconsistencias.push(msg);
+    }
+
+    const result: SyncResult = {
+      created,
+      updated: 0,
+      skipped,
+      inconsistencias,
+      syncedAt: new Date().toISOString(),
+    };
+    this.lastSync = result;
+    this.lastSyncAtMs = Date.now();
+    this.logger.log(
+      `ChOp syncMonth ${String(mes).padStart(2, '0')}/${ano}: created=${created}, falhas=${inconsistencias.length}`,
+    );
+    return result;
+  }
+
+  /**
+   * S2.14 — Busca a aba do mês seguinte ao último carregado e tenta importá-la.
+   *
+   * Comportamento:
+   *   - Se DB está vazio → BadRequestException (admin deve usar carga inicial)
+   *   - Se aba existe e parser sucede → retorna `{ ano, mes, result }`
+   *   - Se aba não existe (HTTP 4xx ou cabeçalho ausente) → retorna
+   *     `{ disponivel: false, mensagem: '...' }` sem mexer no DB
+   *   - Demais erros (rede, timeout, persist) → propaga
+   */
+  async syncNextMonth(): Promise<
+    { ano: number; mes: number; result: SyncResult } | { disponivel: false; mensagem: string }
+  > {
+    const ultimo = await this.prisma.chefeOperacoesEscala.findFirst({
+      orderBy: [{ ano: 'desc' }, { mes: 'desc' }],
+      select: { ano: true, mes: true },
+    });
+    if (!ultimo) {
+      throw new BadRequestException(
+        'DB sem dados de ChOp. Use "Carregamento inicial" antes de "Buscar próximo mês".',
+      );
+    }
+    const proximoMes = ultimo.mes === 12 ? 1 : ultimo.mes + 1;
+    const proximoAno = ultimo.mes === 12 ? ultimo.ano + 1 : ultimo.ano;
+    const sheet = this.monthSheetName(proximoAno, proximoMes);
+
+    try {
+      const result = await this.syncMonth(proximoAno, proximoMes);
+      return { ano: proximoAno, mes: proximoMes, result };
+    } catch (err) {
+      const msg = (err as Error).message ?? '';
+      // Detecta aba ausente: HTTP 404 ou erro do parser indicando ausência de cabeçalho
+      const ehAbaAusente =
+        /HTTP\s+404/i.test(msg) ||
+        /Cabeçalho.*não\s+encontrado/i.test(msg) ||
+        /Não\s+foi\s+possível\s+determinar\s+ano\/mes/i.test(msg);
+      if (ehAbaAusente) {
+        return {
+          disponivel: false,
+          mensagem: `Próximo mês não disponível na planilha (aba "${sheet}" ausente).`,
+        };
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * S2.14 — Resolve `(ano, mes) → nome da aba` (ex.: `(2026, 5) → "MAIO 2026"`).
+   *
+   * Estratégia:
+   *   1. Se `CHOP_SHEET_NAMES` está setado, procura match por (ano, mes) entre
+   *      as entradas via `parseAnoMesFromSheetName` (suporta nomes customizados)
+   *   2. Senão usa `MESES_PT_UPPER[mes-1] + ' ' + ano` (padrão default)
+   *
+   * Mês fora de [1..12] lança erro.
+   */
+  private monthSheetName(ano: number, mes: number): string {
+    if (mes < 1 || mes > 12) {
+      throw new BadRequestException(`mes inválido: ${mes} (esperado 1..12)`);
+    }
+    const raw = this.config.get<string>('CHOP_SHEET_NAMES');
+    if (raw && raw.trim()) {
+      const nomes = raw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const match = nomes.find((n) => {
+        const r = parseAnoMesFromSheetName(n);
+        return r?.ano === ano && r?.mes === mes;
+      });
+      if (match) return match;
+      // Fallback: nome custom não cobre esse mês → usa padrão default.
+      this.logger.warn(
+        `CHOP_SHEET_NAMES override não contém aba para ${String(mes).padStart(2, '0')}/${ano} — usando nome default.`,
+      );
+    }
+    return `${MESES_PT_UPPER[mes - 1]} ${ano}`;
   }
 
   async syncToDatabase(): Promise<SyncResult> {

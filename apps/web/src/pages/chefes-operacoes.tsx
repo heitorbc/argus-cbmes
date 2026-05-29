@@ -106,19 +106,90 @@ export function ChefesOperacoesPage() {
       : 'Erro ao carregar ChOp'
     : null;
 
-  const handleSync = async (): Promise<void> => {
+  // S2.14 — DB vazio implica que a carga inicial ainda não rodou. UI mostra
+  // somente o botão "Carregar planilha inicial" nesse estado. Após a 1ª carga,
+  // os 2 botões dedicados ("Atualizar este mês" e "Buscar próximo mês") assumem.
+  const dbVazio = mesesDisponiveis.length === 0;
+
+  // S2.14 — Tom da mensagem (info | warn | error). Mensagens "amarelas" usadas
+  // quando "próximo mês não disponível" (estado esperado, não erro).
+  const [syncTone, setSyncTone] = useState<'info' | 'warn' | 'error'>('info');
+
+  const invalidateChopQueries = async (): Promise<void> => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['chefes-operacoes-habilitados'] }),
+      queryClient.invalidateQueries({ queryKey: ['chefes-operacoes-escalados-mes'] }),
+      queryClient.invalidateQueries({ queryKey: ['chefes-operacoes-meses-disponiveis'] }),
+    ]);
+  };
+
+  /**
+   * S2.14 — Carga inicial (bulk): chamada apenas quando DB está vazio.
+   * Reusa o endpoint `POST /integracoes/chefes-operacoes/sync` que importa
+   * todas as 12 abas em paralelo.
+   */
+  const handleCargaInicial = async (): Promise<void> => {
     setSyncBusy(true);
     setSyncMsg(null);
     try {
       const r = await api.integracoesSync('chefes-operacoes');
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['chefes-operacoes-habilitados'] }),
-        queryClient.invalidateQueries({ queryKey: ['chefes-operacoes-escalados-mes'] }),
-        queryClient.invalidateQueries({ queryKey: ['chefes-operacoes-meses-disponiveis'] }),
-      ]);
-      setSyncMsg(`ChOp sincronizado · ${r.qtdRegistros} entries`);
+      await invalidateChopQueries();
+      setSyncTone('info');
+      setSyncMsg(`Carga inicial concluída · ${r.qtdRegistros} entries`);
     } catch (e) {
-      setSyncMsg(e instanceof ApiError ? e.message : 'Falha ao sincronizar');
+      setSyncTone('error');
+      setSyncMsg(e instanceof ApiError ? e.message : 'Falha na carga inicial');
+    } finally {
+      setSyncBusy(false);
+    }
+  };
+
+  /**
+   * S2.14 — Atualiza apenas o mês atualmente selecionado no dropdown.
+   * Operação rápida e idempotente: substitui o mês inteiro em transaction.
+   */
+  const handleAtualizarMes = async (): Promise<void> => {
+    setSyncBusy(true);
+    setSyncMsg(null);
+    try {
+      const r = await api.chefesOperacoesSyncMes(ano, mes);
+      await invalidateChopQueries();
+      setSyncTone('info');
+      setSyncMsg(`${NOMES_MES_PT[mes]} ${ano} atualizado · ${r.created} entries`);
+    } catch (e) {
+      setSyncTone('error');
+      setSyncMsg(e instanceof ApiError ? e.message : 'Falha ao atualizar mês');
+    } finally {
+      setSyncBusy(false);
+    }
+  };
+
+  /**
+   * S2.14 — Detecta o último mês carregado no DB e tenta importar o
+   * seguinte. Trata 2 caminhos discriminados: sucesso (ano/mes/result) e
+   * indisponível ({disponivel:false, mensagem}).
+   */
+  const handleBuscarProximo = async (): Promise<void> => {
+    setSyncBusy(true);
+    setSyncMsg(null);
+    try {
+      const r = await api.chefesOperacoesSyncProximoMes();
+      if ('disponivel' in r && r.disponivel === false) {
+        setSyncTone('warn');
+        setSyncMsg(r.mensagem);
+        return;
+      }
+      if ('ano' in r && 'mes' in r) {
+        await invalidateChopQueries();
+        // Move a visualização para o novo mês
+        setAno(r.ano);
+        setMes(r.mes);
+        setSyncTone('info');
+        setSyncMsg(`${NOMES_MES_PT[r.mes]} ${r.ano} importado · ${r.result.created} entries`);
+      }
+    } catch (e) {
+      setSyncTone('error');
+      setSyncMsg(e instanceof ApiError ? e.message : 'Falha ao buscar próximo mês');
     } finally {
       setSyncBusy(false);
     }
@@ -154,8 +225,19 @@ export function ChefesOperacoesPage() {
         <div className="rounded border border-slate-200 bg-white p-3 text-xs text-slate-600">
           <strong>Fonte:</strong> planilha institucional "Escala de Chefe de Operações" — abas
           mensais com oficiais de toda a instituição. Histórico multi-mês em Postgres desde
-          S2.10.11b. Alterações são raras (&lt;1 por mês) — clique em sincronizar quando a planilha
-          for editada.
+          S2.10.11b.{' '}
+          {dbVazio ? (
+            <>
+              Banco vazio: use <strong>"Carregar planilha inicial"</strong> para popular os 12 meses
+              do ano corrente.
+            </>
+          ) : (
+            <>
+              Use <strong>"🔄 Atualizar este mês"</strong> quando o sargenteante editar um mês já
+              carregado. Use <strong>"⏭ Buscar próximo mês"</strong> para importar o mês seguinte
+              assim que a aba for criada na planilha.
+            </>
+          )}
         </div>
 
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -184,8 +266,8 @@ export function ChefesOperacoesPage() {
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
-            {aba === 'escalados' && (
+          <div className="flex flex-wrap items-center gap-2">
+            {aba === 'escalados' && !dbVazio && (
               <select
                 value={`${ano}-${mes}`}
                 onChange={(e) => {
@@ -206,20 +288,53 @@ export function ChefesOperacoesPage() {
                 ))}
               </select>
             )}
-            <button
-              type="button"
-              onClick={() => void handleSync()}
-              disabled={syncBusy}
-              title="Re-sincronizar todas as abas mensais da planilha de ChOp"
-              className="rounded-button border border-cbmes-blue bg-white px-3 py-2 text-sm font-medium text-cbmes-blue hover:bg-cbmes-blue/5 disabled:opacity-50"
-            >
-              {syncBusy ? '⟳ Sincronizando…' : '🔄 Sincronizar'}
-            </button>
+            {dbVazio ? (
+              // S2.14 — DB vazio: bulk inicial das 12 abas em paralelo
+              <button
+                type="button"
+                onClick={() => void handleCargaInicial()}
+                disabled={syncBusy}
+                title="Importar todas as 12 abas mensais da planilha (1ª vez)"
+                className="rounded-button border border-cbmes-blue bg-cbmes-blue px-3 py-2 text-sm font-medium text-white hover:bg-cbmes-blue/90 disabled:opacity-50"
+              >
+                {syncBusy ? '⟳ Carregando…' : '📥 Carregar planilha inicial'}
+              </button>
+            ) : (
+              // S2.14 — DB com dados: 2 botões dedicados
+              <>
+                <button
+                  type="button"
+                  onClick={() => void handleAtualizarMes()}
+                  disabled={syncBusy}
+                  title={`Re-importar apenas ${NOMES_MES_PT[mes]} ${ano} da planilha`}
+                  className="rounded-button border border-cbmes-blue bg-white px-3 py-2 text-sm font-medium text-cbmes-blue hover:bg-cbmes-blue/5 disabled:opacity-50"
+                >
+                  {syncBusy ? '⟳ Atualizando…' : '🔄 Atualizar este mês'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleBuscarProximo()}
+                  disabled={syncBusy}
+                  title="Importar o mês seguinte ao último carregado (se a aba existir na planilha)"
+                  className="rounded-button border border-cbmes-blue bg-white px-3 py-2 text-sm font-medium text-cbmes-blue hover:bg-cbmes-blue/5 disabled:opacity-50"
+                >
+                  {syncBusy ? '⟳ Buscando…' : '⏭ Buscar próximo mês'}
+                </button>
+              </>
+            )}
           </div>
         </div>
 
         {syncMsg && (
-          <div className="mt-2 rounded border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700">
+          <div
+            className={`mt-2 rounded border px-3 py-1.5 text-xs ${
+              syncTone === 'error'
+                ? 'border-feedback-error/30 bg-feedback-error/10 text-feedback-error'
+                : syncTone === 'warn'
+                  ? 'border-amber-300 bg-amber-50 text-amber-800'
+                  : 'border-slate-200 bg-slate-50 text-slate-700'
+            }`}
+          >
             {syncMsg}
           </div>
         )}
